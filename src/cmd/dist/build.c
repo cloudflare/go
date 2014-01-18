@@ -343,9 +343,12 @@ static char *oldtool[] = {
 
 // Unreleased directories (relative to $GOROOT) that should
 // not be in release branches.
+
+// TODO(daniel): Reenable this and make the VERSION include dev info
+// It's not critical since we don't expect this to be an active development repo
 static char *unreleased[] = {
-	"src/cmd/prof",
-	"src/pkg/old",
+//	"src/cmd/prof",
+//	"src/pkg/old",
 };
 
 // setup sets up the tree for the initial build.
