@@ -52,10 +52,6 @@ test/garbage/*.out
 goinstall.log
 last-change
 VERSION.cache
-
-syntax:regexp
-^bin/
-^pkg/
-^src/cmd/(.*)/6?\1$
-^.*/core.[0-9]*$
 orig_repo
+bin
+pkg
