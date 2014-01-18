@@ -1,7 +1,5 @@
 syntax:glob
 .DS_Store
-.git
-.gitignore
 *.[568ao]
 *.a[568o]
 *.so
@@ -60,3 +58,4 @@ syntax:regexp
 ^pkg/
 ^src/cmd/(.*)/6?\1$
 ^.*/core.[0-9]*$
+orig_repo
