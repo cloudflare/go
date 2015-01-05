@@ -12,7 +12,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rsa"
-	"crypto/sha1"
+	_ "crypto/sha1"
 	_ "crypto/sha256"
 	_ "crypto/sha512"
 	"crypto/x509/pkix"
@@ -1368,22 +1368,22 @@ func subjectBytes(cert *Certificate) ([]byte, error) {
 	return asn1.Marshal(cert.Subject.ToRDNSequence())
 }
 
-// signingParamsForPrivateKey returns the parameters to use for signing with
+// signingParamsForPublicKey returns the parameters to use for signing with
 // priv. If requestedSigAlgo is not zero then it overrides the default
 // signature algorithm.
-func signingParamsForPrivateKey(priv interface{}, requestedSigAlgo SignatureAlgorithm) (hashFunc crypto.Hash, sigAlgo pkix.AlgorithmIdentifier, err error) {
+func signingParamsForPublicKey(pub interface{}, requestedSigAlgo SignatureAlgorithm) (hashFunc crypto.Hash, sigAlgo pkix.AlgorithmIdentifier, err error) {
 	var pubType PublicKeyAlgorithm
 
-	switch priv := priv.(type) {
-	case *rsa.PrivateKey:
+	switch pub := pub.(type) {
+	case *rsa.PublicKey:
 		pubType = RSA
 		sigAlgo.Algorithm = oidSignatureSHA256WithRSA
 		hashFunc = crypto.SHA256
 
-	case *ecdsa.PrivateKey:
+	case *ecdsa.PublicKey:
 		pubType = ECDSA
 
-		switch priv.Curve {
+		switch pub.Curve {
 		case elliptic.P224(), elliptic.P256():
 			hashFunc = crypto.SHA256
 			sigAlgo.Algorithm = oidSignatureECDSAWithSHA256
@@ -1398,7 +1398,7 @@ func signingParamsForPrivateKey(priv interface{}, requestedSigAlgo SignatureAlgo
 		}
 
 	default:
-		err = errors.New("x509: only RSA and ECDSA private keys supported")
+		err = errors.New("x509: only RSA and ECDSA keys supported")
 	}
 
 	if err != nil {
@@ -1445,10 +1445,15 @@ func signingParamsForPrivateKey(priv interface{}, requestedSigAlgo SignatureAlgo
 //
 // The returned slice is the certificate in DER encoding.
 //
-// The only supported key types are RSA and ECDSA (*rsa.PublicKey or
-// *ecdsa.PublicKey for pub, *rsa.PrivateKey or *ecdsa.PrivateKey for priv).
-func CreateCertificate(rand io.Reader, template, parent *Certificate, pub interface{}, priv interface{}) (cert []byte, err error) {
-	hashFunc, signatureAlgorithm, err := signingParamsForPrivateKey(priv, template.SignatureAlgorithm)
+// All keys types that are implemented via crypto.Signer are supported (This
+// includes *rsa.PublicKey and *ecdsa.PublicKey.)
+func CreateCertificate(rand io.Reader, template, parent *Certificate, pub, priv interface{}) (cert []byte, err error) {
+	key, ok := priv.(crypto.Signer)
+	if !ok {
+		return nil, errors.New("x509: certificate private key does not implement crypto.Signer")
+	}
+
+	hashFunc, signatureAlgorithm, err := signingParamsForPublicKey(key.Public(), template.SignatureAlgorithm)
 	if err != nil {
 		return nil, err
 	}
@@ -1456,10 +1461,6 @@ func CreateCertificate(rand io.Reader, template, parent *Certificate, pub interf
 	publicKeyBytes, publicKeyAlgorithm, err := marshalPublicKey(pub)
 	if err != nil {
 		return nil, err
-	}
-
-	if err != nil {
-		return
 	}
 
 	if len(parent.SubjectKeyId) > 0 {
@@ -1505,30 +1506,17 @@ func CreateCertificate(rand io.Reader, template, parent *Certificate, pub interf
 	digest := h.Sum(nil)
 
 	var signature []byte
-
-	switch priv := priv.(type) {
-	case *rsa.PrivateKey:
-		signature, err = rsa.SignPKCS1v15(rand, priv, hashFunc, digest)
-	case *ecdsa.PrivateKey:
-		var r, s *big.Int
-		if r, s, err = ecdsa.Sign(rand, priv, digest); err == nil {
-			signature, err = asn1.Marshal(ecdsaSignature{r, s})
-		}
-	default:
-		panic("internal error")
-	}
-
+	signature, err = key.Sign(rand, digest, hashFunc)
 	if err != nil {
 		return
 	}
 
-	cert, err = asn1.Marshal(certificate{
+	return asn1.Marshal(certificate{
 		nil,
 		c,
 		signatureAlgorithm,
 		asn1.BitString{Bytes: signature, BitLength: len(signature) * 8},
 	})
-	return
 }
 
 // pemCRLPrefix is the magic string that indicates that we have a PEM encoded
@@ -1564,13 +1552,17 @@ func ParseDERCRL(derBytes []byte) (certList *pkix.CertificateList, err error) {
 
 // CreateCRL returns a DER encoded CRL, signed by this Certificate, that
 // contains the given list of revoked certificates.
-//
-// The only supported key type is RSA (*rsa.PrivateKey for priv).
 func (c *Certificate) CreateCRL(rand io.Reader, priv interface{}, revokedCerts []pkix.RevokedCertificate, now, expiry time.Time) (crlBytes []byte, err error) {
-	rsaPriv, ok := priv.(*rsa.PrivateKey)
+	key, ok := priv.(crypto.Signer)
 	if !ok {
-		return nil, errors.New("x509: non-RSA private keys not supported")
+		return nil, errors.New("x509: certificate private key does not implement crypto.Signer")
 	}
+
+	hashFunc, signatureAlgorithm, err := signingParamsForPublicKey(key.Public(), 0)
+	if err != nil {
+		return nil, err
+	}
+
 	tbsCertList := pkix.TBSCertificateList{
 		Version: 2,
 		Signature: pkix.AlgorithmIdentifier{
@@ -1587,21 +1579,20 @@ func (c *Certificate) CreateCRL(rand io.Reader, priv interface{}, revokedCerts [
 		return
 	}
 
-	h := sha1.New()
+	h := hashFunc.New()
 	h.Write(tbsCertListContents)
 	digest := h.Sum(nil)
 
-	signature, err := rsa.SignPKCS1v15(rand, rsaPriv, crypto.SHA1, digest)
+	var signature []byte
+	signature, err = key.Sign(rand, digest, hashFunc)
 	if err != nil {
 		return
 	}
 
 	return asn1.Marshal(pkix.CertificateList{
-		TBSCertList: tbsCertList,
-		SignatureAlgorithm: pkix.AlgorithmIdentifier{
-			Algorithm: oidSignatureSHA1WithRSA,
-		},
-		SignatureValue: asn1.BitString{Bytes: signature, BitLength: len(signature) * 8},
+		TBSCertList:        tbsCertList,
+		SignatureAlgorithm: signatureAlgorithm,
+		SignatureValue:     asn1.BitString{Bytes: signature, BitLength: len(signature) * 8},
 	})
 }
 
@@ -1675,26 +1666,24 @@ var oidExtensionRequest = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 9, 14}
 //
 // The returned slice is the certificate request in DER encoding.
 //
-// The only supported key types are RSA (*rsa.PrivateKey) and ECDSA
-// (*ecdsa.PrivateKey).
+// All keys types that are implemented via crypto.Signer are supported (This
+// includes *rsa.PublicKey and *ecdsa.PublicKey.)
 func CreateCertificateRequest(rand io.Reader, template *CertificateRequest, priv interface{}) (csr []byte, err error) {
-	hashFunc, sigAlgo, err := signingParamsForPrivateKey(priv, template.SignatureAlgorithm)
+	key, ok := priv.(crypto.Signer)
+	if !ok {
+		return nil, errors.New("x509: certificate private key does not implement crypto.Signer")
+	}
+
+	var hashFunc crypto.Hash
+	var sigAlgo pkix.AlgorithmIdentifier
+	hashFunc, sigAlgo, err = signingParamsForPublicKey(key.Public(), template.SignatureAlgorithm)
 	if err != nil {
 		return nil, err
 	}
 
 	var publicKeyBytes []byte
 	var publicKeyAlgorithm pkix.AlgorithmIdentifier
-
-	switch priv := priv.(type) {
-	case *rsa.PrivateKey:
-		publicKeyBytes, publicKeyAlgorithm, err = marshalPublicKey(&priv.PublicKey)
-	case *ecdsa.PrivateKey:
-		publicKeyBytes, publicKeyAlgorithm, err = marshalPublicKey(&priv.PublicKey)
-	default:
-		panic("internal error")
-	}
-
+	publicKeyBytes, publicKeyAlgorithm, err = marshalPublicKey(key.Public())
 	if err != nil {
 		return nil, err
 	}
@@ -1806,18 +1795,7 @@ func CreateCertificateRequest(rand io.Reader, template *CertificateRequest, priv
 	digest := h.Sum(nil)
 
 	var signature []byte
-	switch priv := priv.(type) {
-	case *rsa.PrivateKey:
-		signature, err = rsa.SignPKCS1v15(rand, priv, hashFunc, digest)
-	case *ecdsa.PrivateKey:
-		var r, s *big.Int
-		if r, s, err = ecdsa.Sign(rand, priv, digest); err == nil {
-			signature, err = asn1.Marshal(ecdsaSignature{r, s})
-		}
-	default:
-		panic("internal error")
-	}
-
+	signature, err = key.Sign(rand, digest, hashFunc)
 	if err != nil {
 		return
 	}
