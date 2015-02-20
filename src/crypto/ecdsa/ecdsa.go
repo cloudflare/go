@@ -136,7 +136,11 @@ func Sign(rand io.Reader, priv *PrivateKey, hash []byte) (r, s *big.Int, err err
 				return
 			}
 
-			kInv = fermatInverse(k, N)
+			if in, ok := priv.Curve.(elliptic.Inverser); ok {
+				kInv = in.Inverse(k)
+			} else {
+				kInv = fermatInverse(k, N)
+			}
 			r, _ = priv.Curve.ScalarBaseMult(k.Bytes())
 			r.Mod(r, N)
 			if r.Sign() != 0 {

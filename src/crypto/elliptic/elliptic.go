@@ -37,6 +37,12 @@ type Curve interface {
 	ScalarBaseMult(k []byte) (x, y *big.Int)
 }
 
+// A Inverser implements fast inverse mod Curve.Params().N
+type Inverser interface {
+	// Inverse returns the inverse of k in GF(P)
+	Inverse(k *big.Int) *big.Int
+}
+
 // CurveParams contains the parameters of an elliptic curve and also provides
 // a generic, non-constant time implementation of Curve.
 type CurveParams struct {
