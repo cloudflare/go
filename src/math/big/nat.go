@@ -218,6 +218,33 @@ func basicMul(z, x, y nat) {
 	}
 }
 
+// A simple implementation of Montgomery Multiplication
+func (z nat) montMul(x, y, m nat, k Word, n int) nat {
+	var c1, c2 Word
+	z = z.make(n)
+	z[0:n].clear()
+	for i := 0; i < n; i++ {
+		d := y[i]
+		c1 += addMulVVW(z[0:n], x, d)
+		t := z[0] * k
+		c2 = addMulVVW(z[0:n], m, t)
+
+		for j := 0; j < n-1; j++ {
+			z[j] = z[j+1]
+		}
+		z[n-1] = c1 + c2
+		if z[n-1] < c1 {
+			c1 = 1
+		} else {
+			c1 = 0
+		}
+	}
+	if c1 != 0 {
+		subVV(z[0:n], z[0:n], m)
+	}
+	return z
+}
+
 // Fast version of z[0:n+n>>1].add(z[0:n+n>>1], x[0:n]) w/o bounds checks.
 // Factored out for readability - do not use outside karatsuba.
 func karatsubaAdd(z, x nat, n int) {
@@ -1255,9 +1282,13 @@ func (z nat) expNN(x, y, m nat) nat {
 	// 4-bit, windowed exponentiation. This involves precomputing 14 values
 	// (x^2...x^15) but then reduces the number of multiply-reduces by a
 	// third. Even for a 32-bit exponent, this reduces the number of
-	// operations.
+	// operations. Use Montgomery for odd moduli.
 	if len(x) > 1 && len(y) > 1 && len(m) > 0 {
-		return z.expNNWindowed(x, y, m)
+		if m[0]&1 == 1 {
+			return z.expNNMont(x, y, m)
+		} else {
+			return z.expNNWindowed(x, y, m)
+		}
 	}
 
 	v := y[len(y)-1] // v > 0 because y is normalized and y > 0
@@ -1377,6 +1408,97 @@ func (z nat) expNNWindowed(x, y, m nat) nat {
 	}
 
 	return z.norm()
+}
+
+// expNNMont calculates x**y mod m using a fixed, 4-bit window.
+// Uses Montgomery representation
+func (z nat) expNNMont(x, y, m nat) nat {
+
+	var zz, one, rr, RR nat
+
+	words := len(m)
+
+	// We want the lengths of x and m to be equal
+	if len(x) > words {
+		_, rr = rr.div(rr, x, m)
+	} else if len(x) < words {
+		rr = rr.make(words)
+		rr.clear()
+		for i := range x {
+			rr[i] = x[i]
+		}
+	} else {
+		rr = x
+	}
+	x = rr
+
+	// Ideally the precomputations would be performed outside, and reused
+	// k0 = -mˆ-1 mod 2ˆ_W. Algorithm from: Dumas, J.G. "On Newton–Raphson Iteration for Multiplicative Inverses Modulo Prime Powers"
+	k0 := 2 - m[0]
+	t := m[0] - 1
+	for i := 1; i < _W; i <<= 1 {
+		t *= t
+		k0 *= (t + 1)
+	}
+	k0 = -k0
+
+	// RR = 2ˆ(2*_W*len(m)) mod m
+	RR = RR.setWord(1)
+	zz = zz.shl(RR, uint(2*words*_W))
+	_, RR = RR.div(RR, zz, m)
+	// We want the length of RR and m to be equal
+	if len(RR) < words {
+		zz = zz.make(words)
+		for i := range RR {
+			zz[i] = RR[i]
+		}
+		RR = zz
+	}
+
+	// one = 1, with equal length to that of m
+	one = one.make(words)
+	one.clear()
+	one[0] = 1
+
+	const n = 4
+	// powers[i] contains x^i.
+	var powers [1 << n]nat
+	powers[0] = powers[0].montMul(one, RR, m, k0, words)
+	powers[1] = powers[1].montMul(x, RR, m, k0, words)
+	for i := 2; i < 1<<n; i++ {
+		powers[i] = powers[i].montMul(powers[i-1], powers[1], m, k0, words)
+	}
+
+	z = z.make(words)
+	zz = zz.make(words)
+	z.clear()
+
+	// Initialize z = 1 (Montgomery 1)
+	for i := 0; i < words; i++ {
+		z[i] = powers[0][i]
+	}
+
+	// Same windowed exponent, but with Montgomery multiplications
+	for i := len(y) - 1; i >= 0; i-- {
+		yi := y[i]
+		for j := 0; j < _W; j += n {
+			if i != len(y)-1 || j != 0 {
+				// Unrolled loop for significant performance
+				// gain.  Use go test -bench=".*" in crypto/rsa
+				// to check performance before making changes.
+				zz = zz.montMul(z, z, m, k0, words)
+				z = z.montMul(zz, zz, m, k0, words)
+				zz = zz.montMul(z, z, m, k0, words)
+				z = z.montMul(zz, zz, m, k0, words)
+			}
+			zz = zz.montMul(z, powers[yi>>(_W-n)], m, k0, words)
+			z, zz = zz, z
+			yi <<= n
+		}
+	}
+	// Convert to regular number
+	zz = zz.montMul(z, one, m, k0, words)
+	return zz.norm()
 }
 
 // probablyPrime performs reps Miller-Rabin tests to check whether n is prime.
