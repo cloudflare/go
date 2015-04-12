@@ -53,7 +53,7 @@ func init() {
 	testConfig.BuildNameToCertificate()
 }
 
-func testClientHelloFailure(t *testing.T, m handshakeMessage, expectedSubStr string) {
+func testClientHelloFailure(t *testing.T, serverConfig *Config, m handshakeMessage, expectedSubStr string) {
 	// Create in-memory network connection,
 	// send message to server.  Should return
 	// expected error.
@@ -66,7 +66,7 @@ func testClientHelloFailure(t *testing.T, m handshakeMessage, expectedSubStr str
 		cli.writeRecord(recordTypeHandshake, m.marshal())
 		c.Close()
 	}()
-	err := Server(s, testConfig).Handshake()
+	err := Server(s, serverConfig).Handshake()
 	s.Close()
 	if err == nil || !strings.Contains(err.Error(), expectedSubStr) {
 		t.Errorf("Got error: %s; expected to match substring '%s'", err, expectedSubStr)
@@ -74,14 +74,14 @@ func testClientHelloFailure(t *testing.T, m handshakeMessage, expectedSubStr str
 }
 
 func TestSimpleError(t *testing.T) {
-	testClientHelloFailure(t, &serverHelloDoneMsg{}, "unexpected handshake message")
+	testClientHelloFailure(t, testConfig, &serverHelloDoneMsg{}, "unexpected handshake message")
 }
 
 var badProtocolVersions = []uint16{0x0000, 0x0005, 0x0100, 0x0105, 0x0200, 0x0205}
 
 func TestRejectBadProtocolVersion(t *testing.T) {
 	for _, v := range badProtocolVersions {
-		testClientHelloFailure(t, &clientHelloMsg{vers: v}, "unsupported, maximum protocol version")
+		testClientHelloFailure(t, testConfig, &clientHelloMsg{vers: v}, "unsupported, maximum protocol version")
 	}
 }
 
@@ -91,7 +91,7 @@ func TestNoSuiteOverlap(t *testing.T) {
 		cipherSuites:       []uint16{0xff00},
 		compressionMethods: []uint8{0},
 	}
-	testClientHelloFailure(t, clientHello, "no cipher suite supported by both client and server")
+	testClientHelloFailure(t, testConfig, clientHello, "no cipher suite supported by both client and server")
 }
 
 func TestNoCompressionOverlap(t *testing.T) {
@@ -100,7 +100,7 @@ func TestNoCompressionOverlap(t *testing.T) {
 		cipherSuites:       []uint16{TLS_RSA_WITH_RC4_128_SHA},
 		compressionMethods: []uint8{0xff},
 	}
-	testClientHelloFailure(t, clientHello, "client does not support uncompressed connections")
+	testClientHelloFailure(t, testConfig, clientHello, "client does not support uncompressed connections")
 }
 
 func TestTLS12OnlyCipherSuites(t *testing.T) {
@@ -647,6 +647,36 @@ func TestHandshakeServerSNIGetCertificateError(t *testing.T) {
 		expectAlert: true,
 	}
 	runServerTestTLS12(t, test)
+}
+
+// TestHandshakeServerEmptyCertificates tests that GetCertificates is called in
+// the case that Certificates is empty, even without SNI.
+func TestHandshakeServerEmptyCertificates(t *testing.T) {
+	const errMsg = "TestHandshakeServerEmptyCertificates error"
+
+	serverConfig := *testConfig
+	serverConfig.GetCertificate = func(clientHello *ClientHelloInfo) (*Certificate, error) {
+		return nil, errors.New(errMsg)
+	}
+	serverConfig.Certificates = nil
+
+	clientHello := &clientHelloMsg{
+		vers:               0x0301,
+		cipherSuites:       []uint16{TLS_RSA_WITH_RC4_128_SHA},
+		compressionMethods: []uint8{0},
+	}
+	testClientHelloFailure(t, &serverConfig, clientHello, errMsg)
+
+	// With an empty Certificates and a nil GetCertificate, the server
+	// should always return a “no certificates” error.
+	serverConfig.GetCertificate = nil
+
+	clientHello = &clientHelloMsg{
+		vers:               0x0301,
+		cipherSuites:       []uint16{TLS_RSA_WITH_RC4_128_SHA},
+		compressionMethods: []uint8{0},
+	}
+	testClientHelloFailure(t, &serverConfig, clientHello, "no certificates")
 }
 
 // TestCipherSuiteCertPreferance ensures that we select an RSA ciphersuite with
