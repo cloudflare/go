@@ -50,8 +50,6 @@ func (c *Conn) serverHandshake() error {
 	if err != nil {
 		return err
 	}
-	hs.finishedHash = newFinishedHash(hs.c.vers, hs.suite.tls12Hash)
-	hs.finishedHash.Write(hs.clientHello.marshal())
 
 	// For an overview of TLS handshaking, see https://tools.ietf.org/html/rfc5246#section-7.3
 	if isResume {
@@ -311,6 +309,9 @@ func (hs *serverHandshakeState) doResumeHandshake() error {
 	// We echo the client's session ID in the ServerHello to let it know
 	// that we're doing a resumption.
 	hs.hello.sessionId = hs.clientHello.sessionId
+	hs.finishedHash = newFinishedHash(c.vers, hs.suite)
+	hs.finishedHash.discardHandshakeBuffer()
+	hs.finishedHash.Write(hs.clientHello.marshal())
 	hs.finishedHash.Write(hs.hello.marshal())
 	c.writeRecord(recordTypeHandshake, hs.hello.marshal())
 
@@ -335,6 +336,14 @@ func (hs *serverHandshakeState) doFullHandshake() error {
 
 	hs.hello.ticketSupported = hs.clientHello.ticketSupported && !config.SessionTicketsDisabled
 	hs.hello.cipherSuite = hs.suite.id
+
+	hs.finishedHash = newFinishedHash(hs.c.vers, hs.suite)
+	if config.ClientAuth == NoClientCert {
+		// No need to keep a full record of the handshake if client
+		// certificates won't be used.
+		hs.finishedHash.discardHandshakeBuffer()
+	}
+	hs.finishedHash.Write(hs.clientHello.marshal())
 	hs.finishedHash.Write(hs.hello.marshal())
 	c.writeRecord(recordTypeHandshake, hs.hello.marshal())
 
@@ -371,7 +380,7 @@ func (hs *serverHandshakeState) doFullHandshake() error {
 		}
 		if c.vers >= VersionTLS12 {
 			certReq.hasSignatureAndHash = true
-			certReq.signatureAndHashes = supportedClientCertSignatureAlgorithms
+			certReq.signatureAndHashes = supportedSignatureAlgorithms
 		}
 
 		// An empty list of certificateAuthorities signals to
@@ -435,6 +444,13 @@ func (hs *serverHandshakeState) doFullHandshake() error {
 	}
 	hs.finishedHash.Write(ckx.marshal())
 
+	preMasterSecret, err := keyAgreement.processClientKeyExchange(config, hs.cert, ckx, c.vers)
+	if err != nil {
+		c.sendAlert(alertHandshakeFailure)
+		return err
+	}
+	hs.masterSecret = masterFromPreMasterSecret(c.vers, hs.suite, preMasterSecret, hs.clientHello.random, hs.hello.random)
+
 	// If we received a client cert in response to our certificate request message,
 	// the client will send us a certificateVerifyMsg immediately after the
 	// clientKeyExchangeMsg.  This message is a digest of all preceding
@@ -452,8 +468,31 @@ func (hs *serverHandshakeState) doFullHandshake() error {
 			return unexpectedMessageError(certVerify, msg)
 		}
 
+		// Determine the signature type.
+		var signatureAndHash signatureAndHash
+		if certVerify.hasSignatureAndHash {
+			signatureAndHash = certVerify.signatureAndHash
+			if !isSupportedSignatureAndHash(signatureAndHash, supportedSignatureAlgorithms) {
+				return errors.New("tls: unsupported hash function for client certificate")
+			}
+		} else {
+			// Before TLS 1.2 the signature algorithm was implicit
+			// from the key type, and only one hash per signature
+			// algorithm was possible. Leave the hash as zero.
+			switch pub.(type) {
+			case *ecdsa.PublicKey:
+				signatureAndHash.signature = signatureECDSA
+			case *rsa.PublicKey:
+				signatureAndHash.signature = signatureRSA
+			}
+		}
+
 		switch key := pub.(type) {
 		case *ecdsa.PublicKey:
+			if signatureAndHash.signature != signatureECDSA {
+				err = errors.New("bad signature type for client's ECDSA certificate")
+				break
+			}
 			ecdsaSig := new(ecdsaSignature)
 			if _, err = asn1.Unmarshal(certVerify.signature, ecdsaSig); err != nil {
 				break
@@ -462,28 +501,34 @@ func (hs *serverHandshakeState) doFullHandshake() error {
 				err = errors.New("ECDSA signature contained zero or negative values")
 				break
 			}
-			digest, _, _ := hs.finishedHash.hashForClientCertificate(signatureECDSA)
-			if !ecdsa.Verify(key, digest, ecdsaSig.R, ecdsaSig.S) {
-				err = errors.New("ECDSA verification failure")
+			var digest []byte
+			if digest, _, err = hs.finishedHash.hashForClientCertificate(signatureAndHash, hs.masterSecret); err != nil {
 				break
 			}
+			if !ecdsa.Verify(key, digest, ecdsaSig.R, ecdsaSig.S) {
+				err = errors.New("ECDSA verification failure")
+			}
 		case *rsa.PublicKey:
-			digest, hashFunc, _ := hs.finishedHash.hashForClientCertificate(signatureRSA)
+			if signatureAndHash.signature != signatureRSA {
+				err = errors.New("bad signature type for client's RSA certificate")
+				break
+			}
+			var digest []byte
+			var hashFunc crypto.Hash
+			if digest, hashFunc, err = hs.finishedHash.hashForClientCertificate(signatureAndHash, hs.masterSecret); err != nil {
+				break
+			}
 			err = rsa.VerifyPKCS1v15(key, hashFunc, digest, certVerify.signature)
 		}
 		if err != nil {
 			c.sendAlert(alertBadCertificate)
-			return errors.New("could not validate signature of connection nonces: " + err.Error())
+			return errors.New("tls: could not validate signature of connection nonces: " + err.Error())
 		}
 
 		hs.finishedHash.Write(certVerify.marshal())
 	}
-	preMasterSecret, err := keyAgreement.processClientKeyExchange(config, hs.cert, ckx, c.vers)
-	if err != nil {
-		c.sendAlert(alertHandshakeFailure)
-		return err
-	}
-	hs.masterSecret = masterFromPreMasterSecret(c.vers, hs.suite.tls12Hash, preMasterSecret, hs.clientHello.random, hs.hello.random)
+
+	hs.finishedHash.discardHandshakeBuffer()
 
 	return nil
 }
@@ -492,7 +537,7 @@ func (hs *serverHandshakeState) establishKeys() error {
 	c := hs.c
 
 	clientMAC, serverMAC, clientKey, serverKey, clientIV, serverIV :=
-		keysFromMasterSecret(c.vers, hs.suite.tls12Hash, hs.masterSecret, hs.clientHello.random, hs.hello.random, hs.suite.macLen, hs.suite.keyLen, hs.suite.ivLen)
+		keysFromMasterSecret(c.vers, hs.suite, hs.masterSecret, hs.clientHello.random, hs.hello.random, hs.suite.macLen, hs.suite.keyLen, hs.suite.ivLen)
 
 	var clientCipher, serverCipher interface{}
 	var clientHash, serverHash macFunction
