@@ -710,6 +710,56 @@ func TestTrailingZeroBits(t *testing.T) {
 	}
 }
 
+var montMulTests = []struct {
+	x, y, m string
+	k0      Word
+	out     string
+}{
+	{
+		"0xffffffffffffffffffffffffffffffffffffffffffffffffe",
+		"0xffffffffffffffffffffffffffffffffffffffffffffffffe",
+		"0xfffffffffffffffffffffffffffffffffffffffffffffffff",
+		0x0000000000000000,
+		"0xffffffffffffffffffffffffffffffffff",
+	},
+	{
+		"0x0000000080000000",
+		"0x00000000ffffffff",
+		"0x0000000010000001",
+		0xff0000000fffffff,
+		"0x0000000007800001",
+	},
+	{
+		"0xffffffffffffffffffffffffffffffff00000000000022222223333333333444444444",
+		"0xffffffffffffffffffffffffffffffff999999999999999aaabbbbbbbbcccccccccccc",
+		"0x33377fffffffffffffffffffffffffffffffffffffffffffff0000000000022222eee1",
+		0xdecc8f1249812adf,
+		"0x14beb58d230f85b6d95eaaeca2bb7c05e51f807bce9064b5fb45669afa695f228e48cd",
+	},
+	{
+		"0x10000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000ffffffffffffffffffffffffffffffff00000000000022222223333333333444444444",
+		"0x10000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000ffffffffffffffffffffffffffffffff999999999999999aaabbbbbbbbcccccccccccc",
+		"0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff33377fffffffffffffffffffffffffffffffffffffffffffff0000000000022222eee1",
+		0xdecc8f1249812adf,
+		"0x92fcad4b5c0d52f451aec609b15da8e5e5626c4eaa88723bdeac9d25ca9b961269400410ca208a16af9c2fb07d799c32fe2f3cc5422f9711078d51a3797eb18e691295293284d8f5e69caf6decddfe1df6",
+	},
+}
+
+func TestMontMul(t *testing.T) {
+	for i, test := range montMulTests {
+		x, _, _ := nat(nil).scan(strings.NewReader(test.x), 0)
+		y, _, _ := nat(nil).scan(strings.NewReader(test.y), 0)
+		m, _, _ := nat(nil).scan(strings.NewReader(test.m), 0)
+		out, _, _ := nat(nil).scan(strings.NewReader(test.out), 0)
+
+		z := nat(nil).montMul(x, y, m, test.k0, len(m))
+		z = z.norm()
+		if z.cmp(out) != 0 {
+			t.Errorf("#%d got %s want %s", i, z.decimalString(), out.decimalString())
+		}
+	}
+}
+
 var expNNTests = []struct {
 	x, y, m string
 	out     string
