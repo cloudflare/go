@@ -21,6 +21,41 @@ import (
 	"testing"
 )
 
+func BenchmarkSignP256(b *testing.B) {
+	b.ResetTimer()
+	p256 := elliptic.P256()
+	hashed := []byte("testing")
+	priv, _ := GenerateKey(p256, rand.Reader)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, _, _ = Sign(rand.Reader, priv, hashed)
+	}
+}
+
+func BenchmarkVerifyP256(b *testing.B) {
+	b.ResetTimer()
+	p256 := elliptic.P256()
+	hashed := []byte("testing")
+	priv, _ := GenerateKey(p256, rand.Reader)
+	r, s, _ := Sign(rand.Reader, priv, hashed)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		Verify(&priv.PublicKey, hashed, r, s)
+	}
+}
+
+func BenchmarkKeyGeneration(b *testing.B) {
+	b.ResetTimer()
+	p256 := elliptic.P256()
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		GenerateKey(p256, rand.Reader)
+	}
+}
+
 func testKeyGeneration(t *testing.T, c elliptic.Curve, tag string) {
 	priv, err := GenerateKey(c, rand.Reader)
 	if err != nil {
