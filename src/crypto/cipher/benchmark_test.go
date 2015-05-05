@@ -10,19 +10,58 @@ import (
 	"testing"
 )
 
-func BenchmarkAESGCMSeal1K(b *testing.B) {
-	buf := make([]byte, 1024)
+func BenchmarkAESGCMSeal8K(b *testing.B) {
+	buf := make([]byte, 8192)
 	b.SetBytes(int64(len(buf)))
 
 	var key [16]byte
 	var nonce [12]byte
+	var ad [13]byte
 	aes, _ := aes.NewCipher(key[:])
 	aesgcm, _ := cipher.NewGCM(aes)
 	var out []byte
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		out = aesgcm.Seal(out[:0], nonce[:], buf, nonce[:])
+		out = aesgcm.Seal(out[:0], nonce[:], buf, ad[:])
+	}
+}
+
+func BenchmarkAESGCMOpen8K(b *testing.B) {
+	buf := make([]byte, 8192)
+	b.SetBytes(int64(len(buf)))
+
+	var key [16]byte
+	var nonce [12]byte
+	var ad [13]byte
+	aes, _ := aes.NewCipher(key[:])
+	aesgcm, _ := cipher.NewGCM(aes)
+	var out []byte
+	out = aesgcm.Seal(out[:0], nonce[:], buf, ad[:])
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, err := aesgcm.Open(buf[:0], nonce[:], out, ad[:])
+		if err != nil {
+			b.Errorf("Open: %v", err)
+		}
+	}
+}
+
+func BenchmarkAESGCMSeal1K(b *testing.B) {
+	buf := make([]byte, 1024)
+	b.SetBytes(int64(len(buf)))
+
+	var key [16]byte
+	var nonce [12]byte
+	var ad [13]byte
+	aes, _ := aes.NewCipher(key[:])
+	aesgcm, _ := cipher.NewGCM(aes)
+	var out []byte
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		out = aesgcm.Seal(out[:0], nonce[:], buf, ad[:])
 	}
 }
 
@@ -32,14 +71,15 @@ func BenchmarkAESGCMOpen1K(b *testing.B) {
 
 	var key [16]byte
 	var nonce [12]byte
+	var ad [13]byte
 	aes, _ := aes.NewCipher(key[:])
 	aesgcm, _ := cipher.NewGCM(aes)
 	var out []byte
-	out = aesgcm.Seal(out[:0], nonce[:], buf, nonce[:])
+	out = aesgcm.Seal(out[:0], nonce[:], buf, ad[:])
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, err := aesgcm.Open(buf[:0], nonce[:], out, nonce[:])
+		_, err := aesgcm.Open(buf[:0], nonce[:], out, ad[:])
 		if err != nil {
 			b.Errorf("Open: %v", err)
 		}
