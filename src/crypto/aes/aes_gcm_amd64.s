@@ -410,7 +410,7 @@ dataBail:
 #undef autLen
 /* --------------------------------------------------------------------------*/
 // func gcmAesEnc(productTable, dst, src, ctr, T []byte, ks []uint32)
-TEXT ·gcmAesEnc(SB),0,$400-144
+TEXT ·gcmAesEnc(SB),0,$256-144
 
 #define pTbl DI
 #define ctx DX
@@ -479,9 +479,6 @@ TEXT ·gcmAesEnc(SB),0,$400-144
 
 	MOVOU bswapMask<>(SB), BSWAP
 	MOVOU gcmPoly<>(SB), POLY
-
-	MOVQ SP, BP
-	SUBQ $(16*16), SP
 
 	MOVOU (tPtr), ACC0
 	PXOR ACC1, ACC1
@@ -921,12 +918,11 @@ ptxLoadLoop:
 
 gcmAesEncDone:
 	MOVOU ACC0, (tPtr)
-	MOVQ BP, SP
 	RET
 #undef incCTR
 /* --------------------------------------------------------------------------*/
 // func gcmAesDec(productTable, dst, src, ctr, T []byte, ks []uint32)
-TEXT ·gcmAesDec(SB),0,$272-144
+TEXT ·gcmAesDec(SB),0,$128-144
 
 #define incCTR(i) ADDL $1, aluCTR; MOVL aluCTR, aluTMP; XORL aluK, aluTMP; BSWAPL aluTMP; MOVL aluTMP, (3*4 + i*16)(SP)
 #define combinedDecRound(i) \
@@ -967,9 +963,6 @@ TEXT ·gcmAesDec(SB),0,$272-144
 
 	MOVOU bswapMask<>(SB), BSWAP
 	MOVOU gcmPoly<>(SB), POLY
-
-	MOVQ SP, BP
-	SUBQ $(16*8), SP
 
 	MOVOU (tPtr), ACC0
 	PXOR ACC1, ACC1
@@ -1272,5 +1265,4 @@ ptxStoreLoop:
 gcmAesDecDone:
 
 	MOVOU ACC0, (tPtr)
-	MOVQ BP, SP
 	RET
