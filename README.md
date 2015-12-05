@@ -1,45 +1,12 @@
-# The Go Programming Language
+This is a stable Go tree with backports from tip and/or CloudFlare commits.
 
-Go is an open source programming language that makes it easy to build simple,
-reliable, and efficient software.
+There is also a (not actively used anymore) 1.4.3-based branch at https://github.com/cloudflare/go/tree/1.4.3
 
-![Gopher image](doc/gopher/fiveyears.jpg)
+## Backports
 
-For documentation about how to install and use Go,
-visit https://golang.org/ or load doc/install-source.html
-in your web browser.
+Please note that the commit authors have no control or responsability over the backporting.
 
-Our canonical Git repository is located at https://go.googlesource.com/go.
-There is a mirror of the repository at https://github.com/golang/go.
-
-Please report issues here: https://golang.org/issue/new
-
-Go is the work of hundreds of contributors. We appreciate your help!
-
-To contribute, please read the contribution guidelines:
-	https://golang.org/doc/contribute.html
-
-##### Please note that we do not use pull requests.
-
-Unless otherwise noted, the Go source files are distributed
-under the BSD-style license found in the LICENSE file.
-
---
-
-## Binary Distribution Notes
-
-If you have just untarred a binary Go distribution, you need to set
-the environment variable $GOROOT to the full path of the go
-directory (the one containing this file).  You can omit the
-variable if you unpack it into /usr/local/go, or if you rebuild
-from sources by running all.bash (see doc/install-source.html).
-You should also add the Go binary directory $GOROOT/bin
-to your shell's path.
-
-For example, if you extracted the tar file into $HOME/go, you might
-put the following in your .profile:
-
-	export GOROOT=$HOME/go
-	export PATH=$PATH:$GOROOT/bin
-
-See https://golang.org/doc/install or doc/install.html for more details.
+```
+crypto/elliptic,crypto/ecdsa: P256 amd64 assembly <Vlad Krasnov>
+crypto/aes: dedicated asm version of AES-GCM <Vlad Krasnov>
+```
