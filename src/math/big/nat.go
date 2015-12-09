@@ -233,25 +233,25 @@ func (z nat) montgomery(x, y, m nat, k Word, n int) nat {
 	if len(x) != n || len(y) != n || len(m) != n {
 		panic("math/big: mismatched montgomery number lengths")
 	}
-	var c1, c2, c3 Word
 	z = z.make(n)
 	z.clear()
+	var c Word
 	for i := 0; i < n; i++ {
 		d := y[i]
-		c2 = addMulVVW(z, x, d)
+		c2 := addMulVVW(z, x, d)
 		t := z[0] * k
-		c3 = addMulVVW(z, m, t)
+		c3 := addMulVVW(z, m, t)
 		copy(z, z[1:])
-		cx := c1 + c2
+		cx := c + c2
 		cy := cx + c3
 		z[n-1] = cy
 		if cx < c2 || cy < c3 {
-			c1 = 1
+			c = 1
 		} else {
-			c1 = 0
+			c = 0
 		}
 	}
-	if c1 != 0 {
+	if c != 0 {
 		subVV(z, z, m)
 	}
 	return z
@@ -1076,23 +1076,19 @@ func (z nat) expNNWindowed(x, y, m nat) nat {
 // expNNMontgomery calculates x**y mod m using a fixed, 4-bit window.
 // Uses Montgomery representation.
 func (z nat) expNNMontgomery(x, y, m nat) nat {
-	var zz, one, rr, RR nat
-
 	numWords := len(m)
 
 	// We want the lengths of x and m to be equal.
+	// It is OK if x >= m as long as len(x) == len(m).
 	if len(x) > numWords {
-		_, rr = rr.div(rr, x, m)
-	} else if len(x) < numWords {
-		rr = rr.make(numWords)
-		rr.clear()
-		for i := range x {
-			rr[i] = x[i]
-		}
-	} else {
-		rr = x
+		_, x = nat(nil).div(nil, x, m)
+		// Note: now len(x) <= numWords, not guaranteed ==.
 	}
-	x = rr
+	if len(x) < numWords {
+		rr := make(nat, numWords)
+		copy(rr, x)
+		x = rr
+	}
 
 	// Ideally the precomputations would be performed outside, and reused
 	// k0 = -mˆ-1 mod 2ˆ_W. Algorithm from: Dumas, J.G. "On Newton–Raphson
@@ -1105,9 +1101,9 @@ func (z nat) expNNMontgomery(x, y, m nat) nat {
 	}
 	k0 = -k0
 
-	// RR = 2ˆ(2*_W*len(m)) mod m
-	RR = RR.setWord(1)
-	zz = zz.shl(RR, uint(2*numWords*_W))
+	// RR = 2**(2*_W*len(m)) mod m
+	RR := nat(nil).setWord(1)
+	zz := nat(nil).shl(RR, uint(2*numWords*_W))
 	_, RR = RR.div(RR, zz, m)
 	if len(RR) < numWords {
 		zz = zz.make(numWords)
@@ -1115,8 +1111,7 @@ func (z nat) expNNMontgomery(x, y, m nat) nat {
 		RR = zz
 	}
 	// one = 1, with equal length to that of m
-	one = one.make(numWords)
-	one.clear()
+	one := make(nat, numWords)
 	one[0] = 1
 
 	const n = 4
