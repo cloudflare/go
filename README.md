@@ -9,4 +9,6 @@ Please note that the commit authors have no control or responsability over the b
 ```
 crypto/elliptic,crypto/ecdsa: P256 amd64 assembly <Vlad Krasnov>
 crypto/aes: dedicated asm version of AES-GCM <Vlad Krasnov>
+math/big: additional Montgomery cleanup <Russ Cox>
+crypto/rsa: check CRT result. <Adam Langley>
 ```
