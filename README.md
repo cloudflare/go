@@ -1,6 +1,8 @@
-This is a stable Go tree with backports from tip and/or CloudFlare commits.
+This is a stable 1.5.3 Go tree with backports from tip and/or CloudFlare commits.
 
 There is also a (not actively used anymore) 1.4.3-based branch at https://github.com/cloudflare/go/tree/1.4.3
+
+**Note**: all patches and backports as of go1.5.3-cloudflare1 landed in Go 1.6.
 
 ## Backports
 
