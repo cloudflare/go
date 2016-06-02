@@ -314,17 +314,19 @@ var pkgDeps = map[string][]string{
 	"net/textproto": {"L4", "OS", "net"},
 
 	// Core crypto.
-	"crypto/aes":    {"L3"},
-	"crypto/des":    {"L3"},
-	"crypto/hmac":   {"L3"},
-	"crypto/md5":    {"L3"},
-	"crypto/rc4":    {"L3"},
-	"crypto/sha1":   {"L3"},
-	"crypto/sha256": {"L3"},
-	"crypto/sha512": {"L3"},
+	"crypto/aes":              {"L3"},
+	"crypto/chacha20poly1305": {"L3"},
+	"crypto/des":              {"L3"},
+	"crypto/hmac":             {"L3"},
+	"crypto/md5":              {"L3"},
+	"crypto/rc4":              {"L3"},
+	"crypto/sha1":             {"L3"},
+	"crypto/sha256":           {"L3"},
+	"crypto/sha512":           {"L3"},
 
 	"CRYPTO": {
 		"crypto/aes",
+		"crypto/chacha20poly1305",
 		"crypto/des",
 		"crypto/hmac",
 		"crypto/md5",
