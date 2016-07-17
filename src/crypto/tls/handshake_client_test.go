@@ -296,6 +296,7 @@ func (test *clientTest) run(t *testing.T, write bool) {
 	if config == nil {
 		config = testConfig
 	}
+	config.CipherSuites = allCipherSuites()[2:]
 	client := Client(clientConn, config)
 
 	doneChan := make(chan bool)
@@ -441,9 +442,12 @@ func runClientTestTLS12(t *testing.T, template *clientTest) {
 }
 
 func TestHandshakeClientRSARC4(t *testing.T) {
+	config := *testConfig
+	config.CipherSuites = allCipherSuites()[2:]
 	test := &clientTest{
 		name:    "RSA-RC4",
 		command: []string{"openssl", "s_server", "-cipher", "RC4-SHA"},
+		config:  &config,
 	}
 	runClientTestTLS10(t, test)
 	runClientTestTLS11(t, test)
@@ -451,25 +455,34 @@ func TestHandshakeClientRSARC4(t *testing.T) {
 }
 
 func TestHandshakeClientRSAAES128GCM(t *testing.T) {
+	config := *testConfig
+	config.CipherSuites = allCipherSuites()[2:]
 	test := &clientTest{
 		name:    "AES128-GCM-SHA256",
 		command: []string{"openssl", "s_server", "-cipher", "AES128-GCM-SHA256"},
+		config:  &config,
 	}
 	runClientTestTLS12(t, test)
 }
 
 func TestHandshakeClientRSAAES256GCM(t *testing.T) {
+	config := *testConfig
+	config.CipherSuites = allCipherSuites()[2:]
 	test := &clientTest{
 		name:    "AES256-GCM-SHA384",
 		command: []string{"openssl", "s_server", "-cipher", "AES256-GCM-SHA384"},
+		config:  &config,
 	}
 	runClientTestTLS12(t, test)
 }
 
 func TestHandshakeClientECDHERSAAES(t *testing.T) {
+	config := *testConfig
+	config.CipherSuites = allCipherSuites()[2:]
 	test := &clientTest{
 		name:    "ECDHE-RSA-AES",
 		command: []string{"openssl", "s_server", "-cipher", "ECDHE-RSA-AES128-SHA"},
+		config:  &config,
 	}
 	runClientTestTLS10(t, test)
 	runClientTestTLS11(t, test)
@@ -477,9 +490,12 @@ func TestHandshakeClientECDHERSAAES(t *testing.T) {
 }
 
 func TestHandshakeClientECDHEECDSAAES(t *testing.T) {
+	config := *testConfig
+	config.CipherSuites = allCipherSuites()[2:]
 	test := &clientTest{
 		name:    "ECDHE-ECDSA-AES",
 		command: []string{"openssl", "s_server", "-cipher", "ECDHE-ECDSA-AES128-SHA"},
+		config:  &config,
 		cert:    testECDSACertificate,
 		key:     testECDSAPrivateKey,
 	}
@@ -489,9 +505,12 @@ func TestHandshakeClientECDHEECDSAAES(t *testing.T) {
 }
 
 func TestHandshakeClientECDHEECDSAAESGCM(t *testing.T) {
+	config := *testConfig
+	config.CipherSuites = allCipherSuites()[2:]
 	test := &clientTest{
 		name:    "ECDHE-ECDSA-AES-GCM",
 		command: []string{"openssl", "s_server", "-cipher", "ECDHE-ECDSA-AES128-GCM-SHA256"},
+		config:  &config,
 		cert:    testECDSACertificate,
 		key:     testECDSAPrivateKey,
 	}
@@ -499,9 +518,12 @@ func TestHandshakeClientECDHEECDSAAESGCM(t *testing.T) {
 }
 
 func TestHandshakeClientAES256GCMSHA384(t *testing.T) {
+	config := *testConfig
+	config.CipherSuites = allCipherSuites()[2:]
 	test := &clientTest{
 		name:    "ECDHE-ECDSA-AES256-GCM-SHA384",
 		command: []string{"openssl", "s_server", "-cipher", "ECDHE-ECDSA-AES256-GCM-SHA384"},
+		config:  &config,
 		cert:    testECDSACertificate,
 		key:     testECDSAPrivateKey,
 	}
@@ -512,6 +534,7 @@ func TestHandshakeClientCertRSA(t *testing.T) {
 	config := testConfig.clone()
 	cert, _ := X509KeyPair([]byte(clientCertificatePEM), []byte(clientKeyPEM))
 	config.Certificates = []Certificate{cert}
+	config.CipherSuites = allCipherSuites()[2:]
 
 	test := &clientTest{
 		name:    "ClientCert-RSA-RSA",
@@ -548,6 +571,7 @@ func TestHandshakeClientCertECDSA(t *testing.T) {
 	config := testConfig.clone()
 	cert, _ := X509KeyPair([]byte(clientECDSACertificatePEM), []byte(clientECDSAKeyPEM))
 	config.Certificates = []Certificate{cert}
+	config.CipherSuites = allCipherSuites()[2:]
 
 	test := &clientTest{
 		name:    "ClientCert-ECDSA-RSA",
@@ -692,6 +716,7 @@ func TestLRUClientSessionCache(t *testing.T) {
 
 func TestHandshakeClientALPNMatch(t *testing.T) {
 	config := testConfig.clone()
+	config.CipherSuites = allCipherSuites()[2:]
 	config.NextProtos = []string{"proto2", "proto1"}
 
 	test := &clientTest{
@@ -713,6 +738,7 @@ func TestHandshakeClientALPNMatch(t *testing.T) {
 
 func TestHandshakeClientALPNNoMatch(t *testing.T) {
 	config := testConfig.clone()
+	config.CipherSuites = allCipherSuites()[2:]
 	config.NextProtos = []string{"proto3"}
 
 	test := &clientTest{
@@ -737,6 +763,7 @@ const sctsBase64 = "ABIBaQFnAHUApLkJkLQYWBSHuxOizGdwCjw1mAT5G9+443fNDsgN3BAAAAFH
 
 func TestHandshakClientSCTs(t *testing.T) {
 	config := testConfig.clone()
+	config.CipherSuites = allCipherSuites()[2:]
 
 	scts, err := base64.StdEncoding.DecodeString(sctsBase64)
 	if err != nil {

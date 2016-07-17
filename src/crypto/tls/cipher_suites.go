@@ -6,6 +6,7 @@ package tls
 
 import (
 	"crypto/aes"
+	"crypto/chacha20poly1305"
 	"crypto/cipher"
 	"crypto/des"
 	"crypto/hmac"
@@ -75,6 +76,8 @@ type cipherSuite struct {
 var cipherSuites = []*cipherSuite{
 	// Ciphersuite order is chosen so that ECDHE comes before plain RSA
 	// and RC4 comes before AES-CBC (because of the Lucky13 attack).
+	{TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305, 32, 0, 12, ecdheRSAKA, suiteECDHE | suiteTLS12, nil, nil, aeadChacha20Poly1305},
+	{TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305, 32, 0, 12, ecdheECDSAKA, suiteECDHE | suiteECDSA | suiteTLS12, nil, nil, aeadChacha20Poly1305},
 	{TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256, 16, 0, 4, ecdheRSAKA, suiteECDHE | suiteTLS12, nil, nil, aeadAESGCM},
 	{TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256, 16, 0, 4, ecdheECDSAKA, suiteECDHE | suiteECDSA | suiteTLS12, nil, nil, aeadAESGCM},
 	{TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384, 32, 0, 4, ecdheRSAKA, suiteECDHE | suiteTLS12 | suiteSHA384, nil, nil, aeadAESGCM},
@@ -143,6 +146,11 @@ type fixedNonceAEAD struct {
 	aead                 cipher.AEAD
 }
 
+type xoredNonceAEAD struct {
+	fixedNonce []byte
+	aead       cipher.AEAD
+}
+
 func (f *fixedNonceAEAD) NonceSize() int { return 8 }
 func (f *fixedNonceAEAD) Overhead() int  { return f.aead.Overhead() }
 
@@ -154,6 +162,31 @@ func (f *fixedNonceAEAD) Seal(out, nonce, plaintext, additionalData []byte) []by
 func (f *fixedNonceAEAD) Open(out, nonce, plaintext, additionalData []byte) ([]byte, error) {
 	copy(f.openNonce[len(f.openNonce)-8:], nonce)
 	return f.aead.Open(out, f.openNonce, plaintext, additionalData)
+}
+
+func (f *xoredNonceAEAD) NonceSize() int { return 12 }
+func (f *xoredNonceAEAD) Overhead() int  { return f.aead.Overhead() }
+
+func (f *xoredNonceAEAD) Seal(out, nonce, plaintext, additionalData []byte) []byte {
+	var xoredNonce [12]byte
+	copy(xoredNonce[:], f.fixedNonce)
+
+	for i := 0; i < 8; i++ {
+		xoredNonce[i+4] ^= nonce[i]
+	}
+
+	return f.aead.Seal(out, xoredNonce[:], plaintext, additionalData)
+}
+
+func (f *xoredNonceAEAD) Open(out, nonce, plaintext, additionalData []byte) ([]byte, error) {
+	var xoredNonce [12]byte
+	copy(xoredNonce[:], f.fixedNonce)
+
+	for i := 0; i < 8; i++ {
+		xoredNonce[i+4] ^= nonce[i]
+	}
+
+	return f.aead.Open(out, xoredNonce[:], plaintext, additionalData)
 }
 
 func aeadAESGCM(key, fixedNonce []byte) cipher.AEAD {
@@ -171,6 +204,18 @@ func aeadAESGCM(key, fixedNonce []byte) cipher.AEAD {
 	copy(nonce2, fixedNonce)
 
 	return &fixedNonceAEAD{nonce1, nonce2, aead}
+}
+
+func aeadChacha20Poly1305(key, fixedNonce []byte) cipher.AEAD {
+	cp, err := chacha20poly1305.NewChachaPoly(key)
+	if err != nil {
+		panic(err)
+	}
+
+	nonce := make([]byte, 12)
+	copy(nonce, fixedNonce)
+
+	return &xoredNonceAEAD{nonce, cp}
 }
 
 // ssl30MAC implements the SSLv3 MAC function, as defined in
@@ -283,6 +328,8 @@ const (
 	TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256 uint16 = 0xc02b
 	TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384   uint16 = 0xc030
 	TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384 uint16 = 0xc02c
+	TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305    uint16 = 0xcca8
+	TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305  uint16 = 0xcca9
 
 	// TLS_FALLBACK_SCSV isn't a standard cipher suite but an indicator
 	// that the client is doing version fallback. See
