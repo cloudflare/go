@@ -6,41 +6,51 @@ import (
 	"unsafe"
 )
 
-type chacha20Cipher struct {
-	state [16]uint32
-	buf   [16]uint32
-	avail int
-}
-
-type KeySizeError int
-type IVSizeError int
-
 const outputBufferSize = 64
+
+// KeySizeError is returned when the key is not 32 bytes length.
+// Its value is the length of the passed key.
+type KeySizeError int
 
 func (k KeySizeError) Error() string {
 	return "crypto/chacha20poly1305: invalid key size " + strconv.Itoa(int(k))
 }
 
-func (i IVSizeError) Error() string {
-	return "crypto/chacha20poly1305: invalid iv size " + strconv.Itoa(int(i))
+// NonceSizeError is returned when the nonce is not 12 bytes length.
+// Its value is the length of the passed nonce.
+type NonceSizeError int
+
+func (i NonceSizeError) Error() string {
+	return "crypto/chacha20poly1305: invalid nonce size " + strconv.Itoa(int(i))
 }
 
 func u8tou32(in []byte) uint32 {
 	if supportsUnaligned {
 		return *(*uint32)(unsafe.Pointer(&in[0]))
-	} else {
-		return uint32(in[0]) ^ uint32(in[1])<<8 ^ uint32(in[2])<<16 ^ uint32(in[3])<<24
 	}
+	return uint32(in[0]) ^ uint32(in[1])<<8 ^ uint32(in[2])<<16 ^ uint32(in[3])<<24
 }
 
-func newChacha(key []byte) (*chacha20Cipher, error) {
+// A Cipher is an instance of ChaCha20 using a particular key.
+//
+// The raw cipher does not provide authentication, is unoptimized and should
+// generally not be used. Use the AEAD instead.
+type Cipher struct {
+	state [16]uint32
+	buf   [16]uint32
+	avail int
+}
+
+var _ cipher.Stream = &Cipher{}
+
+func newChaCha(key []byte) (*Cipher, error) {
 	k := len(key)
 
 	if k != 32 {
 		return nil, KeySizeError(k)
 	}
 
-	c := chacha20Cipher{state: [16]uint32{0x61707865, 0x3320646e, 0x79622d32, 0x6b206574,
+	c := Cipher{state: [16]uint32{0x61707865, 0x3320646e, 0x79622d32, 0x6b206574,
 		u8tou32(key[0:4]), u8tou32(key[4:8]), u8tou32(key[8:12]), u8tou32(key[12:16]),
 		u8tou32(key[16:20]), u8tou32(key[20:24]), u8tou32(key[24:28]), u8tou32(key[28:32]),
 		0, 0, 0, 0},
@@ -49,11 +59,11 @@ func newChacha(key []byte) (*chacha20Cipher, error) {
 	return &c, nil
 }
 
-func (c *chacha20Cipher) setIV(iv []byte, ctr uint32) error {
+func (c *Cipher) setIV(iv []byte, ctr uint32) error {
 	i := len(iv)
 
 	if i != 12 {
-		return IVSizeError(i)
+		return NonceSizeError(i)
 	}
 
 	c.state[12] = ctr
@@ -65,14 +75,19 @@ func (c *chacha20Cipher) setIV(iv []byte, ctr uint32) error {
 	return nil
 }
 
-func NewCipher(key, iv []byte, ctr uint32) (cipher.Stream, error) {
-
-	c, err := newChacha(key)
+// NewCipher creates and returns a new Cipher.
+// The key argument should be 32 bytes long.
+// The nonce argument should be 12 bytes long.
+// The ctr argument is the starting ChaCha20 block counter, it will commonly be 0.
+//
+// Most users will want to use the higher-level NewAEAD instead.
+func NewCipher(key, nonce []byte, ctr uint32) (*Cipher, error) {
+	c, err := newChaCha(key)
 	if err != nil {
 		return nil, err
 	}
 
-	if err := c.setIV(iv, ctr); err != nil {
+	if err := c.setIV(nonce, ctr); err != nil {
 		return nil, err
 	}
 
@@ -80,7 +95,6 @@ func NewCipher(key, iv []byte, ctr uint32) (cipher.Stream, error) {
 }
 
 func quarterRound(a, b, c, d uint32) (uint32, uint32, uint32, uint32) {
-
 	a += b
 	d ^= a
 	d = d<<16 ^ d>>16
@@ -100,8 +114,7 @@ func quarterRound(a, b, c, d uint32) (uint32, uint32, uint32, uint32) {
 	return a, b, c, d
 }
 
-func (c *chacha20Cipher) core() {
-
+func (c *Cipher) core() {
 	s0 := c.state[0x0]
 	s1 := c.state[0x1]
 	s2 := c.state[0x2]
@@ -152,8 +165,10 @@ func (c *chacha20Cipher) core() {
 	c.avail = 64
 }
 
-func (c *chacha20Cipher) XORKeyStream(dst, src []byte) {
-
+// XORKeyStream sets dst to the result of XORing src with the key stream.
+//
+// dst and src can overlap completely or not at all.
+func (c *Cipher) XORKeyStream(dst, src []byte) {
 	buf := (*[64]byte)(unsafe.Pointer(&c.buf[0]))
 
 	for len(src) > 0 {

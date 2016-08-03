@@ -283,10 +283,22 @@ pkg unicode, var Osage *RangeTable
 pkg unicode, var Prepended_Concatenation_Mark *RangeTable
 pkg unicode, var Sentence_Terminal *RangeTable
 pkg unicode, var Tangut *RangeTable
-pkg crypto/chacha20poly1305, func NewChachaPoly([]uint8) (cipher.AEAD, error)
-pkg crypto/chacha20poly1305, func NewCipher([]uint8, []uint8, uint32) (cipher.Stream, error)
-pkg crypto/chacha20poly1305, func NewMac([]uint8) (*poly1305MAC, error)
-pkg crypto/chacha20poly1305, method (IVSizeError) Error() string
+pkg crypto/chacha20poly1305, const MACSize = 16
+pkg crypto/chacha20poly1305, const MACSize ideal-int
+pkg crypto/chacha20poly1305, func NewAEAD([]uint8) (*AEAD, error)
+pkg crypto/chacha20poly1305, func NewCipher([]uint8, []uint8, uint32) (*Cipher, error)
+pkg crypto/chacha20poly1305, func NewMAC([]uint8) (*MAC, error)
+pkg crypto/chacha20poly1305, method (*AEAD) NonceSize() int
+pkg crypto/chacha20poly1305, method (*AEAD) Open([]uint8, []uint8, []uint8, []uint8) ([]uint8, error)
+pkg crypto/chacha20poly1305, method (*AEAD) Overhead() int
+pkg crypto/chacha20poly1305, method (*AEAD) Seal([]uint8, []uint8, []uint8, []uint8) []uint8
+pkg crypto/chacha20poly1305, method (*Cipher) XORKeyStream([]uint8, []uint8)
+pkg crypto/chacha20poly1305, method (*MAC) Finish([]uint8) []uint8
+pkg crypto/chacha20poly1305, method (*MAC) Update([]uint8)
 pkg crypto/chacha20poly1305, method (KeySizeError) Error() string
-pkg crypto/chacha20poly1305, type IVSizeError int
+pkg crypto/chacha20poly1305, method (NonceSizeError) Error() string
+pkg crypto/chacha20poly1305, type AEAD struct
+pkg crypto/chacha20poly1305, type Cipher struct
 pkg crypto/chacha20poly1305, type KeySizeError int
+pkg crypto/chacha20poly1305, type MAC struct
+pkg crypto/chacha20poly1305, type NonceSizeError int
