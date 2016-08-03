@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package cipher
+package bytesop
 
 import (
 	"bytes"
@@ -17,7 +17,7 @@ func TestXOR(t *testing.T) {
 				q := make([]byte, 1024)[alignQ:]
 				d1 := make([]byte, 1024+alignD)[alignD:]
 				d2 := make([]byte, 1024+alignD)[alignD:]
-				xorBytes(d1, p, q)
+				XORBytes(d1, p, q)
 				safeXORBytes(d2, p, q)
 				if !bytes.Equal(d1, d2) {
 					t.Error("not equal")

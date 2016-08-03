@@ -1,5 +1,7 @@
 package chacha20poly1305
 
+import "crypto/internal/bytesop"
+
 //go:noescape
 func chacha20Poly1305Open(dst []byte, key []uint32, src, ad []byte) bool
 
@@ -12,7 +14,7 @@ func (a *AEAD) Seal(dst, nonce, plaintext, additionalData []byte) []byte {
 		panic("crypto/chacha20poly1305: incorrect nonce length")
 	}
 
-	ret, out := sliceForAppend(dst, len(plaintext)+16)
+	ret, out := bytesop.SliceForAppend(dst, len(plaintext)+16)
 	chacha20Poly1305Seal(out[:], a.cp.state[:], plaintext, additionalData)
 	return ret
 }
@@ -28,7 +30,7 @@ func (a *AEAD) Open(dst, nonce, ciphertext, additionalData []byte) ([]byte, erro
 	}
 
 	ciphertext = ciphertext[:len(ciphertext)-16]
-	ret, out := sliceForAppend(dst, len(ciphertext))
+	ret, out := bytesop.SliceForAppend(dst, len(ciphertext))
 	if chacha20Poly1305Open(out, a.cp.state[:], ciphertext, additionalData) != true {
 		return nil, errOpen
 	}

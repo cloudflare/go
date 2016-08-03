@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package cipher
+package bytesop
 
 import (
 	"runtime"
@@ -10,7 +10,9 @@ import (
 )
 
 const wordSize = int(unsafe.Sizeof(uintptr(0)))
-const supportsUnaligned = runtime.GOARCH == "386" || runtime.GOARCH == "amd64" || runtime.GOARCH == "ppc64" || runtime.GOARCH == "ppc64le" || runtime.GOARCH == "s390x"
+
+// SupportsUnaligned is true on architectures that support unaligned read/writes.
+const SupportsUnaligned = runtime.GOARCH == "386" || runtime.GOARCH == "amd64"
 
 // fastXORBytes xors in bulk. It only works on architectures that
 // support unaligned read/writes.
@@ -48,10 +50,10 @@ func safeXORBytes(dst, a, b []byte) int {
 	return n
 }
 
-// xorBytes xors the bytes in a and b. The destination is assumed to have enough
+// XORBytes xors the bytes in a and b. The destination is assumed to have enough
 // space. Returns the number of bytes xor'd.
-func xorBytes(dst, a, b []byte) int {
-	if supportsUnaligned {
+func XORBytes(dst, a, b []byte) int {
+	if SupportsUnaligned {
 		return fastXORBytes(dst, a, b)
 	} else {
 		// TODO(hanwen): if (dst, a, b) have common alignment
@@ -63,8 +65,6 @@ func xorBytes(dst, a, b []byte) int {
 	}
 }
 
-// fastXORWords XORs multiples of 4 or 8 bytes (depending on architecture.)
-// The arguments are assumed to be of equal length.
 func fastXORWords(dst, a, b []byte) {
 	dw := *(*[]uintptr)(unsafe.Pointer(&dst))
 	aw := *(*[]uintptr)(unsafe.Pointer(&a))
@@ -75,8 +75,10 @@ func fastXORWords(dst, a, b []byte) {
 	}
 }
 
-func xorWords(dst, a, b []byte) {
-	if supportsUnaligned {
+// XORWords XORs multiples of 4 or 8 bytes (depending on architecture.)
+// The arguments are assumed to be of equal length.
+func XORWords(dst, a, b []byte) {
+	if SupportsUnaligned {
 		fastXORWords(dst, a, b)
 	} else {
 		safeXORBytes(dst, a, b)

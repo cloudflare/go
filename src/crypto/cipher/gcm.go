@@ -5,6 +5,7 @@
 package cipher
 
 import (
+	"crypto/internal/bytesop"
 	"crypto/subtle"
 	"errors"
 )
@@ -135,7 +136,7 @@ func (g *gcm) Seal(dst, nonce, plaintext, data []byte) []byte {
 	if len(nonce) != g.nonceSize {
 		panic("cipher: incorrect nonce length given to GCM")
 	}
-	ret, out := sliceForAppend(dst, len(plaintext)+gcmTagSize)
+	ret, out := bytesop.SliceForAppend(dst, len(plaintext)+gcmTagSize)
 
 	var counter, tagMask [gcmBlockSize]byte
 	g.deriveCounter(&counter, nonce)
@@ -171,7 +172,7 @@ func (g *gcm) Open(dst, nonce, ciphertext, data []byte) ([]byte, error) {
 	var expectedTag [gcmTagSize]byte
 	g.auth(expectedTag[:], ciphertext, data, &tagMask)
 
-	ret, out := sliceForAppend(dst, len(ciphertext))
+	ret, out := bytesop.SliceForAppend(dst, len(ciphertext))
 
 	if subtle.ConstantTimeCompare(expectedTag[:], tag) != 1 {
 		// The AESNI code decrypts and authenticates concurrently, and
@@ -298,21 +299,6 @@ func gcmInc32(counterBlock *[16]byte) {
 	}
 }
 
-// sliceForAppend takes a slice and a requested number of bytes. It returns a
-// slice with the contents of the given slice followed by that many bytes and a
-// second slice that aliases into it and contains only the extra bytes. If the
-// original slice has sufficient capacity then no allocation is performed.
-func sliceForAppend(in []byte, n int) (head, tail []byte) {
-	if total := len(in) + n; cap(in) >= total {
-		head = in[:total]
-	} else {
-		head = make([]byte, total)
-		copy(head, in)
-	}
-	tail = head[len(in):]
-	return
-}
-
 // counterCrypt crypts in to out using g.cipher in counter mode.
 func (g *gcm) counterCrypt(out, in []byte, counter *[gcmBlockSize]byte) {
 	var mask [gcmBlockSize]byte
@@ -321,7 +307,7 @@ func (g *gcm) counterCrypt(out, in []byte, counter *[gcmBlockSize]byte) {
 		g.cipher.Encrypt(mask[:], counter[:])
 		gcmInc32(counter)
 
-		xorWords(out, in, mask[:])
+		bytesop.XORWords(out, in, mask[:])
 		out = out[gcmBlockSize:]
 		in = in[gcmBlockSize:]
 	}
@@ -329,7 +315,7 @@ func (g *gcm) counterCrypt(out, in []byte, counter *[gcmBlockSize]byte) {
 	if len(in) > 0 {
 		g.cipher.Encrypt(mask[:], counter[:])
 		gcmInc32(counter)
-		xorBytes(out, in, mask[:])
+		bytesop.XORBytes(out, in, mask[:])
 	}
 }
 
@@ -371,7 +357,7 @@ func (g *gcm) auth(out, ciphertext, additionalData []byte, tagMask *[gcmTagSize]
 	putUint64(out, y.low)
 	putUint64(out[8:], y.high)
 
-	xorWords(out, out, tagMask[:])
+	bytesop.XORWords(out, out, tagMask[:])
 }
 
 func getUint64(data []byte) uint64 {

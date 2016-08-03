@@ -2,6 +2,7 @@ package chacha20poly1305
 
 import (
 	"crypto/cipher"
+	"crypto/internal/bytesop"
 	"strconv"
 	"unsafe"
 )
@@ -25,7 +26,7 @@ func (i NonceSizeError) Error() string {
 }
 
 func u8tou32(in []byte) uint32 {
-	if supportsUnaligned {
+	if bytesop.SupportsUnaligned {
 		return *(*uint32)(unsafe.Pointer(&in[0]))
 	}
 	return uint32(in[0]) ^ uint32(in[1])<<8 ^ uint32(in[2])<<16 ^ uint32(in[3])<<24
@@ -174,7 +175,7 @@ func (c *Cipher) XORKeyStream(dst, src []byte) {
 		if c.avail == 0 {
 			c.core()
 		}
-		n := xorBytes(dst, src, buf[64-c.avail:])
+		n := bytesop.XORBytes(dst, src, buf[64-c.avail:])
 
 		c.avail -= n
 		dst = dst[n:]

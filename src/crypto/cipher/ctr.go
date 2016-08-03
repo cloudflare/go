@@ -12,6 +12,8 @@
 
 package cipher
 
+import "crypto/internal/bytesop"
+
 type ctr struct {
 	b       Block
 	ctr     []byte
@@ -75,7 +77,7 @@ func (x *ctr) XORKeyStream(dst, src []byte) {
 		if x.outUsed >= len(x.out)-x.b.BlockSize() {
 			x.refill()
 		}
-		n := xorBytes(dst, src, x.out[x.outUsed:])
+		n := bytesop.XORBytes(dst, src, x.out[x.outUsed:])
 		dst = dst[n:]
 		src = src[n:]
 		x.outUsed += n

@@ -1,6 +1,7 @@
 package chacha20poly1305
 
 import (
+	"crypto/internal/bytesop"
 	"crypto/subtle"
 	"encoding/binary"
 	"unsafe"
@@ -31,7 +32,7 @@ func NewMAC(key []byte) (*MAC, error) {
 		return nil, KeySizeError(k)
 	}
 
-	if supportsUnaligned {
+	if bytesop.SupportsUnaligned {
 		ptr := (*[8]uint32)(unsafe.Pointer(&key[0]))
 
 		return &MAC{0, 0, 0, 0, 0,
@@ -78,7 +79,7 @@ func (p *MAC) Update(in []byte) {
 loop:
 	for len(in) >= 16 {
 		/* ai will have at most 33 bits */
-		if supportsUnaligned {
+		if bytesop.SupportsUnaligned {
 			ptr := (*[4]uint32)(unsafe.Pointer(&in[0]))
 			a0 += uint64(ptr[0])
 			a1 += uint64(ptr[1])
@@ -183,7 +184,7 @@ func (p *MAC) Finish(b []byte) []byte {
 	p.a2 = a2 & 0xffffffff
 	p.a3 = a3 & 0xffffffff
 
-	res, dst := sliceForAppend(b, 16)
+	res, dst := bytesop.SliceForAppend(b, 16)
 	writeU32(p.a0, dst[0:4])
 	writeU32(p.a1, dst[4:8])
 	writeU32(p.a2, dst[8:12])

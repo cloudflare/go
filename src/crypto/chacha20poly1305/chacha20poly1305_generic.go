@@ -3,6 +3,7 @@
 package chacha20poly1305
 
 import (
+	"crypto/internal/bytesop"
 	"crypto/subtle"
 	"encoding/binary"
 )
@@ -17,7 +18,7 @@ func (x *AEAD) Seal(dst, nonce, plaintext, additionalData []byte) []byte {
 		panic("crypto/chacha20poly1305: incorrect nonce length")
 	}
 
-	ret, out := sliceForAppend(dst, len(plaintext)+16)
+	ret, out := bytesop.SliceForAppend(dst, len(plaintext)+16)
 
 	var polyKey [64]byte
 	var pad1, pad2 [16]byte
@@ -111,7 +112,7 @@ func (x *AEAD) Open(dst, nonce, ciphertext, additionalData []byte) ([]byte, erro
 	poly.Update(pad2[:])
 	poly.Finish(pad2[:0])
 
-	ret, out := sliceForAppend(dst, len(ciphertext))
+	ret, out := bytesop.SliceForAppend(dst, len(ciphertext))
 	if subtle.ConstantTimeCompare(pad2[:], tag) != 1 {
 		// Mimic AES-GCM
 		for i := range out {

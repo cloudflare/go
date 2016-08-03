@@ -8,6 +8,7 @@ package aes
 
 import (
 	"crypto/cipher"
+	"crypto/internal/bytesop"
 	"crypto/subtle"
 	"errors"
 )
@@ -78,21 +79,6 @@ func (*gcmAsm) Overhead() int {
 	return gcmTagSize
 }
 
-// sliceForAppend takes a slice and a requested number of bytes. It returns a
-// slice with the contents of the given slice followed by that many bytes and a
-// second slice that aliases into it and contains only the extra bytes. If the
-// original slice has sufficient capacity then no allocation is performed.
-func sliceForAppend(in []byte, n int) (head, tail []byte) {
-	if total := len(in) + n; cap(in) >= total {
-		head = in[:total]
-	} else {
-		head = make([]byte, total)
-		copy(head, in)
-	}
-	tail = head[len(in):]
-	return
-}
-
 // Seal encrypts and authenticates plaintext. See the cipher.AEAD interface for
 // details.
 func (g *gcmAsm) Seal(dst, nonce, plaintext, data []byte) []byte {
@@ -117,7 +103,7 @@ func (g *gcmAsm) Seal(dst, nonce, plaintext, data []byte) []byte {
 	var tagOut [gcmTagSize]byte
 	gcmAesData(&g.productTable, data, &tagOut)
 
-	ret, out := sliceForAppend(dst, len(plaintext)+gcmTagSize)
+	ret, out := bytesop.SliceForAppend(dst, len(plaintext)+gcmTagSize)
 	if len(plaintext) > 0 {
 		gcmAesEnc(&g.productTable, out, plaintext, &counter, &tagOut, g.ks)
 	}
@@ -158,7 +144,7 @@ func (g *gcmAsm) Open(dst, nonce, ciphertext, data []byte) ([]byte, error) {
 	var expectedTag [gcmTagSize]byte
 	gcmAesData(&g.productTable, data, &expectedTag)
 
-	ret, out := sliceForAppend(dst, len(ciphertext))
+	ret, out := bytesop.SliceForAppend(dst, len(ciphertext))
 	if len(ciphertext) > 0 {
 		gcmAesDec(&g.productTable, out, ciphertext, &counter, &expectedTag, g.ks)
 	}
