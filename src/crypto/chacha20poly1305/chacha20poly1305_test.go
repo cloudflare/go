@@ -14,11 +14,9 @@ func TestPoly1305(t *testing.T) {
 		key, _ := hex.DecodeString(test.key)
 		in, _ := hex.DecodeString(test.in)
 
-		dst := make([]byte, 16)
-
-		poly, _ := NewMac(key[:])
+		poly, _ := NewMAC(key[:])
 		poly.Update(in)
-		poly.Finish(dst[:])
+		dst := poly.Finish(nil)
 
 		if dstHex := hex.EncodeToString(dst); dstHex != test.out {
 			t.Errorf("#%d: got %s, want %s", i, dstHex, test.out)
@@ -57,7 +55,7 @@ func TestChacha20Poly1305AEAD(t *testing.T) {
 		ad, _ := hex.DecodeString(test.aad)
 		plaintext, _ := hex.DecodeString(test.plaintext)
 
-		aead, err := NewChachaPoly(key)
+		aead, err := NewAEAD(key)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -117,7 +115,7 @@ func TestChacha20Poly1305AEAD(t *testing.T) {
 		cr.Read(ad)
 		cr.Read(plaintext)
 
-		aead, err := NewChachaPoly(key[:])
+		aead, err := NewAEAD(key[:])
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -166,12 +164,12 @@ func benchmarkPoly1305(b *testing.B, buf []byte) {
 	var key [32]byte
 	var dst [16]byte
 
-	poly, _ := NewMac(key[:])
+	poly, _ := NewMAC(key[:])
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		poly.Update(buf)
-		poly.Finish(dst[:])
+		poly.Finish(dst[:0])
 	}
 }
 
@@ -198,7 +196,7 @@ func benchamarkChaCha20Poly1305Seal(b *testing.B, buf []byte) {
 	var ad [13]byte
 	var out []byte
 
-	aead, _ := NewChachaPoly(key[:])
+	aead, _ := NewAEAD(key[:])
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		out = aead.Seal(out[:0], nonce[:], buf[:], ad[:])
@@ -214,7 +212,7 @@ func benchamarkChaCha20Poly1305Open(b *testing.B, buf []byte) {
 	var ct []byte
 	var out []byte
 
-	aead, _ := NewChachaPoly(key[:])
+	aead, _ := NewAEAD(key[:])
 	ct = aead.Seal(ct[:0], nonce[:], buf[:], ad[:])
 
 	b.ResetTimer()

@@ -3,40 +3,18 @@
 package chacha20poly1305
 
 import (
-	"crypto/cipher"
 	"crypto/subtle"
 	"encoding/binary"
-	"errors"
 )
 
-type chacha20poly1305 struct {
-	*chacha20Cipher
-}
-
-func NewChachaPoly(key []byte) (cipher.AEAD, error) {
-	c, err := newChacha(key)
-	if err != nil {
-		return nil, err
-	}
-
-	ret := &chacha20poly1305{c}
-	return ret, nil
-}
-
-func (cp *chacha20poly1305) NonceSize() int {
-	return 12
-}
-
-func (cp *chacha20poly1305) Overhead() int {
-	return 16
-}
-
-func (cp *chacha20poly1305) Seal(dst, nonce, plaintext, additionalData []byte) []byte {
-	var poly *poly1305MAC
+// Seal encrypts and authenticates plaintext.
+// See the cipher.AEAD interface for details.
+func (x *AEAD) Seal(dst, nonce, plaintext, additionalData []byte) []byte {
+	var poly *MAC
 	var err error
 
-	if err = cp.setIV(nonce, 0); err != nil {
-		panic("chacha20poly1305: incorrect nonce length given to ChaCha20-Poly1305")
+	if err = x.cp.setIV(nonce, 0); err != nil {
+		panic("crypto/chacha20poly1305: incorrect nonce length")
 	}
 
 	ret, out := sliceForAppend(dst, len(plaintext)+16)
@@ -44,10 +22,10 @@ func (cp *chacha20poly1305) Seal(dst, nonce, plaintext, additionalData []byte) [
 	var polyKey [64]byte
 	var pad1, pad2 [16]byte
 
-	cp.XORKeyStream(polyKey[:], polyKey[:])
+	x.cp.XORKeyStream(polyKey[:], polyKey[:])
 
-	if poly, err = NewMac(polyKey[0:32]); err != nil {
-		panic("chacha20poly1305: mac error")
+	if poly, err = NewMAC(polyKey[0:32]); err != nil {
+		panic("crypto/chacha20poly1305: mac error")
 	}
 	a := len(additionalData)
 	p := len(plaintext)
@@ -61,7 +39,7 @@ func (cp *chacha20poly1305) Seal(dst, nonce, plaintext, additionalData []byte) [
 		poly.Update(pad1[:])
 	}
 
-	cp.XORKeyStream(out, plaintext)
+	x.cp.XORKeyStream(out, plaintext)
 
 	if p&-16 > 0 {
 		poly.Update(out[:p&-16])
@@ -76,18 +54,19 @@ func (cp *chacha20poly1305) Seal(dst, nonce, plaintext, additionalData []byte) [
 	binary.LittleEndian.PutUint64(pad2[8:16], uint64(p))
 
 	poly.Update(pad2[:])
-	poly.Finish(out[len(plaintext):])
+	// Finish is guaranteed not to reallocate the slice as it has enough space.
+	poly.Finish(out[:len(plaintext)])
 	return ret
 }
 
-var errOpen = errors.New("cipher: message authentication failed")
-
-func (cp *chacha20poly1305) Open(dst, nonce, ciphertext, additionalData []byte) ([]byte, error) {
-	var poly *poly1305MAC
+// Open authenticates and decrypts ciphertext.
+// See the cipher.AEAD interface for details.
+func (x *AEAD) Open(dst, nonce, ciphertext, additionalData []byte) ([]byte, error) {
+	var poly *MAC
 	var err error
 
-	if err = cp.setIV(nonce, 0); err != nil {
-		panic("chacha20poly1305: incorrect nonce length given to ChaCha20-Poly1305")
+	if err = x.cp.setIV(nonce, 0); err != nil {
+		panic("crypto/chacha20poly1305: incorrect nonce length")
 	}
 
 	if len(ciphertext) < 16 {
@@ -99,10 +78,10 @@ func (cp *chacha20poly1305) Open(dst, nonce, ciphertext, additionalData []byte) 
 	var polyKey [64]byte
 	var pad1, pad2 [16]byte
 
-	cp.XORKeyStream(polyKey[:], polyKey[:])
+	x.cp.XORKeyStream(polyKey[:], polyKey[:])
 
-	if poly, err = NewMac(polyKey[0:32]); err != nil {
-		panic("chacha20poly1305: mac error")
+	if poly, err = NewMAC(polyKey[0:32]); err != nil {
+		panic("crypto/chacha20poly1305: mac error")
 	}
 
 	a := len(additionalData)
@@ -130,7 +109,7 @@ func (cp *chacha20poly1305) Open(dst, nonce, ciphertext, additionalData []byte) 
 	binary.LittleEndian.PutUint64(pad2[8:16], uint64(c))
 
 	poly.Update(pad2[:])
-	poly.Finish(pad2[:])
+	poly.Finish(pad2[:0])
 
 	ret, out := sliceForAppend(dst, len(ciphertext))
 	if subtle.ConstantTimeCompare(pad2[:], tag) != 1 {
@@ -141,22 +120,7 @@ func (cp *chacha20poly1305) Open(dst, nonce, ciphertext, additionalData []byte) 
 		return nil, errOpen
 	}
 
-	cp.XORKeyStream(out, ciphertext)
-	cp.setIV(nonce, 0)
+	x.cp.XORKeyStream(out, ciphertext)
+	x.cp.setIV(nonce, 0)
 	return ret, nil
-}
-
-// sliceForAppend takes a slice and a requested number of bytes. It returns a
-// slice with the contents of the given slice followed by that many bytes and a
-// second slice that aliases into it and contains only the extra bytes. If the
-// original slice has sufficient capacity then no allocation is performed.
-func sliceForAppend(in []byte, n int) (head, tail []byte) {
-	if total := len(in) + n; cap(in) >= total {
-		head = in[:total]
-	} else {
-		head = make([]byte, total)
-		copy(head, in)
-	}
-	tail = head[len(in):]
-	return
 }

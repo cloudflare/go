@@ -6,7 +6,11 @@ import (
 	"unsafe"
 )
 
-type poly1305MAC struct {
+// MACSize is the length of the result of (*MAC).Finish.
+const MACSize = 16
+
+// A MAC is a Poly1305-based message authentication code with a given key.
+type MAC struct {
 	a0, a1, a2, a3, a4 uint64
 	r0, r1, r2, r3     uint64
 	s0, s1, s2, s3     uint64
@@ -20,8 +24,8 @@ func writeU32(in uint64, out []byte) {
 	}
 }
 
-func NewMac(key []byte) (*poly1305MAC, error) {
-
+// NewMAC returns a Poly1305 MAC with the given key, which must be 32 bytes long.
+func NewMAC(key []byte) (*MAC, error) {
 	k := len(key)
 	if k != 32 {
 		return nil, KeySizeError(k)
@@ -30,7 +34,7 @@ func NewMac(key []byte) (*poly1305MAC, error) {
 	if supportsUnaligned {
 		ptr := (*[8]uint32)(unsafe.Pointer(&key[0]))
 
-		return &poly1305MAC{0, 0, 0, 0, 0,
+		return &MAC{0, 0, 0, 0, 0,
 				uint64(ptr[0]) & 0x0FFFFFFF,
 				uint64(ptr[1]) & 0x0FFFFFFC,
 				uint64(ptr[2]) & 0x0FFFFFFC,
@@ -42,7 +46,7 @@ func NewMac(key []byte) (*poly1305MAC, error) {
 			nil
 	}
 
-	return &poly1305MAC{0, 0, 0, 0, 0,
+	return &MAC{0, 0, 0, 0, 0,
 			uint64(binary.LittleEndian.Uint32(key[0:4])) & 0x0FFFFFFF,
 			uint64(binary.LittleEndian.Uint32(key[4:8])) & 0x0FFFFFFC,
 			uint64(binary.LittleEndian.Uint32(key[8:12])) & 0x0FFFFFFC,
@@ -54,8 +58,11 @@ func NewMac(key []byte) (*poly1305MAC, error) {
 		nil
 }
 
-func (p *poly1305MAC) Update(in []byte) {
-
+// Update adds more data to the MAC.
+//
+// TODO: document the behavior of multiple calls, in particular when they are
+// not 16-byte aligned.
+func (p *MAC) Update(in []byte) {
 	a0 := p.a0
 	a1 := p.a1
 	a2 := p.a2
@@ -130,8 +137,10 @@ loop:
 	p.a4 = a4
 }
 
-func (p *poly1305MAC) Finish(dst []byte) {
-
+// Finish appends the MAC to b and returns the resulting slice.
+//
+// TODO: document how the state is modified. And if it's unnecessary, make it reusable.
+func (p *MAC) Finish(b []byte) []byte {
 	a0 := uint64(p.a0)
 	a1 := uint64(p.a1)
 	a2 := uint64(p.a2)
@@ -174,8 +183,10 @@ func (p *poly1305MAC) Finish(dst []byte) {
 	p.a2 = a2 & 0xffffffff
 	p.a3 = a3 & 0xffffffff
 
+	res, dst := sliceForAppend(b, 16)
 	writeU32(p.a0, dst[0:4])
 	writeU32(p.a1, dst[4:8])
 	writeU32(p.a2, dst[8:12])
 	writeU32(p.a3, dst[12:16])
+	return res
 }
