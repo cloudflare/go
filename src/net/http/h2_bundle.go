@@ -39,6 +39,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/net/http2/hpack"
@@ -1695,6 +1696,12 @@ type http2PushPromiseParam struct {
 	// PadLength is the optional number of bytes of zeros to add
 	// to this frame.
 	PadLength uint8
+
+	uri       string
+	authority string
+	headers   Header
+	weight    uint8
+	sc        *http2serverConn
 }
 
 // WritePushPromise writes a single PushPromise Frame.
@@ -2941,6 +2948,7 @@ func (s *http2Server) ServeConn(c net.Conn, opts *http2ServeConnOpts) {
 		remoteAddrStr:    c.RemoteAddr().String(),
 		bw:               http2newBufferedWriter(c),
 		handler:          opts.handler(),
+		pushedUris:       make(map[string]bool),
 		streams:          make(map[uint32]*http2stream),
 		readFrameCh:      make(chan http2readFrameResult),
 		wantWriteFrameCh: make(chan http2frameWriteMsg, 8),
@@ -2955,6 +2963,7 @@ func (s *http2Server) ServeConn(c net.Conn, opts *http2ServeConnOpts) {
 		headerTableSize:   http2initialHeaderTableSize,
 		serveG:            http2newGoroutineLock(),
 		pushEnabled:       true,
+		pushStreamID:      0,
 	}
 
 	sc.flow.add(http2initialWindowSize)
@@ -3051,7 +3060,10 @@ type http2serverConn struct {
 	clientMaxStreams      uint32 // SETTINGS_MAX_CONCURRENT_STREAMS from client (our PUSH_PROMISE limit)
 	advMaxStreams         uint32 // our SETTINGS_MAX_CONCURRENT_STREAMS advertised the client
 	curOpenStreams        uint32 // client's number of open streams
+	curServerOpenStreams  uint32 // server's number of open streams
 	maxStreamID           uint32 // max ever seen
+	pushStreamID          uint32 // next server push id
+	pushedUris            map[string]bool
 	streams               map[uint32]*http2stream
 	initialWindowSize     int32
 	headerTableSize       uint32
@@ -3789,7 +3801,11 @@ func (sc *http2serverConn) closeStream(st *http2stream, err error) {
 		panic(fmt.Sprintf("invariant; can't close stream in state %v", st.state))
 	}
 	st.state = http2stateClosed
-	sc.curOpenStreams--
+	if st.id%2 == 1 {
+		sc.curOpenStreams--
+	} else {
+		atomic.AddUint32(&sc.curServerOpenStreams, 0xffffffff) // -1
+	}
 	if sc.curOpenStreams == 0 {
 		sc.setConnState(StateIdle)
 	}
@@ -4494,6 +4510,67 @@ func (rws *http2responseWriterState) writeChunk(p []byte) (n int, err error) {
 		}
 
 		endStream := (rws.handlerDone && !rws.hasTrailers() && len(p) == 0) || isHeadResp
+
+		/* Need to handle Push Promises at this point, while req is still valid */
+		sc := rws.stream.sc
+		serverOpenStreams := atomic.LoadUint32(&sc.curServerOpenStreams)
+		if sc.pushEnabled && rws.stream.id%2 == 1 && atomic.LoadUint32(&sc.pushStreamID) < maxPushId && serverOpenStreams < sc.clientMaxStreams {
+			linkHeader := rws.snapHeader.Get("link")
+			if linkHeader != "" {
+				var cfPushed string
+				links := derivePushHints(linkHeader)
+				if len(links) > 0 {
+					noCache := rws.req.Header.Get("cache-control") == "no-cache"
+					authority := rws.req.Host
+					for _, ph := range links {
+						_, didPush := sc.pushedUris[ph.uri]
+						if !didPush || noCache {
+							if atomic.AddUint32(&sc.curServerOpenStreams, 1) > sc.clientMaxStreams {
+								atomic.AddUint32(&sc.curServerOpenStreams, 0xffffffff) // -1
+								break
+							}
+							pushId := atomic.AddUint32(&sc.pushStreamID, 2)
+							if pushId > maxPushId {
+								atomic.AddUint32(&sc.pushStreamID, 0xfffffffe)
+								sc.pushEnabled = false
+								break
+							}
+							cfPushed += formatDebugEntry(ph.uri)
+							weight, ok := defaultPushPriorities[ph.contentType]
+							if !ok {
+								weight = 20
+							}
+
+							pushHeaders := make(Header)
+							for _, k := range pushPromiseHeaders {
+								v := rws.req.Header.Get(k)
+								if v != "" {
+									pushHeaders.Set(k, v)
+								}
+							}
+							sc.pushedUris[ph.uri] = true
+							sc.writeFrameFromHandler(http2frameWriteMsg{
+								write: &http2PushPromiseParam{
+									StreamID:   rws.stream.id,
+									PromiseID:  pushId,
+									EndHeaders: true,
+									PadLength:  0,
+									uri:        ph.uri,
+									authority:  authority,
+									headers:    pushHeaders,
+									weight:     weight,
+									sc:         sc,
+								},
+							})
+						}
+					}
+				}
+				if cfPushed != "" {
+					rws.snapHeader.Set("cf-h2-pushed", cfPushed)
+				}
+			}
+		}
+
 		err = rws.conn.writeHeaders(rws.stream, &http2writeResHeaders{
 			streamID:      rws.stream.id,
 			httpResCode:   rws.status,
