@@ -14,7 +14,7 @@ func TestPoly1305(t *testing.T) {
 		key, _ := hex.DecodeString(test.key)
 		in, _ := hex.DecodeString(test.in)
 
-		poly, _ := NewMAC(key[:])
+		poly, _ := newPoly1305(key[:])
 		poly.Update(in)
 		dst := poly.Finish(nil)
 
@@ -164,7 +164,7 @@ func benchmarkPoly1305(b *testing.B, buf []byte) {
 	var key [32]byte
 	var dst [16]byte
 
-	poly, _ := NewMAC(key[:])
+	poly, _ := newPoly1305(key[:])
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {

@@ -6,11 +6,11 @@ import (
 	"unsafe"
 )
 
-// MACSize is the length of the result of (*MAC).Finish.
-const MACSize = 16
+// macSize is the length of the result of (*poly1305).Finish.
+const macSize = 16
 
-// A MAC is a Poly1305-based message authentication code with a given key.
-type MAC struct {
+// A poly1305 is a Poly1305-based message authentication code with a given key.
+type poly1305 struct {
 	a0, a1, a2, a3, a4 uint64
 	r0, r1, r2, r3     uint64
 	s0, s1, s2, s3     uint64
@@ -24,8 +24,8 @@ func writeU32(in uint64, out []byte) {
 	}
 }
 
-// NewMAC returns a Poly1305 MAC with the given key, which must be 32 bytes long.
-func NewMAC(key []byte) (*MAC, error) {
+// newPoly1305 returns a Poly1305 MAC with the given key, which must be 32 bytes long.
+func newPoly1305(key []byte) (*poly1305, error) {
 	k := len(key)
 	if k != 32 {
 		return nil, KeySizeError(k)
@@ -34,7 +34,7 @@ func NewMAC(key []byte) (*MAC, error) {
 	if supportsUnaligned {
 		ptr := (*[8]uint32)(unsafe.Pointer(&key[0]))
 
-		return &MAC{0, 0, 0, 0, 0,
+		return &poly1305{0, 0, 0, 0, 0,
 				uint64(ptr[0]) & 0x0FFFFFFF,
 				uint64(ptr[1]) & 0x0FFFFFFC,
 				uint64(ptr[2]) & 0x0FFFFFFC,
@@ -46,7 +46,7 @@ func NewMAC(key []byte) (*MAC, error) {
 			nil
 	}
 
-	return &MAC{0, 0, 0, 0, 0,
+	return &poly1305{0, 0, 0, 0, 0,
 			uint64(binary.LittleEndian.Uint32(key[0:4])) & 0x0FFFFFFF,
 			uint64(binary.LittleEndian.Uint32(key[4:8])) & 0x0FFFFFFC,
 			uint64(binary.LittleEndian.Uint32(key[8:12])) & 0x0FFFFFFC,
@@ -60,9 +60,8 @@ func NewMAC(key []byte) (*MAC, error) {
 
 // Update adds more data to the MAC.
 //
-// TODO: document the behavior of multiple calls, in particular when they are
-// not 16-byte aligned.
-func (p *MAC) Update(in []byte) {
+// All calls except the last one MUST pass buffers of multiples of 16 bytes.
+func (p *poly1305) Update(in []byte) {
 	a0 := p.a0
 	a1 := p.a1
 	a2 := p.a2
@@ -139,8 +138,8 @@ loop:
 
 // Finish appends the MAC to b and returns the resulting slice.
 //
-// TODO: document how the state is modified. And if it's unnecessary, make it reusable.
-func (p *MAC) Finish(b []byte) []byte {
+// The poly1305 object can't be used after a call to Finish.
+func (p *poly1305) Finish(b []byte) []byte {
 	a0 := uint64(p.a0)
 	a1 := uint64(p.a1)
 	a2 := uint64(p.a2)
