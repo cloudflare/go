@@ -3044,6 +3044,7 @@ func (s *http2Server) ServeConn(c net.Conn, opts *http2ServeConnOpts) {
 		serveG:            http2newGoroutineLock(),
 		pushEnabled:       true,
 		pushStreamID:      0,
+		clientMaxStreams:  100,
 	}
 
 	sc.flow.add(http2initialWindowSize)
