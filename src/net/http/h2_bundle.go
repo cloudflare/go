@@ -3857,16 +3857,19 @@ func (sc *http2serverConn) processResetStream(f *http2RSTStreamFrame) error {
 
 func (sc *http2serverConn) closeStream(st *http2stream, err error) {
 	sc.serveG.check()
+	if st.id%2 == 0 && st.state == http2stateClosed {
+		return
+	}
 	if st.state == http2stateIdle || st.state == http2stateClosed {
 		panic(fmt.Sprintf("invariant; can't close stream in state %v", st.state))
 	}
 	st.state = http2stateClosed
 	if st.id%2 == 1 {
 		sc.curOpenStreams--
-	} else {
-		atomic.AddUint32(&sc.curServerOpenStreams, 0xffffffff) // -1
+	} else if st.id > 0 {
+		atomic.AddUint32(&sc.curServerOpenStreams, ^uint32(0)) // -1
 	}
-	if sc.curOpenStreams == 0 {
+	if sc.curOpenStreams == 0 && atomic.LoadUint32(&sc.curServerOpenStreams) == 0 {
 		sc.setConnState(StateIdle)
 	}
 	delete(sc.streams, st.id)
@@ -4604,12 +4607,12 @@ func (rws *http2responseWriterState) writeChunk(p []byte) (n int, err error) {
 						_, didPush := sc.pushedUris[ph.uri]
 						if !didPush || noCache {
 							if atomic.AddUint32(&sc.curServerOpenStreams, 1) > sc.clientMaxStreams {
-								atomic.AddUint32(&sc.curServerOpenStreams, 0xffffffff) // -1
+								atomic.AddUint32(&sc.curServerOpenStreams, ^uint32(0)) // -1
 								break
 							}
 							pushId := atomic.AddUint32(&sc.pushStreamID, 2)
 							if pushId > maxPushId {
-								atomic.AddUint32(&sc.pushStreamID, 0xfffffffe)
+								atomic.AddUint32(&sc.pushStreamID, ^uint32(1))
 								sc.pushEnabled = false
 								break
 							}
