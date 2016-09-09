@@ -163,6 +163,8 @@ func curveForCurveID(id CurveID) (elliptic.Curve, bool) {
 		return elliptic.P384(), true
 	case CurveP521:
 		return elliptic.P521(), true
+	case CurveX25519:
+		return elliptic.X25519(), true
 	default:
 		return nil, false
 	}
@@ -198,7 +200,6 @@ NextCandidate:
 	if curveid == 0 {
 		return nil, errors.New("tls: no supported elliptic curves offered")
 	}
-
 	var ok bool
 	if ka.curve, ok = curveForCurveID(curveid); !ok {
 		return nil, errors.New("tls: preferredCurves includes unsupported curve")
