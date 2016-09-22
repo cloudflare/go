@@ -53,6 +53,11 @@ func (curve *CurveParams) Params() *CurveParams {
 }
 
 func (curve *CurveParams) IsOnCurve(x, y *big.Int) bool {
+
+	if curve.B == nil {
+		return true
+	}
+
 	// y² = x³ - 3x + b
 	y2 := new(big.Int).Mul(y, y)
 	y2.Mod(y2, curve.P)
@@ -274,6 +279,11 @@ var mask = []byte{0xff, 0x1, 0x3, 0x7, 0xf, 0x1f, 0x3f, 0x7f}
 // GenerateKey returns a public/private key pair. The private key is
 // generated using the given reader, which must return random data.
 func GenerateKey(curve Curve, rand io.Reader) (priv []byte, x, y *big.Int, err error) {
+
+	if nonWS, ok := curve.(nonWSCurve); ok {
+		return nonWS.generateKey(rand)
+	}
+
 	N := curve.Params().N
 	bitSize := N.BitLen()
 	byteLen := (bitSize + 7) >> 3
@@ -305,6 +315,14 @@ func GenerateKey(curve Curve, rand io.Reader) (priv []byte, x, y *big.Int, err e
 func Marshal(curve Curve, x, y *big.Int) []byte {
 	byteLen := (curve.Params().BitSize + 7) >> 3
 
+	if _, ok := curve.(nonWSCurve); ok {
+		ret := make([]byte, byteLen)
+		xBytes := x.Bytes()
+		ret[0] = 0
+		copy(ret[byteLen-len(xBytes):], xBytes)
+		return ret
+	}
+
 	ret := make([]byte, 1+2*byteLen)
 	ret[0] = 4 // uncompressed point
 
@@ -319,6 +337,12 @@ func Marshal(curve Curve, x, y *big.Int) []byte {
 // It is an error if the point is not on the curve. On error, x = nil.
 func Unmarshal(curve Curve, data []byte) (x, y *big.Int) {
 	byteLen := (curve.Params().BitSize + 7) >> 3
+
+	if _, ok := curve.(nonWSCurve); ok {
+		x = new(big.Int).SetBytes(data[0:byteLen])
+		return
+	}
+
 	if len(data) != 1+2*byteLen {
 		return
 	}
@@ -342,6 +366,7 @@ func initAll() {
 	initP256()
 	initP384()
 	initP521()
+	initX25519()
 }
 
 func initP384() {
@@ -382,4 +407,9 @@ func P384() Curve {
 func P521() Curve {
 	initonce.Do(initAll)
 	return p521
+}
+
+func X25519() Curve {
+	initonce.Do(initAll)
+	return x25519
 }
