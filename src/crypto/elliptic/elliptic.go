@@ -339,7 +339,10 @@ func Unmarshal(curve Curve, data []byte) (x, y *big.Int) {
 	byteLen := (curve.Params().BitSize + 7) >> 3
 
 	if _, ok := curve.(nonWSCurve); ok {
-		x = new(big.Int).SetBytes(data[0:byteLen])
+		if len(data) != byteLen {
+			return
+		}
+		x = new(big.Int).SetBytes(data)
 		return
 	}
 
