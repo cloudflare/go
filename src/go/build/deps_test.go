@@ -94,8 +94,8 @@ var pkgDeps = map[string][]string{
 	// L3 adds reflection and some basic utility packages
 	// and interface definitions, but nothing that makes
 	// system calls.
-	"crypto":              {"L2", "hash"},          // interfaces
-	"crypto/cipher":       {"L2", "crypto/subtle"}, // interfaces
+	"crypto":              {"L2", "hash"}, // interfaces
+	"crypto/cipher":       {"L2", "crypto/subtle"},
 	"crypto/subtle":       {},
 	"encoding/base32":     {"L2"},
 	"encoding/base64":     {"L2"},
@@ -114,6 +114,7 @@ var pkgDeps = map[string][]string{
 		"L2",
 		"crypto",
 		"crypto/cipher",
+		"crypto/internal/cipherhw",
 		"crypto/subtle",
 		"encoding/base32",
 		"encoding/base64",

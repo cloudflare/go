@@ -4,30 +4,6 @@
 
 #include "textflag.h"
 
-// func hasAsm() bool
-TEXT ·hasAsm(SB),NOSPLIT,$16-1
-	XOR	R0, R0          // set function code to 0 (query)
-	LA	mask-16(SP), R1 // 16-byte stack variable for mask
-	MOVD	$(0x38<<40), R3 // mask for bits 18-20 (big endian)
-
-	// check for KM AES functions
-	WORD	$0xB92E0024 // cipher message (KM)
-	MOVD	mask-16(SP), R2
-	AND	R3, R2
-	CMPBNE	R2, R3, notfound
-
-	// check for KMC AES functions
-	WORD	$0xB92F0024 // cipher message with chaining (KMC)
-	MOVD	mask-16(SP), R2
-	AND	R3, R2
-	CMPBNE	R2, R3, notfound
-
-	MOVB	$1, ret+0(FP)
-	RET
-notfound:
-	MOVB	$0, ret+0(FP)
-	RET
-
 // func cryptBlocks(function code, key, dst, src *byte, length int)
 TEXT ·cryptBlocks(SB),NOSPLIT,$0-40
 	MOVD	key+8(FP), R1
