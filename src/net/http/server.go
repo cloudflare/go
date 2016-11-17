@@ -1483,7 +1483,13 @@ func (e badRequestError) Error() string { return "Bad Request: " + string(e) }
 
 // Serve a new connection.
 func (c *conn) serve(ctx context.Context) {
-	c.remoteAddr = c.rwc.RemoteAddr().String()
+	raddr := c.rwc.RemoteAddr()
+	if raddr == nil {
+		c.setState(c.rwc, StateClosed)
+		return
+	}
+	c.remoteAddr = raddr.String()
+
 	defer func() {
 		if err := recover(); err != nil {
 			const size = 64 << 10
