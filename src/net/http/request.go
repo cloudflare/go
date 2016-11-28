@@ -277,7 +277,9 @@ type Request struct {
 	// was received. This field is not filled in by ReadRequest.
 	// The HTTP server in this package sets the field for
 	// TLS-enabled connections before invoking a handler;
-	// otherwise it leaves the field nil.
+	// otherwise it leaves the field nil. The value is fixed
+	// at the state of the connection immediately after Handshake,
+	// for an immediate value use TLSConnContextKey.
 	// This field is ignored by the HTTP client.
 	TLS *tls.ConnectionState
 
