@@ -218,6 +218,10 @@ type conn struct {
 	// This is the value of a Handler's (*Request).RemoteAddr.
 	remoteAddr string
 
+	// tlsState is the TLS connection state when using TLS.
+	// nil means not TLS.
+	tlsState *tls.ConnectionState
+
 	// werr is set to the first write error to rwc.
 	// It is set via checkConnErrorWriter{w}, where bufw writes.
 	werr error
@@ -800,10 +804,7 @@ func (c *conn) readRequest(ctx context.Context) (w *response, err error) {
 	ctx, cancelCtx := context.WithCancel(ctx)
 	req.ctx = ctx
 	req.RemoteAddr = c.remoteAddr
-	if tlsConn, ok := c.rwc.(*tls.Conn); ok {
-		req.TLS = new(tls.ConnectionState)
-		*req.TLS = tlsConn.ConnectionState()
-	}
+	req.TLS = c.tlsState
 	if body, ok := req.Body.(*body); ok {
 		body.doEarlyClose = true
 	}
@@ -1507,7 +1508,9 @@ func (c *conn) serve(ctx context.Context) {
 			c.server.logf("http: TLS handshake error from %s: %v", c.rwc.RemoteAddr(), err)
 			return
 		}
-		if proto := tlsConn.ConnectionState().NegotiatedProtocol; validNPN(proto) {
+		c.tlsState = new(tls.ConnectionState)
+		*c.tlsState = tlsConn.ConnectionState()
+		if proto := c.tlsState.NegotiatedProtocol; validNPN(proto) {
 			if fn := c.server.TLSNextProto[proto]; fn != nil {
 				h := initNPNRequest{tlsConn, serverHandler{c.server}}
 				fn(c.server, tlsConn, h)
