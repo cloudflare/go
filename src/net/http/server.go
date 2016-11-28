@@ -198,6 +198,12 @@ var (
 	// the local address the connection arrived on.
 	// The associated value will be of type net.Addr.
 	LocalAddrContextKey = &contextKey{"local-addr"}
+
+	// TLSConnContextKey is a context key. It can be used in
+	// HTTP handlers with context.WithValue to access the
+	// underlying *tls.Conn being served. If the connection
+	// is not TLS, the key is not set.
+	TLSConnContextKey = &contextKey{"tls-conn"}
 )
 
 // A conn represents the server side of an HTTP connection.
@@ -802,6 +808,9 @@ func (c *conn) readRequest(ctx context.Context) (w *response, err error) {
 	delete(req.Header, "Host")
 
 	ctx, cancelCtx := context.WithCancel(ctx)
+	if tlsConn, ok := c.rwc.(*tls.Conn); ok {
+		ctx = context.WithValue(ctx, TLSConnContextKey, tlsConn)
+	}
 	req.ctx = ctx
 	req.RemoteAddr = c.remoteAddr
 	req.TLS = c.tlsState
@@ -2666,6 +2675,9 @@ func (h initNPNRequest) ServeHTTP(rw ResponseWriter, req *Request) {
 	}
 	if req.RemoteAddr == "" {
 		req.RemoteAddr = h.c.RemoteAddr().String()
+	}
+	if req.ctx != nil && req.ctx.Value(TLSConnContextKey) == nil {
+		req.ctx = context.WithValue(req.ctx, TLSConnContextKey, h.c)
 	}
 	h.h.ServeHTTP(rw, req)
 }
