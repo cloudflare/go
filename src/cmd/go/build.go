@@ -1585,12 +1585,12 @@ func (b *builder) build(a *action) (err error) {
 	}
 
 	// Assemble .s files.
-	if len(sfiles) > 0 {
-		ofiles, err := buildToolchain.asm(b, a.p, obj, sfiles)
-		if err != nil {
+	for _, file := range sfiles {
+		out := file[:len(file)-len(".s")] + ".o"
+		if err := buildToolchain.asm(b, a.p, obj, obj+out, file); err != nil {
 			return err
 		}
-		objects = append(objects, ofiles...)
+		objects = append(objects, out)
 	}
 
 	// NOTE(rsc): On Windows, it is critically important that the
@@ -2266,9 +2266,9 @@ type toolchain interface {
 	// cc runs the toolchain's C compiler in a directory on a C file
 	// to produce an output file.
 	cc(b *builder, p *Package, objdir, ofile, cfile string) error
-	// asm runs the assembler in a specific directory on specific files
-	// and returns a list of named output files.
-	asm(b *builder, p *Package, obj string, sfiles []string) ([]string, error)
+	// asm runs the assembler in a specific directory on a specific file
+	// to generate the named output file.
+	asm(b *builder, p *Package, obj, ofile, sfile string) error
 	// pkgpath builds an appropriate path for a temporary package file.
 	pkgpath(basedir string, p *Package) string
 	// pack runs the archive packer in a specific directory to create
@@ -2305,8 +2305,8 @@ func (noToolchain) gc(b *builder, p *Package, archive, obj string, asmhdr bool, 
 	return "", nil, noCompiler()
 }
 
-func (noToolchain) asm(b *builder, p *Package, obj string, sfiles []string) ([]string, error) {
-	return nil, noCompiler()
+func (noToolchain) asm(b *builder, p *Package, obj, ofile, sfile string) error {
+	return noCompiler()
 }
 
 func (noToolchain) pkgpath(basedir string, p *Package) string {
@@ -2403,10 +2403,10 @@ func (gcToolchain) gc(b *builder, p *Package, archive, obj string, asmhdr bool, 
 	return ofile, output, err
 }
 
-func (gcToolchain) asm(b *builder, p *Package, obj string, sfiles []string) ([]string, error) {
+func (gcToolchain) asm(b *builder, p *Package, obj, ofile, sfile string) error {
 	// Add -I pkg/GOOS_GOARCH so #include "textflag.h" works in .s files.
 	inc := filepath.Join(goroot, "pkg", "include")
-	ofile := obj + "asm.o"
+	sfile = mkAbs(p.Dir, sfile)
 	args := []interface{}{buildToolExec, tool("asm"), "-o", ofile, "-trimpath", b.work, "-I", obj, "-I", inc, "-D", "GOOS_" + goos, "-D", "GOARCH_" + goarch, buildAsmflags}
 	if p.ImportPath == "runtime" && goarch == "386" {
 		for _, arg := range buildAsmflags {
@@ -2415,13 +2415,11 @@ func (gcToolchain) asm(b *builder, p *Package, obj string, sfiles []string) ([]s
 			}
 		}
 	}
-	for _, sfile := range sfiles {
-		args = append(args, mkAbs(p.Dir, sfile))
-	}
+	args = append(args, sfile)
 	if err := b.run(p.Dir, p.ImportPath, nil, args...); err != nil {
-		return nil, err
+		return err
 	}
-	return []string{ofile}, nil
+	return nil
 }
 
 // toolVerify checks that the command line args writes the same output file
@@ -2695,24 +2693,15 @@ func (tools gccgoToolchain) gc(b *builder, p *Package, archive, obj string, asmh
 	return ofile, output, err
 }
 
-func (tools gccgoToolchain) asm(b *builder, p *Package, obj string, sfiles []string) ([]string, error) {
-	var ofiles []string
-	for _, sfile := range sfiles {
-		ofile := obj + sfile[:len(sfile)-len(".s")] + ".o"
-		ofiles = append(ofiles, ofile)
-		sfile = mkAbs(p.Dir, sfile)
-		defs := []string{"-D", "GOOS_" + goos, "-D", "GOARCH_" + goarch}
-		if pkgpath := gccgoCleanPkgpath(p); pkgpath != "" {
-			defs = append(defs, `-D`, `GOPKGPATH=`+pkgpath)
-		}
-		defs = tools.maybePIC(defs)
-		defs = append(defs, b.gccArchArgs()...)
-		err := b.run(p.Dir, p.ImportPath, nil, tools.compiler(), "-xassembler-with-cpp", "-I", obj, "-c", "-o", ofile, defs, sfile)
-		if err != nil {
-			return nil, err
-		}
+func (tools gccgoToolchain) asm(b *builder, p *Package, obj, ofile, sfile string) error {
+	sfile = mkAbs(p.Dir, sfile)
+	defs := []string{"-D", "GOOS_" + goos, "-D", "GOARCH_" + goarch}
+	if pkgpath := gccgoCleanPkgpath(p); pkgpath != "" {
+		defs = append(defs, `-D`, `GOPKGPATH=`+pkgpath)
 	}
-	return ofiles, nil
+	defs = tools.maybePIC(defs)
+	defs = append(defs, b.gccArchArgs()...)
+	return b.run(p.Dir, p.ImportPath, nil, tools.compiler(), "-xassembler-with-cpp", "-I", obj, "-c", "-o", ofile, defs, sfile)
 }
 
 func (gccgoToolchain) pkgpath(basedir string, p *Package) string {
