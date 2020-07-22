@@ -30,6 +30,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"circl/sign/eddilithium3"
 )
 
 func TestParsePKCS1PrivateKey(t *testing.T) {
@@ -560,6 +562,11 @@ func TestCreateSelfSignedCertificate(t *testing.T) {
 		t.Fatalf("Failed to generate Ed25519 key: %s", err)
 	}
 
+	edd3Pub, edd3Priv, err := eddilithium3.GenerateKey(random)
+	if err != nil {
+		t.Fatalf("Failed to generate Ed25519-Dilithium3 key: %s", err)
+	}
+
 	tests := []struct {
 		name      string
 		pub, priv interface{}
@@ -574,6 +581,7 @@ func TestCreateSelfSignedCertificate(t *testing.T) {
 		{"ECDSA/RSAPSS", &ecdsaPriv.PublicKey, testPrivateKey, false, SHA256WithRSAPSS},
 		{"RSAPSS/ECDSA", &testPrivateKey.PublicKey, ecdsaPriv, false, ECDSAWithSHA384},
 		{"Ed25519", ed25519Pub, ed25519Priv, true, PureEd25519},
+		{"Ed25519-Dilithium3", edd3Pub, edd3Priv, true, PureEdDilithium3},
 	}
 
 	testExtKeyUsage := []ExtKeyUsage{ExtKeyUsageClientAuth, ExtKeyUsageServerAuth}

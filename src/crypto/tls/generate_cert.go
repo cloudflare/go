@@ -10,6 +10,7 @@
 package main
 
 import (
+	"circl/sign/eddilithium3"
 	"crypto/ecdsa"
 	"crypto/ed25519"
 	"crypto/elliptic"
@@ -28,13 +29,14 @@ import (
 )
 
 var (
-	host       = flag.String("host", "", "Comma-separated hostnames and IPs to generate a certificate for")
-	validFrom  = flag.String("start-date", "", "Creation date formatted as Jan 1 15:04:05 2011")
-	validFor   = flag.Duration("duration", 365*24*time.Hour, "Duration that certificate is valid for")
-	isCA       = flag.Bool("ca", false, "whether this cert should be its own Certificate Authority")
-	rsaBits    = flag.Int("rsa-bits", 2048, "Size of RSA key to generate. Ignored if --ecdsa-curve is set")
-	ecdsaCurve = flag.String("ecdsa-curve", "", "ECDSA curve to use to generate a key. Valid values are P224, P256 (recommended), P384, P521")
-	ed25519Key = flag.Bool("ed25519", false, "Generate an Ed25519 key")
+	host            = flag.String("host", "", "Comma-separated hostnames and IPs to generate a certificate for")
+	validFrom       = flag.String("start-date", "", "Creation date formatted as Jan 1 15:04:05 2011")
+	validFor        = flag.Duration("duration", 365*24*time.Hour, "Duration that certificate is valid for")
+	isCA            = flag.Bool("ca", false, "whether this cert should be its own Certificate Authority")
+	rsaBits         = flag.Int("rsa-bits", 2048, "Size of RSA key to generate. Ignored if --ecdsa-curve is set")
+	ecdsaCurve      = flag.String("ecdsa-curve", "", "ECDSA curve to use to generate a key. Valid values are P224, P256 (recommended), P384, P521")
+	ed25519Key      = flag.Bool("ed25519", false, "Generate an Ed25519 key")
+	eddilithium3Key = flag.Bool("ed25519-dilithium3", false, "Generate an Ed25519-Dilithium3 key")
 )
 
 func publicKey(priv interface{}) interface{} {
@@ -63,6 +65,8 @@ func main() {
 	case "":
 		if *ed25519Key {
 			_, priv, err = ed25519.GenerateKey(rand.Reader)
+		} else if *eddilithium3 {
+			_, priv, err = eddilithium3.GenerateKey(rand.Reader)
 		} else {
 			priv, err = rsa.GenerateKey(rand.Reader, *rsaBits)
 		}

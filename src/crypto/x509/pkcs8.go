@@ -12,6 +12,8 @@ import (
 	"encoding/asn1"
 	"errors"
 	"fmt"
+
+	"circl/sign/eddilithium3"
 )
 
 // pkcs8 reflects an ASN.1, PKCS#8 PrivateKey. See
@@ -74,6 +76,20 @@ func ParsePKCS8PrivateKey(der []byte) (key interface{}, err error) {
 		}
 		return ed25519.NewKeyFromSeed(curvePrivateKey), nil
 
+	case privKey.Algo.Algorithm.Equal(oidPublicKeyEdDilithium3):
+		if l := len(privKey.Algo.Parameters.FullBytes); l != 0 {
+			return nil, errors.New("x509: invalid Ed25519-Dilithium3 private key parameters")
+		}
+		var packedSk []byte
+		if _, err := asn1.Unmarshal(privKey.PrivateKey, &packedSk); err != nil {
+			return nil, fmt.Errorf("x509: invalid Ed25519-Dilithium3 private key: %v", err)
+		}
+		var sk eddilithium3.PrivateKey
+		if err := sk.UnmarshalBinary(packedSk); err != nil {
+			return nil, fmt.Errorf("x509: invalid Ed25519-Dilithium3 private key: %v", err)
+		}
+		return &sk, nil
+
 	default:
 		return nil, fmt.Errorf("x509: PKCS#8 wrapping contained private key with unknown algorithm: %v", privKey.Algo.Algorithm)
 	}
@@ -127,6 +143,16 @@ func MarshalPKCS8PrivateKey(key interface{}) ([]byte, error) {
 			return nil, fmt.Errorf("x509: failed to marshal private key: %v", err)
 		}
 		privKey.PrivateKey = curvePrivateKey
+
+	case *eddilithium3.PrivateKey:
+		privKey.Algo = pkix.AlgorithmIdentifier{
+			Algorithm: oidPublicKeyEdDilithium3,
+		}
+		packedSk, err := asn1.Marshal(k.Bytes())
+		if err != nil {
+			return nil, fmt.Errorf("x509: failed to marshal private key: %v", err)
+		}
+		privKey.PrivateKey = packedSk
 
 	default:
 		return nil, fmt.Errorf("x509: unknown key type while marshaling PKCS#8: %T", key)

@@ -13,6 +13,7 @@ package tls
 
 import (
 	"bytes"
+	"circl/sign/eddilithium3"
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/ed25519"
@@ -279,6 +280,14 @@ func X509KeyPair(certPEMBlock, keyPEMBlock []byte) (Certificate, error) {
 		if !bytes.Equal(priv.Public().(ed25519.PublicKey), pub) {
 			return fail(errors.New("tls: private key does not match public key"))
 		}
+	case *eddilithium3.PublicKey:
+		priv, ok := cert.PrivateKey.(*eddilithium3.PrivateKey)
+		if !ok {
+			return fail(errors.New("tls: private key type does not match public key type"))
+		}
+		if !bytes.Equal(priv.Public().(*eddilithium3.PublicKey).Bytes(), pub.Bytes()) {
+			return fail(errors.New("tls: private key does not match public key"))
+		}
 	default:
 		return fail(errors.New("tls: unknown public key algorithm"))
 	}
@@ -295,7 +304,7 @@ func parsePrivateKey(der []byte) (crypto.PrivateKey, error) {
 	}
 	if key, err := x509.ParsePKCS8PrivateKey(der); err == nil {
 		switch key := key.(type) {
-		case *rsa.PrivateKey, *ecdsa.PrivateKey, ed25519.PrivateKey:
+		case *rsa.PrivateKey, *ecdsa.PrivateKey, ed25519.PrivateKey, *eddilithium3.PrivateKey:
 			return key, nil
 		default:
 			return nil, errors.New("tls: found unknown private key type in PKCS#8 wrapping")

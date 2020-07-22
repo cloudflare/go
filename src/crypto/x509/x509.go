@@ -34,6 +34,8 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"circl/sign/eddilithium3"
+
 	"golang.org/x/crypto/cryptobyte"
 	cryptobyte_asn1 "golang.org/x/crypto/cryptobyte/asn1"
 )
@@ -98,6 +100,9 @@ func marshalPublicKey(pub interface{}) (publicKeyBytes []byte, publicKeyAlgorith
 	case ed25519.PublicKey:
 		publicKeyBytes = pub
 		publicKeyAlgorithm.Algorithm = oidPublicKeyEd25519
+	case *eddilithium3.PublicKey:
+		publicKeyBytes = pub.Bytes()
+		publicKeyAlgorithm.Algorithm = oidPublicKeyEdDilithium3
 	default:
 		return nil, pkix.AlgorithmIdentifier{}, fmt.Errorf("x509: unsupported public key type: %T", pub)
 	}
@@ -200,6 +205,7 @@ const (
 	SHA384WithRSAPSS
 	SHA512WithRSAPSS
 	PureEd25519
+	PureEdDilithium3
 )
 
 func (algo SignatureAlgorithm) isRSAPSS() bool {
@@ -228,13 +234,15 @@ const (
 	DSA
 	ECDSA
 	Ed25519
+	EdDilithium3
 )
 
 var publicKeyAlgoName = [...]string{
-	RSA:     "RSA",
-	DSA:     "DSA",
-	ECDSA:   "ECDSA",
-	Ed25519: "Ed25519",
+	RSA:          "RSA",
+	DSA:          "DSA",
+	ECDSA:        "ECDSA",
+	Ed25519:      "Ed25519",
+	EdDilithium3: "Ed25519-Dilithium3",
 }
 
 func (algo PublicKeyAlgorithm) String() string {
@@ -314,6 +322,7 @@ var (
 	oidSignatureECDSAWithSHA384 = asn1.ObjectIdentifier{1, 2, 840, 10045, 4, 3, 3}
 	oidSignatureECDSAWithSHA512 = asn1.ObjectIdentifier{1, 2, 840, 10045, 4, 3, 4}
 	oidSignatureEd25519         = asn1.ObjectIdentifier{1, 3, 101, 112}
+	oidSignatureEdDilithium3    = asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 44363, 45, 9}
 
 	oidSHA256 = asn1.ObjectIdentifier{2, 16, 840, 1, 101, 3, 4, 2, 1}
 	oidSHA384 = asn1.ObjectIdentifier{2, 16, 840, 1, 101, 3, 4, 2, 2}
@@ -351,6 +360,7 @@ var signatureAlgorithmDetails = []struct {
 	{ECDSAWithSHA384, "ECDSA-SHA384", oidSignatureECDSAWithSHA384, ECDSA, crypto.SHA384},
 	{ECDSAWithSHA512, "ECDSA-SHA512", oidSignatureECDSAWithSHA512, ECDSA, crypto.SHA512},
 	{PureEd25519, "Ed25519", oidSignatureEd25519, Ed25519, crypto.Hash(0) /* no pre-hashing */},
+	{PureEdDilithium3, "Ed25519-Dilithium3", oidSignatureEdDilithium3, EdDilithium3, crypto.Hash(0)},
 }
 
 // pssParameters reflects the parameters in an AlgorithmIdentifier that
@@ -411,7 +421,7 @@ func rsaPSSParameters(hashFunc crypto.Hash) asn1.RawValue {
 }
 
 func getSignatureAlgorithmFromAI(ai pkix.AlgorithmIdentifier) SignatureAlgorithm {
-	if ai.Algorithm.Equal(oidSignatureEd25519) {
+	if ai.Algorithm.Equal(oidSignatureEd25519) || ai.Algorithm.Equal(oidSignatureEdDilithium3) {
 		// RFC 8410, Section 3
 		// > For all of the OIDs, the parameters MUST be absent.
 		if len(ai.Parameters.FullBytes) != 0 {
@@ -481,10 +491,11 @@ func getSignatureAlgorithmFromAI(ai pkix.AlgorithmIdentifier) SignatureAlgorithm
 // id-ecPublicKey OBJECT IDENTIFIER ::= {
 //       iso(1) member-body(2) us(840) ansi-X9-62(10045) keyType(2) 1 }
 var (
-	oidPublicKeyRSA     = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 1, 1}
-	oidPublicKeyDSA     = asn1.ObjectIdentifier{1, 2, 840, 10040, 4, 1}
-	oidPublicKeyECDSA   = asn1.ObjectIdentifier{1, 2, 840, 10045, 2, 1}
-	oidPublicKeyEd25519 = oidSignatureEd25519
+	oidPublicKeyRSA          = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 1, 1}
+	oidPublicKeyDSA          = asn1.ObjectIdentifier{1, 2, 840, 10040, 4, 1}
+	oidPublicKeyECDSA        = asn1.ObjectIdentifier{1, 2, 840, 10045, 2, 1}
+	oidPublicKeyEd25519      = oidSignatureEd25519
+	oidPublicKeyEdDilithium3 = oidSignatureEdDilithium3
 )
 
 func getPublicKeyAlgorithmFromOID(oid asn1.ObjectIdentifier) PublicKeyAlgorithm {
@@ -497,6 +508,8 @@ func getPublicKeyAlgorithmFromOID(oid asn1.ObjectIdentifier) PublicKeyAlgorithm 
 		return ECDSA
 	case oid.Equal(oidPublicKeyEd25519):
 		return Ed25519
+	case oid.Equal(oidPublicKeyEdDilithium3):
+		return EdDilithium3
 	}
 	return UnknownPublicKeyAlgorithm
 }
@@ -855,7 +868,7 @@ func checkSignature(algo SignatureAlgorithm, signed, signature []byte, publicKey
 
 	switch hashType {
 	case crypto.Hash(0):
-		if pubKeyAlgo != Ed25519 {
+		if pubKeyAlgo != Ed25519 && pubKeyAlgo != EdDilithium3 {
 			return ErrUnsupportedAlgorithm
 		}
 	case crypto.MD5:
@@ -924,6 +937,14 @@ func checkSignature(algo SignatureAlgorithm, signed, signature []byte, publicKey
 		}
 		if !ed25519.Verify(pub, signed, signature) {
 			return errors.New("x509: Ed25519 verification failure")
+		}
+		return
+	case *eddilithium3.PublicKey:
+		if pubKeyAlgo != EdDilithium3 {
+			return signaturePublicKeyAlgoMismatchError(pubKeyAlgo, pub)
+		}
+		if !eddilithium3.Verify(pub, signed, signature) {
+			return errors.New("x509: Ed25519-Dilithium3 verification failure")
 		}
 		return
 	}
@@ -1075,6 +1096,16 @@ func parsePublicKey(algo PublicKeyAlgorithm, keyData *publicKeyInfo) (interface{
 		pub := make([]byte, ed25519.PublicKeySize)
 		copy(pub, asn1Data)
 		return ed25519.PublicKey(pub), nil
+	case EdDilithium3:
+		if len(keyData.Algorithm.Parameters.FullBytes) != 0 {
+			return nil, errors.New("x509: Ed25519-Dilithium3 key encoded with illegal parameters")
+		}
+		var pub eddilithium3.PublicKey
+		err := pub.UnmarshalBinary(asn1Data)
+		if err != nil {
+			return nil, fmt.Errorf("x509: Ed25519-Dilithium3: %v", err)
+		}
+		return &pub, nil
 	default:
 		return nil, nil
 	}
@@ -1999,9 +2030,12 @@ func signingParamsForPublicKey(pub interface{}, requestedSigAlgo SignatureAlgori
 	case ed25519.PublicKey:
 		pubType = Ed25519
 		sigAlgo.Algorithm = oidSignatureEd25519
+	case *eddilithium3.PublicKey:
+		pubType = EdDilithium3
+		sigAlgo.Algorithm = oidSignatureEdDilithium3
 
 	default:
-		err = errors.New("x509: only RSA, ECDSA and Ed25519 keys supported")
+		err = errors.New("x509: only RSA, ECDSA, Ed25519 and Ed25519-Dilithium3 keys supported")
 	}
 
 	if err != nil {
@@ -2020,7 +2054,7 @@ func signingParamsForPublicKey(pub interface{}, requestedSigAlgo SignatureAlgori
 				return
 			}
 			sigAlgo.Algorithm, hashFunc = details.oid, details.hash
-			if hashFunc == 0 && pubType != Ed25519 {
+			if hashFunc == 0 && (pubType != Ed25519 && pubType != EdDilithium3) {
 				err = errors.New("x509: cannot sign with hash function requested")
 				return
 			}

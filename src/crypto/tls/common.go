@@ -165,6 +165,7 @@ const (
 	signatureRSAPSS
 	signatureECDSA
 	signatureEd25519
+	signatureEdDilithium3
 )
 
 // directSigning is a standard Hash value that signals that no pre-hashing
@@ -180,6 +181,7 @@ var supportedSignatureAlgorithms = []SignatureScheme{
 	PSSWithSHA256,
 	ECDSAWithP256AndSHA256,
 	Ed25519,
+	EdDilithium3,
 	PSSWithSHA384,
 	PSSWithSHA512,
 	PKCS1WithSHA256,
@@ -326,6 +328,9 @@ const (
 	// Legacy signature and hash algorithms for TLS 1.2.
 	PKCS1WithSHA1 SignatureScheme = 0x0201
 	ECDSAWithSHA1 SignatureScheme = 0x0203
+
+	// Non-standard identifier randomly generated.
+	EdDilithium3 SignatureScheme = 0xfe61
 )
 
 // ClientHelloInfo contains information from a ClientHello message in order to

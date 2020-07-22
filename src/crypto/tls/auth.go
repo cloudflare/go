@@ -16,6 +16,8 @@ import (
 	"fmt"
 	"hash"
 	"io"
+
+	"circl/sign/eddilithium3"
 )
 
 // verifyHandshakeSignature verifies a signature against pre-hashed
@@ -44,6 +46,14 @@ func verifyHandshakeSignature(sigType uint8, pubkey crypto.PublicKey, hashFunc c
 		}
 		if !ed25519.Verify(pubKey, signed, sig) {
 			return errors.New("Ed25519 verification failure")
+		}
+	case signatureEdDilithium3:
+		pubKey, ok := pubkey.(*eddilithium3.PublicKey)
+		if !ok {
+			return fmt.Errorf("expected an Ed25519-Dilithium3 public key, got %T", pubkey)
+		}
+		if !eddilithium3.Verify(pubKey, signed, sig) {
+			return errors.New("Ed25519-Dilithium3 verification failure")
 		}
 	case signaturePKCS1v15:
 		pubKey, ok := pubkey.(*rsa.PublicKey)
@@ -113,6 +123,8 @@ func typeAndHashFromSignatureScheme(signatureAlgorithm SignatureScheme) (sigType
 		sigType = signatureECDSA
 	case Ed25519:
 		sigType = signatureEd25519
+	case EdDilithium3:
+		sigType = signatureEdDilithium3
 	default:
 		return 0, 0, fmt.Errorf("unsupported signature algorithm: %#04x", signatureAlgorithm)
 	}
@@ -126,6 +138,8 @@ func typeAndHashFromSignatureScheme(signatureAlgorithm SignatureScheme) (sigType
 	case PKCS1WithSHA512, PSSWithSHA512, ECDSAWithP521AndSHA512:
 		hash = crypto.SHA512
 	case Ed25519:
+		hash = directSigning
+	case EdDilithium3:
 		hash = directSigning
 	default:
 		return 0, 0, fmt.Errorf("unsupported signature algorithm: %#04x", signatureAlgorithm)
@@ -148,6 +162,8 @@ func legacyTypeAndHashFromPublicKey(pub crypto.PublicKey) (sigType uint8, hash c
 		// full signature, and not even OpenSSL bothers with the
 		// complexity, so we can't even test it properly.
 		return 0, 0, fmt.Errorf("tls: Ed25519 public keys are not supported before TLS 1.2")
+	case *eddilithium3.PublicKey:
+		return 0, 0, fmt.Errorf("tls: Ed25519-Dilithium3 public keys are not supported before TLS 1.2")
 	default:
 		return 0, 0, fmt.Errorf("tls: unsupported public key: %T", pub)
 	}
@@ -217,6 +233,8 @@ func signatureSchemesForCertificate(version uint16, cert *Certificate) []Signatu
 		}
 	case ed25519.PublicKey:
 		sigAlgs = []SignatureScheme{Ed25519}
+	case *eddilithium3.PublicKey:
+		sigAlgs = []SignatureScheme{EdDilithium3}
 	default:
 		return nil
 	}

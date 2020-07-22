@@ -5,6 +5,7 @@
 package tls
 
 import (
+	"circl/sign/eddilithium3"
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/ed25519"
@@ -778,7 +779,7 @@ func (c *Conn) processCertsFromClient(certificate Certificate) error {
 	}
 
 	switch certs[0].PublicKey.(type) {
-	case *ecdsa.PublicKey, *rsa.PublicKey, ed25519.PublicKey:
+	case *ecdsa.PublicKey, *rsa.PublicKey, ed25519.PublicKey, *eddilithium3.PublicKey:
 	default:
 		c.sendAlert(alertUnsupportedCertificate)
 		return fmt.Errorf("tls: client certificate contains an unsupported public key of type %T", certs[0].PublicKey)
