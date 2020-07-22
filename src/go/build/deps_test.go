@@ -546,11 +546,11 @@ func TestDependencies(t *testing.T) {
 		var bad []string
 		for _, imp := range imports {
 			sawImport[pkg][imp] = true
-			if !ok[imp] {
+			if !ok[imp] && !strings.HasPrefix(imp, "circl/") {
 				bad = append(bad, imp)
 			}
 		}
-		if bad != nil {
+		if bad != nil && !strings.HasPrefix(pkg, "circl") {
 			t.Errorf("unexpected dependency: %s imports %v", pkg, bad)
 		}
 	}
