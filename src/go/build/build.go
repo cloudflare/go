@@ -1879,6 +1879,9 @@ func (ctxt *Context) match(name string, allTags map[string]bool) bool {
 	if ctxt.CgoEnabled && name == "cgo" {
 		return true
 	}
+	if name == "cfgo" {
+		return true
+	}
 	if name == ctxt.GOOS || name == ctxt.GOARCH || name == ctxt.Compiler {
 		return true
 	}
