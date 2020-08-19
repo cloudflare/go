@@ -790,6 +790,19 @@ func processExtensions(out *Certificate) error {
 					out.IssuingCertificateURL = append(out.IssuingCertificateURL, string(aiaDER))
 				}
 			}
+		} else if e.Id.Equal(oidExtensionDelegatedCredential) {
+			if !out.IsCA {
+				if out.KeyUsage == KeyUsageDigitalSignature {
+					val := asn1.RawValue{}
+					if rest, err := asn1.Unmarshal(e.Value, &val); err != nil {
+						return err
+					} else if len(rest) != 0 {
+						return errors.New("x509: trailing data after X.509 authority information")
+					}
+					out.AllowDC = true
+				}
+			}
+
 		} else {
 			// Unknown extensions are recorded if critical.
 			unhandled = true
