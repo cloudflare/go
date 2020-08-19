@@ -318,6 +318,19 @@ func parsePublicKey(algo PublicKeyAlgorithm, keyData *publicKeyInfo) (interface{
 		}
 		return pub, nil
 	default:
+		if scheme := CirclSchemeByPublicKeyAlgorithm(algo); scheme != nil {
+			if len(keyData.Algorithm.Parameters.FullBytes) != 0 {
+				return nil, fmt.Errorf(
+					"x509: %skey encoded with illegal parameters",
+					scheme.Name(),
+				)
+			}
+			pub, err := scheme.UnmarshalBinaryPublicKey([]byte(der))
+			if err != nil {
+				return nil, fmt.Errorf("x509: %s: %v", scheme.Name(), err)
+			}
+			return pub, nil
+		}
 		return nil, nil
 	}
 }
