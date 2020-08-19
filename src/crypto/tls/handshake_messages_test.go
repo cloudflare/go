@@ -162,6 +162,10 @@ func (*clientHelloMsg) Generate(rand *rand.Rand, size int) reflect.Value {
 	if rand.Intn(10) > 5 {
 		m.supportedSignatureAlgorithmsCert = supportedSignatureAlgorithms()
 	}
+	if rand.Intn(10) > 5 {
+		m.delegatedCredentialSupported = true
+		m.supportedSignatureAlgorithmsDC = supportedSignatureAlgorithmsDC
+	}
 	for i := 0; i < rand.Intn(5); i++ {
 		m.alpnProtocols = append(m.alpnProtocols, randomString(rand.Intn(20)+1, rand))
 	}
@@ -379,6 +383,10 @@ func (*certificateRequestMsgTLS13) Generate(rand *rand.Rand, size int) reflect.V
 		m.scts = true
 	}
 	if rand.Intn(10) > 5 {
+		m.supportDelegatedCredential = true
+		m.supportedSignatureAlgorithmsDC = supportedSignatureAlgorithmsDC
+	}
+	if rand.Intn(10) > 5 {
 		m.supportedSignatureAlgorithms = supportedSignatureAlgorithms()
 	}
 	if rand.Intn(10) > 5 {
@@ -402,6 +410,10 @@ func (*certificateMsgTLS13) Generate(rand *rand.Rand, size int) reflect.Value {
 	if rand.Intn(10) > 5 {
 		m.ocspStapling = true
 		m.certificate.OCSPStaple = randomBytes(rand.Intn(100)+1, rand)
+	}
+	if rand.Intn(10) > 5 {
+		m.delegatedCredential = true
+		m.certificate.DelegatedCredential = randomBytes(rand.Intn(100)+1, rand)
 	}
 	if rand.Intn(10) > 5 {
 		m.scts = true
