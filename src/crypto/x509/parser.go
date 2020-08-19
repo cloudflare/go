@@ -810,6 +810,15 @@ func processExtensions(out *Certificate) error {
 					out.IssuingCertificateURL = append(out.IssuingCertificateURL, string(aiaDER))
 				}
 			}
+		} else if e.Id.Equal(oidExtensionDelegatedCredential) {
+			if !out.IsCA {
+				if out.KeyUsage == KeyUsageDigitalSignature {
+					if !bytes.Equal(e.Value, asn1.NullBytes) {
+						return errors.New("x509: invalid delegated credential extension")
+					}
+					out.AllowDC = true
+				}
+			}
 		} else {
 			// Unknown extensions are recorded if critical.
 			unhandled = true
