@@ -12,6 +12,9 @@ import (
 	"encoding/asn1"
 	"errors"
 	"fmt"
+
+	circlPki "circl/pki"
+	circlSign "circl/sign"
 )
 
 // pkcs8 reflects an ASN.1, PKCS #8 PrivateKey. See
@@ -75,7 +78,22 @@ func ParsePKCS8PrivateKey(der []byte) (key interface{}, err error) {
 		return ed25519.NewKeyFromSeed(curvePrivateKey), nil
 
 	default:
-		return nil, fmt.Errorf("x509: PKCS#8 wrapping contained private key with unknown algorithm: %v", privKey.Algo.Algorithm)
+		scheme := circlPki.SchemeByOid(privKey.Algo.Algorithm)
+		if scheme == nil {
+			return nil, fmt.Errorf("x509: PKCS#8 wrapping contained private key with unknown algorithm: %v", privKey.Algo.Algorithm)
+		}
+		if l := len(privKey.Algo.Parameters.FullBytes); l != 0 {
+			return nil, fmt.Errorf("x509: invalid %s private key parameters", scheme.Name())
+		}
+		var packedSk []byte
+		if _, err := asn1.Unmarshal(privKey.PrivateKey, &packedSk); err != nil {
+			return nil, fmt.Errorf("x509: invalid %s private key: %v", scheme.Name(), err)
+		}
+		sk, err := scheme.UnmarshalBinaryPrivateKey(packedSk)
+		if err != nil {
+			return nil, fmt.Errorf("x509: invalid %s private key: %v", scheme.Name(), err)
+		}
+		return sk, nil
 	}
 }
 
@@ -127,6 +145,22 @@ func MarshalPKCS8PrivateKey(key interface{}) ([]byte, error) {
 			return nil, fmt.Errorf("x509: failed to marshal private key: %v", err)
 		}
 		privKey.PrivateKey = curvePrivateKey
+
+	case circlSign.PrivateKey:
+		scheme, ok := k.Scheme().(circlPki.CertificateScheme)
+		if !ok {
+			return nil, fmt.Errorf(
+				"x509: circl private key is not CertificateScheme")
+		}
+		privKey.Algo = pkix.AlgorithmIdentifier{
+			Algorithm: scheme.Oid(),
+		}
+		bytes, _ := k.MarshalBinary()
+		packedSk, err := asn1.Marshal(bytes)
+		if err != nil {
+			return nil, fmt.Errorf("x509: failed to marshal private key: %v", err)
+		}
+		privKey.PrivateKey = packedSk
 
 	default:
 		return nil, fmt.Errorf("x509: unknown key type while marshaling PKCS#8: %T", key)
