@@ -21,6 +21,8 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+
+	circlSign "circl/sign"
 )
 
 type clientHandshakeState struct {
@@ -879,7 +881,7 @@ func (c *Conn) verifyServerCertificate(certificates [][]byte) error {
 	}
 
 	switch certs[0].PublicKey.(type) {
-	case *rsa.PublicKey, *ecdsa.PublicKey, ed25519.PublicKey:
+	case *rsa.PublicKey, *ecdsa.PublicKey, ed25519.PublicKey, circlSign.PublicKey:
 		break
 	default:
 		c.sendAlert(alertUnsupportedCertificate)
