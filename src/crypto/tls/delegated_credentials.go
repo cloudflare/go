@@ -431,19 +431,6 @@ func (dc *DelegatedCredential) Validate(cert *x509.Certificate, peer string, now
 			return false, errors.New("expected ECDSA public key")
 		}
 
-		//case *ecdsa.PublicKey:
-		//	if pubKeyAlgo != ECDSA {
-		//		return signaturePublicKeyAlgoMismatchError(pubKeyAlgo, pub)
-		//	}
-		//	if !ecdsa.VerifyASN1(pub, signed, signature) {
-		//		return errors.New("x509: ECDSA verification failure")
-		//	}
-		//	return
-
-		//sig := new(ecdsaSignature)
-		//if _, err = asn1.Unmarshal(dc.Signature, sig); err != nil {
-		//	return false, err
-		//}
 		return ecdsa.VerifyASN1(pk, in, dc.Signature), nil
 	default:
 		return false, fmt.Errorf(
