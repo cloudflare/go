@@ -82,9 +82,11 @@ type clientHelloMsg struct {
 	sessionTicket                    []uint8
 	supportedSignatureAlgorithms     []SignatureScheme
 	supportedSignatureAlgorithmsCert []SignatureScheme
+	supportedSignatureAlgorithmsDC   []SignatureScheme
 	secureRenegotiationSupported     bool
 	secureRenegotiation              []byte
 	extendedMasterSecret             bool
+	delegatedCredentialSupported     bool
 	alpnProtocols                    []string
 	scts                             bool
 	supportedVersions                []uint16
@@ -186,6 +188,19 @@ func (m *clientHelloMsg) marshal() ([]byte, error) {
 		// RFC 7627
 		exts.AddUint16(extensionExtendedMasterSecret)
 		exts.AddUint16(0) // empty extension_data
+	}
+	if m.delegatedCredentialSupported {
+		if len(m.supportedSignatureAlgorithmsDC) > 0 {
+			// Draft: https://tools.ietf.org/html/draft-ietf-tls-subcerts-10
+			exts.AddUint16(extensionDelegatedCredentials)
+			exts.AddUint16LengthPrefixed(func(exts *cryptobyte.Builder) {
+				exts.AddUint16LengthPrefixed(func(exts *cryptobyte.Builder) {
+					for _, sigAlgo := range m.supportedSignatureAlgorithmsDC {
+						exts.AddUint16(uint16(sigAlgo))
+					}
+				})
+			})
+		}
 	}
 	if len(m.alpnProtocols) > 0 {
 		// RFC 7301, Section 3.1
@@ -554,6 +569,20 @@ func (m *clientHelloMsg) unmarshal(data []byte) bool {
 				len(m.cookie) == 0 {
 				return false
 			}
+		case extensionDelegatedCredentials:
+			var sigAndAlgs cryptobyte.String
+			if !extData.ReadUint16LengthPrefixed(&sigAndAlgs) || sigAndAlgs.Empty() {
+				return false
+			}
+			for !sigAndAlgs.Empty() {
+				var sigAndAlg uint16
+				if !sigAndAlgs.ReadUint16(&sigAndAlg) {
+					return false
+				}
+				m.supportedSignatureAlgorithmsDC = append(
+					m.supportedSignatureAlgorithmsDC, SignatureScheme(sigAndAlg))
+			}
+			m.delegatedCredentialSupported = true
 		case extensionKeyShare:
 			// RFC 8446, Section 4.2.8
 			var clientShares cryptobyte.String
@@ -1128,7 +1157,9 @@ type certificateRequestMsgTLS13 struct {
 	raw                              []byte
 	ocspStapling                     bool
 	scts                             bool
+	supportDelegatedCredential       bool
 	supportedSignatureAlgorithms     []SignatureScheme
+	supportedSignatureAlgorithmsDC   []SignatureScheme
 	supportedSignatureAlgorithmsCert []SignatureScheme
 	certificateAuthorities           [][]byte
 }
@@ -1158,6 +1189,19 @@ func (m *certificateRequestMsgTLS13) marshal() ([]byte, error) {
 				// from the server." and it appears in the table in Section 4.2.
 				b.AddUint16(extensionSCT)
 				b.AddUint16(0) // empty extension_data
+			}
+			if m.supportDelegatedCredential {
+				if len(m.supportedSignatureAlgorithmsDC) > 0 {
+					// Draft: https://tools.ietf.org/html/draft-ietf-tls-subcerts-10
+					b.AddUint16(extensionDelegatedCredentials)
+					b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
+						b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
+							for _, sigAlgo := range m.supportedSignatureAlgorithmsDC {
+								b.AddUint16(uint16(sigAlgo))
+							}
+						})
+					})
+				}
 			}
 			if len(m.supportedSignatureAlgorithms) > 0 {
 				b.AddUint16(extensionSignatureAlgorithms)
@@ -1224,6 +1268,20 @@ func (m *certificateRequestMsgTLS13) unmarshal(data []byte) bool {
 			m.ocspStapling = true
 		case extensionSCT:
 			m.scts = true
+		case extensionDelegatedCredentials:
+			var sigAndAlgs cryptobyte.String
+			if !extData.ReadUint16LengthPrefixed(&sigAndAlgs) || sigAndAlgs.Empty() {
+				return false
+			}
+			for !sigAndAlgs.Empty() {
+				var sigAndAlg uint16
+				if !sigAndAlgs.ReadUint16(&sigAndAlg) {
+					return false
+				}
+				m.supportedSignatureAlgorithmsDC = append(
+					m.supportedSignatureAlgorithmsDC, SignatureScheme(sigAndAlg))
+			}
+			m.supportDelegatedCredential = true
 		case extensionSignatureAlgorithms:
 			var sigAndAlgs cryptobyte.String
 			if !extData.ReadUint16LengthPrefixed(&sigAndAlgs) || sigAndAlgs.Empty() {
@@ -1353,10 +1411,11 @@ func (m *certificateMsg) unmarshal(data []byte) bool {
 }
 
 type certificateMsgTLS13 struct {
-	raw          []byte
-	certificate  Certificate
-	ocspStapling bool
-	scts         bool
+	raw                 []byte
+	certificate         Certificate
+	ocspStapling        bool
+	scts                bool
+	delegatedCredential bool
 }
 
 func (m *certificateMsgTLS13) marshal() ([]byte, error) {
@@ -1376,6 +1435,9 @@ func (m *certificateMsgTLS13) marshal() ([]byte, error) {
 		if !m.scts {
 			certificate.SignedCertificateTimestamps = nil
 		}
+		if !m.delegatedCredential {
+			certificate.DelegatedCredential = nil
+		}
 		marshalCertificate(b, certificate)
 	})
 
@@ -1392,7 +1454,8 @@ func marshalCertificate(b *cryptobyte.Builder, certificate Certificate) {
 			})
 			b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
 				if i > 0 {
-					// This library only supports OCSP and SCT for leaf certificates.
+					// This library only supports OCSP, SCT and Delegated Credentials for leaf certificates.
+					// Delegated Credentials are only supported on the leaf/end-entity certificate.
 					return
 				}
 				if certificate.OCSPStaple != nil {
@@ -1416,6 +1479,12 @@ func marshalCertificate(b *cryptobyte.Builder, certificate Certificate) {
 						})
 					})
 				}
+				if certificate.DelegatedCredential != nil {
+					b.AddUint16(extensionDelegatedCredentials)
+					b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
+						b.AddBytes(certificate.DelegatedCredential)
+					})
+				}
 			})
 		}
 	})
@@ -1435,6 +1504,7 @@ func (m *certificateMsgTLS13) unmarshal(data []byte) bool {
 
 	m.scts = m.certificate.SignedCertificateTimestamps != nil
 	m.ocspStapling = m.certificate.OCSPStaple != nil
+	m.delegatedCredential = m.certificate.DelegatedCredential != nil
 
 	return true
 }
@@ -1485,6 +1555,13 @@ func unmarshalCertificate(s *cryptobyte.String, certificate *Certificate) bool {
 					}
 					certificate.SignedCertificateTimestamps = append(
 						certificate.SignedCertificateTimestamps, sct)
+				}
+			case extensionDelegatedCredentials:
+				if !extData.ReadBytes(&certificate.DelegatedCredential, len(extData)) {
+					return false
+				}
+				if len(certificate.DelegatedCredential) == 0 {
+					return false
 				}
 			default:
 				// Ignore unknown extensions.
