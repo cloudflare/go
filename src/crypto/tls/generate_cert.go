@@ -33,6 +33,7 @@ var (
 	validFrom  = flag.String("start-date", "", "Creation date formatted as Jan 1 15:04:05 2011")
 	validFor   = flag.Duration("duration", 365*24*time.Hour, "Duration that certificate is valid for")
 	isCA       = flag.Bool("ca", false, "whether this cert should be its own Certificate Authority")
+	allowDC    = flag.Bool("allowDC", false, "whether this cert can be used with Delegated Credentials")
 	rsaBits    = flag.Int("rsa-bits", 2048, "Size of RSA key to generate. Ignored if --ecdsa-curve is set")
 	ecdsaCurve = flag.String("ecdsa-curve", "", "ECDSA curve to use to generate a key. Valid values are P224, P256 (recommended), P384, P521")
 	ed25519Key = flag.Bool("ed25519", false, "Generate an Ed25519 key")
@@ -140,8 +141,17 @@ func main() {
 	}
 
 	if *isCA {
+		if *allowDC {
+			log.Fatal("Failed to create certificate: ca is not allowed with the dc flag")
+		}
+
 		template.IsCA = true
 		template.KeyUsage |= x509.KeyUsageCertSign
+	}
+
+	if *allowDC {
+		template.AllowDC = true
+		template.KeyUsage |= x509.KeyUsageDigitalSignature
 	}
 
 	derBytes, err := x509.CreateCertificate(rand.Reader, &template, &template, publicKey(priv), priv)

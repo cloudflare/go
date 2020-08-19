@@ -695,6 +695,9 @@ type Certificate struct {
 	BasicConstraintsValid bool
 	IsCA                  bool
 
+	// AllowDC indicates if the certificate can be used for delegated credentials.
+	AllowDC bool
+
 	// MaxPathLen and MaxPathLenZero indicate the presence and
 	// value of the BasicConstraints' "pathLenConstraint".
 	//
@@ -1494,6 +1497,18 @@ func parseCertificate(in *certificate) (*Certificate, error) {
 					out.IssuingCertificateURL = append(out.IssuingCertificateURL, string(v.Location.Bytes))
 				}
 			}
+		} else if e.Id.Equal(oidExtensionDelegatedCredential) {
+			if !out.IsCA {
+				if out.KeyUsage == KeyUsageDigitalSignature {
+					val := asn1.RawValue{}
+					if rest, err := asn1.Unmarshal(e.Value, &val); err != nil {
+						return nil, err
+					} else if len(rest) != 0 {
+						return nil, errors.New("x509: trailing data after X.509 authority information")
+					}
+					out.AllowDC = true
+				}
+			}
 		} else {
 			// Unknown extensions are recorded if critical.
 			unhandled = true
@@ -1668,6 +1683,7 @@ var (
 	oidExtensionCRLDistributionPoints = []int{2, 5, 29, 31}
 	oidExtensionAuthorityInfoAccess   = []int{1, 3, 6, 1, 5, 5, 7, 1, 1}
 	oidExtensionCRLNumber             = []int{2, 5, 29, 20}
+	oidExtensionDelegatedCredential   = []int{1, 3, 6, 1, 4, 1, 44363, 44}
 )
 
 var (
@@ -1764,6 +1780,16 @@ func buildCertExtensions(template *Certificate, subjectIsEmpty bool, authorityKe
 	if len(subjectKeyId) > 0 && !oidInExtensions(oidExtensionSubjectKeyId, template.ExtraExtensions) {
 		ret[n].Id = oidExtensionSubjectKeyId
 		ret[n].Value, err = asn1.Marshal(subjectKeyId)
+		if err != nil {
+			return
+		}
+		n++
+	}
+
+	// This extension is not critical
+	if template.KeyUsage == KeyUsageDigitalSignature && template.AllowDC && !template.IsCA && !oidInExtensions(oidExtensionDelegatedCredential, template.ExtraExtensions) {
+		ret[n].Id = oidExtensionDelegatedCredential
+		ret[n].Value, err = asn1.Marshal(asn1.NullRawValue)
 		if err != nil {
 			return
 		}
@@ -2159,6 +2185,7 @@ var emptyASN1Subject = []byte{0x30, 0}
 //  - ExtraExtensions
 //  - IPAddresses
 //  - IsCA
+//  - AllowDC
 //  - IssuingCertificateURL
 //  - KeyUsage
 //  - MaxPathLen

@@ -12,6 +12,20 @@
 // forwards the decrypted ClientHello to the intended recipient, known as the
 // backend server. The goal of this mechanism is to ensure that connections made
 // to backend servers are indistinguishable from one another.
+//
+// This package implements the "Delegated Credentials" extension, as
+// specified by draft-ietf-tls-subcerts-10. This extension allows the usage
+// of a limited delegation mechanism that allows a TLS peer to issue its own
+// credentials within the scope of a certificate issued by an external
+// CA. These credentials only enable the recipient of the delegation to
+// speak for names that the CA has authorized. If the client or server supports
+// this extension, then the server or client may use a "delegated credential"
+// as the signing key in the handshake. A delegated credential is a short lived
+// public/secret key pair delegated to the peer by an entity trusted by the
+// corresponding peer. This allows a reverse proxy to terminate a TLS connection
+// on behalf of the entity. Credentials can't be revoked; in order to
+// mitigate risk in case the reverse proxy is compromised, the credential is only
+// valid for a short time (days, hours, or even minutes).
 package tls
 
 // BUG(cjpatton): In order to achieve its security goal, the ECH extension
