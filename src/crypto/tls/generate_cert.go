@@ -11,6 +11,8 @@
 package main
 
 import (
+	circlSign "circl/sign"
+	circlSchemes "circl/sign/schemes"
 	"crypto/ecdsa"
 	"crypto/ed25519"
 	"crypto/elliptic"
@@ -36,6 +38,7 @@ var (
 	rsaBits    = flag.Int("rsa-bits", 2048, "Size of RSA key to generate. Ignored if --ecdsa-curve is set")
 	ecdsaCurve = flag.String("ecdsa-curve", "", "ECDSA curve to use to generate a key. Valid values are P224, P256 (recommended), P384, P521")
 	ed25519Key = flag.Bool("ed25519", false, "Generate an Ed25519 key")
+	circlKey   = flag.String("circl", "", "Generate a key supported by Circl")
 )
 
 func publicKey(priv interface{}) interface{} {
@@ -46,6 +49,8 @@ func publicKey(priv interface{}) interface{} {
 		return &k.PublicKey
 	case ed25519.PrivateKey:
 		return k.Public().(ed25519.PublicKey)
+	case circlSign.PrivateKey:
+		return k.Public()
 	default:
 		return nil
 	}
@@ -64,6 +69,12 @@ func main() {
 	case "":
 		if *ed25519Key {
 			_, priv, err = ed25519.GenerateKey(rand.Reader)
+		} else if *circlKey != "" {
+			scheme := circlSchemes.ByName(*circlKey)
+			if scheme == nil {
+				log.Fatalf("No such Circl scheme: %s", *circlKey)
+			}
+			_, priv, err = scheme.GenerateKey()
 		} else {
 			priv, err = rsa.GenerateKey(rand.Reader, *rsaBits)
 		}
