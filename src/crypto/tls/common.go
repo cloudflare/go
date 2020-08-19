@@ -187,6 +187,7 @@ const (
 	signatureRSAPSS
 	signatureECDSA
 	signatureEd25519
+	signatureEdDilithium3
 )
 
 // directSigning is a standard Hash value that signals that no pre-hashing
@@ -756,6 +757,11 @@ type Config struct {
 	// its key share in TLS 1.3. This may change in the future.
 	CurvePreferences []CurveID
 
+	// PQSignatureSchemesEnabled controls whether additional post-quantum
+	// signature schemes are supported for peer certificates. For available
+	// signature schemes, see tls_cf.go.
+	PQSignatureSchemesEnabled bool
+
 	// DynamicRecordSizingDisabled disables adaptive sizing of TLS records.
 	// When true, the largest possible TLS record size is always used. When
 	// false, the size of TLS records may be adjusted in an attempt to
@@ -858,6 +864,7 @@ func (c *Config) Clone() *Config {
 		MinVersion:                  c.MinVersion,
 		MaxVersion:                  c.MaxVersion,
 		CurvePreferences:            c.CurvePreferences,
+		PQSignatureSchemesEnabled:   c.PQSignatureSchemesEnabled,
 		DynamicRecordSizingDisabled: c.DynamicRecordSizingDisabled,
 		Renegotiation:               c.Renegotiation,
 		KeyLogWriter:                c.KeyLogWriter,

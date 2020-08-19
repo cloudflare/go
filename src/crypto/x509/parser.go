@@ -25,6 +25,8 @@ import (
 	"unicode/utf16"
 	"unicode/utf8"
 
+	circlPki "github.com/cloudflare/circl/pki"
+
 	"golang.org/x/crypto/cryptobyte"
 	cryptobyte_asn1 "golang.org/x/crypto/cryptobyte/asn1"
 )
@@ -312,6 +314,19 @@ func parsePublicKey(keyData *publicKeyInfo) (any, error) {
 		}
 		return pub, nil
 	default:
+		if scheme := circlPki.SchemeByOid(oid); scheme != nil {
+			if len(keyData.Algorithm.Parameters.FullBytes) != 0 {
+				return nil, fmt.Errorf(
+					"x509: %skey encoded with illegal parameters",
+					scheme.Name(),
+				)
+			}
+			pub, err := scheme.UnmarshalBinaryPublicKey([]byte(der))
+			if err != nil {
+				return nil, fmt.Errorf("x509: %s: %v", scheme.Name(), err)
+			}
+			return pub, nil
+		}
 		return nil, errors.New("x509: unknown public key algorithm")
 	}
 }
