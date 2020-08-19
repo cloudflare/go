@@ -22,6 +22,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	circlSign "github.com/cloudflare/circl/sign"
 )
 
 type clientHandshakeState struct {
@@ -126,7 +128,7 @@ func (c *Conn) makeClientHello() (*clientHelloMsg, clientKeySharePrivate, error)
 	}
 
 	if hello.vers >= VersionTLS12 {
-		hello.supportedSignatureAlgorithms = supportedSignatureAlgorithms()
+		hello.supportedSignatureAlgorithms = config.supportedSignatureAlgorithms()
 	}
 	if testingOnlyForceClientHelloSignatureAlgorithms != nil {
 		hello.supportedSignatureAlgorithms = testingOnlyForceClientHelloSignatureAlgorithms
@@ -1032,7 +1034,7 @@ func (c *Conn) verifyServerCertificate(certificates [][]byte) error {
 	}
 
 	switch certs[0].PublicKey.(type) {
-	case *rsa.PublicKey, *ecdsa.PublicKey, ed25519.PublicKey:
+	case *rsa.PublicKey, *ecdsa.PublicKey, ed25519.PublicKey, circlSign.PublicKey:
 		break
 	default:
 		c.sendAlert(alertUnsupportedCertificate)
