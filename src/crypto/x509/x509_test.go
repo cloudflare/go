@@ -594,6 +594,25 @@ func TestCreateSelfSignedCertificate(t *testing.T) {
 		{"Ed25519", ed25519Pub, ed25519Priv, true, PureEd25519},
 	}
 
+	for _, cs := range circlSchemes {
+		pk, sk, err := cs.scheme.GenerateKey()
+		if err != nil {
+			t.Fatal()
+		}
+		tests = append(tests, struct {
+			name      string
+			pub, priv interface{}
+			checkSig  bool
+			sigAlgo   SignatureAlgorithm
+		}{
+			cs.scheme.Name(),
+			pk,
+			sk,
+			true,
+			cs.sga,
+		})
+	}
+
 	testExtKeyUsage := []ExtKeyUsage{ExtKeyUsageClientAuth, ExtKeyUsageServerAuth}
 	testUnknownExtKeyUsage := []asn1.ObjectIdentifier{[]int{1, 2, 3}, []int{2, 59, 1}}
 	extraExtensionData := []byte("extra extension")
