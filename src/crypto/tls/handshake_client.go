@@ -131,6 +131,8 @@ func (c *Conn) makeClientHello(minVersion uint16) (*clientHelloMsg, ecdheParamet
 			return nil, nil, err
 		}
 		hello.keyShares = []keyShare{{group: curveID, data: params.PublicKey()}}
+		hello.delegatedCredentialSupported = config.SupportDelegatedCredential
+		hello.supportedSignatureAlgorithmsDC = supportedSignatureAlgorithmsDC
 	}
 
 	return hello, params, nil
@@ -913,8 +915,10 @@ func (c *Conn) verifyServerCertificate(certificates [][]byte) error {
 // <= 1.2 CertificateRequest, making an effort to fill in missing information.
 func certificateRequestInfoFromMsg(vers uint16, certReq *certificateRequestMsg) *CertificateRequestInfo {
 	cri := &CertificateRequestInfo{
-		AcceptableCAs: certReq.certificateAuthorities,
-		Version:       vers,
+		AcceptableCAs:               certReq.certificateAuthorities,
+		Version:                     vers,
+		SupportsDelegatedCredential: false, // Not supported in TLS <= 1.2
+		SignatureSchemesDC:          nil,   // Not supported in TLS <= 1.2
 	}
 
 	var rsaAvail, ecAvail bool
