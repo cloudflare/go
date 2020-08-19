@@ -139,6 +139,8 @@ func (c *Conn) makeClientHello() (*clientHelloMsg, ecdheParameters, error) {
 			return nil, nil, err
 		}
 		hello.keyShares = []keyShare{{group: curveID, data: params.PublicKey()}}
+		hello.delegatedCredentialSupported = config.SupportDelegatedCredential
+		hello.supportedSignatureAlgorithmsDC = supportedSignatureAlgorithmsDC
 	}
 
 	return hello, params, nil
@@ -913,6 +915,9 @@ func certificateRequestInfoFromMsg(ctx context.Context, vers uint16, certReq *ce
 		AcceptableCAs: certReq.certificateAuthorities,
 		Version:       vers,
 		ctx:           ctx,
+
+		SupportsDelegatedCredential: false, // Not supported in TLS <= 1.2
+		SignatureSchemesDC:          nil,   // Not supported in TLS <= 1.2
 	}
 
 	var rsaAvail, ecAvail bool
