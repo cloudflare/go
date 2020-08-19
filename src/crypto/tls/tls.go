@@ -4,6 +4,20 @@
 
 // Package tls partially implements TLS 1.2, as specified in RFC 5246,
 // and TLS 1.3, as specified in RFC 8446.
+//
+// This package implements the "Delegated Credentials" extension, as
+// specified by draft-ietf-tls-subcerts-10. This extension allows the usage
+// of a limited delegation mechanism that allows a TLS peer to issue its own
+// credentials within the scope of a certificate issued by an external
+// CA. These credentials only enable the recipient of the delegation to
+// speak for names that the CA has authorized. If the client or server supports
+// this extension, then the server or client may use a "delegated credential"
+// as the signing key in the handshake. A delegated credential is a short lived
+// public/secret key pair delegated to the peer by an entity trusted by the
+// corresponding peer. This allows a reverse proxy to terminate a TLS connection
+// on behalf of the entity. Credentials can't be revoked; in order to
+// mitigate risk in case the reverse proxy is compromised, the credential is only
+// valid for a short time (days, hours, or even minutes).
 package tls
 
 // BUG(agl): The crypto/tls package only implements some countermeasures
