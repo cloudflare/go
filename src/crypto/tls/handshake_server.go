@@ -847,14 +847,16 @@ func clientHelloInfo(c *Conn, clientHello *clientHelloMsg) *ClientHelloInfo {
 	}
 
 	return &ClientHelloInfo{
-		CipherSuites:      clientHello.cipherSuites,
-		ServerName:        clientHello.serverName,
-		SupportedCurves:   clientHello.supportedCurves,
-		SupportedPoints:   clientHello.supportedPoints,
-		SignatureSchemes:  clientHello.supportedSignatureAlgorithms,
-		SupportedProtos:   clientHello.alpnProtocols,
-		SupportedVersions: supportedVersions,
-		Conn:              c.conn,
-		config:            c.config,
+		CipherSuites:                clientHello.cipherSuites,
+		ServerName:                  clientHello.serverName,
+		SupportedCurves:             clientHello.supportedCurves,
+		SupportedPoints:             clientHello.supportedPoints,
+		SignatureSchemes:            clientHello.supportedSignatureAlgorithms,
+		SupportedProtos:             clientHello.alpnProtocols,
+		SupportedVersions:           supportedVersions,
+		SupportsDelegatedCredential: clientHello.delegatedCredentialSupported,
+		SignatureSchemesDC:          clientHello.supportedSignatureAlgorithmsDC,
+		Conn:                        c.conn,
+		config:                      c.config,
 	}
 }

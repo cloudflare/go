@@ -52,6 +52,9 @@ type Conn struct {
 	// verifiedChains contains the certificate chains that we built, as
 	// opposed to the ones presented by the server.
 	verifiedChains [][]*x509.Certificate
+	// verifiedDC contains the Delegated Credential sent by the peer (if advertised
+	// and correctly processed), which has been verified against the leaf certificate.
+	verifiedDC *DelegatedCredential
 	// serverName contains the server name indicated by the client, if any.
 	serverName string
 	// secureRenegotiation is true if the server echoed the secure
@@ -1474,6 +1477,9 @@ func (c *Conn) connectionStateLocked() ConnectionState {
 	state.CipherSuite = c.cipherSuite
 	state.PeerCertificates = c.peerCertificates
 	state.VerifiedChains = c.verifiedChains
+	if c.verifiedDC != nil {
+		state.VerifiedDC = true
+	}
 	state.SignedCertificateTimestamps = c.scts
 	state.OCSPResponse = c.ocspResponse
 	state.ECHAccepted = c.ech.accepted
