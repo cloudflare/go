@@ -259,6 +259,28 @@ func signatureSchemesForCertificate(version uint16, cert *Certificate) []Signatu
 	return sigAlgs
 }
 
+// selectSignatureSchemeDC picks a SignatureScheme from the peer's preference list
+// that works with the selected delegated credential. It's only called for protocol
+// versions that support delegated credential, so TLS 1.3.
+func selectSignatureSchemeDC(vers uint16, dc *DelegatedCredential, peerAlgs []SignatureScheme, peerAlgsDC []SignatureScheme) (SignatureScheme, error) {
+	if vers != VersionTLS13 {
+		return 0, errors.New("unsupported TLS version for dc")
+	}
+
+	if !isSupportedSignatureAlgorithm(dc.algorithm, peerAlgs) {
+		return undefinedSignatureScheme, errors.New("tls: peer doesn't support the delegated credential's signature")
+	}
+
+	// Pick signature scheme in the peer's preference order, as our
+	// preference order is not configurable.
+	for _, preferredAlg := range peerAlgsDC {
+		if preferredAlg == dc.cred.expCertVerfAlgo {
+			return preferredAlg, nil
+		}
+	}
+	return 0, errors.New("tls: peer doesn't support the delegated credential's signature algorithm")
+}
+
 // selectSignatureScheme picks a SignatureScheme from the peer's preference list
 // that works with the selected certificate. It's only called for protocol
 // versions that support signature algorithms, so TLS 1.2 and 1.3.
