@@ -10,6 +10,7 @@ import (
 	"crypto/hmac"
 	"crypto/rsa"
 	"errors"
+	"fmt"
 	"hash"
 	"sync/atomic"
 	"time"
@@ -32,6 +33,42 @@ type clientHandshakeStateTLS13 struct {
 	transcript    hash.Hash
 	masterSecret  []byte
 	trafficSecret []byte // client_application_traffic_secret_0
+}
+
+// processDelegatedCredentialFromServer unmarshals the DelegatedCredential
+// offered by the server (if present) and validates it using the peer
+// certificate.
+func (hs *clientHandshakeStateTLS13) processDelegatedCredentialFromServer(dc []byte) error {
+	c := hs.c
+
+	var dCred *DelegatedCredential
+	var err error
+	if dc != nil {
+		// Assert that the DC extension was indicated by the client.
+		if !hs.hello.delegatedCredentialSupported {
+			c.sendAlert(alertUnexpectedMessage)
+			// TODO: check this error is consistent
+			return errors.New("tls: got delegated credential extension without indication")
+		}
+
+		dCred, err = UnmarshalDelegatedCredential(dc)
+		if err != nil {
+			c.sendAlert(alertDecodeError)
+			return fmt.Errorf("tls: delegated credential: %s", err)
+		}
+	}
+
+	if dCred != nil && !c.config.InsecureSkipVerify {
+		v, err := dCred.Validate(c.peerCertificates[0], "client", c.config.time())
+		if err != nil || !v {
+			c.sendAlert(alertIllegalParameter)
+			return fmt.Errorf("delegated credential: %s", err)
+		}
+	}
+
+	c.verifiedDC = dCred
+
+	return nil
 }
 
 // handshake requires hs.c, hs.hello, hs.serverHello, hs.ecdheParams, and,
@@ -456,6 +493,11 @@ func (hs *clientHandshakeStateTLS13) readServerCertificate() error {
 		return err
 	}
 
+	// TODO: it will be good to check here if the bool is present on certMsg
+	if err := hs.processDelegatedCredentialFromServer(certMsg.certificate.DelegatedCredential); err != nil {
+		return err
+	}
+
 	msg, err = c.readHandshake()
 	if err != nil {
 		return err
@@ -480,8 +522,14 @@ func (hs *clientHandshakeStateTLS13) readServerCertificate() error {
 		c.sendAlert(alertIllegalParameter)
 		return errors.New("tls: certificate used with invalid signature algorithm")
 	}
+
+	pk := c.peerCertificates[0].PublicKey
+	if c.verifiedDC != nil {
+		pk = c.verifiedDC.Cred.PublicKey
+	}
+
 	signed := signedMessage(sigHash, serverSignatureContext, hs.transcript)
-	if err := verifyHandshakeSignature(sigType, c.peerCertificates[0].PublicKey,
+	if err := verifyHandshakeSignature(sigType, pk,
 		sigHash, signed, certVerify.signature); err != nil {
 		c.sendAlert(alertDecryptError)
 		return errors.New("tls: invalid signature by the server certificate: " + err.Error())

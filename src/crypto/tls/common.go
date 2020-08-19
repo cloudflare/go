@@ -100,6 +100,7 @@ const (
 	extensionSignatureAlgorithmsCert uint16 = 50
 	extensionKeyShare                uint16 = 51
 	extensionRenegotiationInfo       uint16 = 0xff01
+	extensionDelegatedCredentials    uint16 = 34
 )
 
 // TLS signaling cipher suite values
@@ -420,6 +421,10 @@ type ClientHelloInfo struct {
 	// might be rejected if used.
 	SupportedVersions []uint16
 
+	// SupportDelegatedCredential is true if the client indicated willingness
+	// to negotiate the delegated credential extension.
+	SupportDelegatedCredential bool
+
 	// Conn is the underlying net.Conn for the connection. Do not read
 	// from, or write to, this connection; that will cause the TLS
 	// connection to fail.
@@ -673,7 +678,20 @@ type Config struct {
 	// used for debugging.
 	KeyLogWriter io.Writer
 
-	// mutex protects sessionTicketKeys and autoSessionTicketKeys.
+	// SupportDelegatedCredential is true if the client or server is willing
+	// to negotiate the delegated credential extension.
+	// This can only be used for TLS 1.3
+	//
+	// See https://tools.ietf.org/html/draft-ietf-tls-subcerts.
+	SupportDelegatedCredential bool
+
+	// GetDelegatedCredential returns a DelegatedCredential for use with the
+	// delegated credential extension based on the ClientHello and TLS version
+	// selected for the session. If this is nil, then the server will not offer
+	// a DelegatedCredential.
+	GetDelegatedCredential func(*ClientHelloInfo) (*DelegatedCredential, crypto.PrivateKey, error)
+
+        // mutex protects sessionTicketKeys and autoSessionTicketKeys.
 	mutex sync.RWMutex
 	// sessionTicketKeys contains zero or more ticket keys. If set, it means the
 	// the keys were set with SessionTicketKey or SetSessionTicketKeys. The
@@ -759,6 +777,8 @@ func (c *Config) Clone() *Config {
 		DynamicRecordSizingDisabled: c.DynamicRecordSizingDisabled,
 		Renegotiation:               c.Renegotiation,
 		KeyLogWriter:                c.KeyLogWriter,
+		SupportDelegatedCredential:  c.SupportDelegatedCredential,
+		GetDelegatedCredential:      c.GetDelegatedCredential,
 		sessionTicketKeys:           c.sessionTicketKeys,
 		autoSessionTicketKeys:       c.autoSessionTicketKeys,
 	}
@@ -1296,6 +1316,8 @@ type Certificate struct {
 	// SignedCertificateTimestamps contains an optional list of Signed
 	// Certificate Timestamps which will be served to clients that request it.
 	SignedCertificateTimestamps [][]byte
+	// DelegatedCredential is serialized Delegated Credential
+	DelegatedCredential []byte
 	// Leaf is the parsed form of the leaf certificate, which may be initialized
 	// using x509.ParseCertificate to reduce per-handshake processing. If nil,
 	// the leaf certificate will be parsed as needed.

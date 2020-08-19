@@ -73,6 +73,8 @@ func (c *Conn) makeClientHello() (*clientHelloMsg, ecdheParameters, error) {
 		supportedCurves:              config.curvePreferences(),
 		supportedPoints:              []uint8{pointFormatUncompressed},
 		secureRenegotiationSupported: true,
+		// for TLS 1.2, delegatedCredentials are not supported
+		delegatedCredentialSupported: false,
 		alpnProtocols:                config.NextProtos,
 		supportedVersions:            supportedVersions,
 	}
@@ -128,6 +130,8 @@ func (c *Conn) makeClientHello() (*clientHelloMsg, ecdheParameters, error) {
 			return nil, nil, err
 		}
 		hello.keyShares = []keyShare{{group: curveID, data: params.PublicKey()}}
+		// only for TLS 1.3
+		hello.delegatedCredentialSupported = config.SupportDelegatedCredential
 	}
 
 	return hello, params, nil

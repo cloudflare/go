@@ -819,6 +819,7 @@ func clientHelloInfo(c *Conn, clientHello *clientHelloMsg) *ClientHelloInfo {
 		supportedVersions = supportedVersionsFromMax(clientHello.vers)
 	}
 
+	// TODO: add the delegated credential as well
 	return &ClientHelloInfo{
 		CipherSuites:      clientHello.cipherSuites,
 		ServerName:        clientHello.serverName,

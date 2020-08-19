@@ -83,6 +83,7 @@ type clientHelloMsg struct {
 	supportedSignatureAlgorithmsCert []SignatureScheme
 	secureRenegotiationSupported     bool
 	secureRenegotiation              []byte
+	delegatedCredentialSupported     bool
 	alpnProtocols                    []string
 	scts                             bool
 	supportedVersions                []uint16
@@ -197,6 +198,17 @@ func (m *clientHelloMsg) marshal() []byte {
 				b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
 					b.AddUint8LengthPrefixed(func(b *cryptobyte.Builder) {
 						b.AddBytes(m.secureRenegotiation)
+					})
+				})
+			}
+			if m.delegatedCredentialSupported {
+				// Draft: https://datatracker.ietf.org/doc/draft-ietf-tls-subcerts/, Section 4.1
+				b.AddUint16(extensionDelegatedCredentials)
+				b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
+					b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
+						for _, sigAlgo := range m.supportedSignatureAlgorithms {
+							b.AddUint16(uint16(sigAlgo))
+						}
 					})
 				})
 			}
@@ -523,6 +535,20 @@ func (m *clientHelloMsg) unmarshal(data []byte) bool {
 				len(m.cookie) == 0 {
 				return false
 			}
+		case extensionDelegatedCredentials:
+			var sigAndAlgs cryptobyte.String
+			if !extData.ReadUint16LengthPrefixed(&sigAndAlgs) || sigAndAlgs.Empty() {
+				return false
+			}
+			for !sigAndAlgs.Empty() {
+				var sigAndAlg uint16
+				if !sigAndAlgs.ReadUint16(&sigAndAlg) {
+					return false
+				}
+				m.supportedSignatureAlgorithms = append(
+					m.supportedSignatureAlgorithms, SignatureScheme(sigAndAlg))
+			}
+			m.delegatedCredentialSupported = true
 		case extensionKeyShare:
 			// RFC 8446, Section 4.2.8
 			var clientShares cryptobyte.String
@@ -716,7 +742,6 @@ func (m *serverHelloMsg) marshal() []byte {
 					})
 				})
 			}
-
 			extensionsPresent = len(b.BytesOrPanic()) > 2
 		})
 
@@ -1277,6 +1302,7 @@ func (m *certificateMsg) unmarshal(data []byte) bool {
 	return true
 }
 
+// TODO: might be good to add here a bool for the dc to follow the whole logic as well
 type certificateMsgTLS13 struct {
 	raw          []byte
 	certificate  Certificate
@@ -1317,6 +1343,7 @@ func marshalCertificate(b *cryptobyte.Builder, certificate Certificate) {
 			b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
 				if i > 0 {
 					// This library only supports OCSP and SCT for leaf certificates.
+					// Delegated Credentials are only supported on the leaf/end-entity certificate.
 					return
 				}
 				if certificate.OCSPStaple != nil {
@@ -1338,6 +1365,13 @@ func marshalCertificate(b *cryptobyte.Builder, certificate Certificate) {
 								})
 							}
 						})
+					})
+				}
+				if certificate.DelegatedCredential != nil {
+					b.AddUint16(extensionDelegatedCredentials)
+					// TODO: check the length
+					b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
+						b.AddBytes(certificate.DelegatedCredential)
 					})
 				}
 			})
@@ -1409,6 +1443,11 @@ func unmarshalCertificate(s *cryptobyte.String, certificate *Certificate) bool {
 					}
 					certificate.SignedCertificateTimestamps = append(
 						certificate.SignedCertificateTimestamps, sct)
+				}
+			case extensionDelegatedCredentials:
+				if !readUint24LengthPrefixed(&extData, &certificate.DelegatedCredential) ||
+					len(certificate.DelegatedCredential) == 0 {
+					return false
 				}
 			default:
 				// Ignore unknown extensions.

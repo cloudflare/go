@@ -377,7 +377,30 @@ func (hs *serverHandshakeStateTLS13) pickCertificate() error {
 		c.sendAlert(alertHandshakeFailure)
 		return err
 	}
+
 	hs.cert = certificate
+
+	if hs.clientHello.delegatedCredentialSupported {
+		if c.config.GetDelegatedCredential != nil {
+			dCred, priv, err := c.config.GetDelegatedCredential(clientHelloInfo(c, hs.clientHello))
+			if err != nil {
+				c.sendAlert(alertInternalError)
+				return nil
+			}
+
+			if dCred != nil && priv != nil {
+				hs.cert.PrivateKey = priv
+				if dCred.Raw == nil {
+					dCred.Raw, err = dCred.Marshal()
+					if err != nil {
+						c.sendAlert(alertInternalError)
+						return err
+					}
+				}
+				hs.cert.DelegatedCredential = dCred.Raw
+			}
+		}
+	}
 
 	return nil
 }
@@ -598,6 +621,7 @@ func (hs *serverHandshakeStateTLS13) sendServerCertificate() error {
 	certMsg := new(certificateMsgTLS13)
 
 	certMsg.certificate = *hs.cert
+	// TODO: add as here as well
 	certMsg.scts = hs.clientHello.scts && len(hs.cert.SignedCertificateTimestamps) > 0
 	certMsg.ocspStapling = hs.clientHello.ocspStapling && len(hs.cert.OCSPStaple) > 0
 
