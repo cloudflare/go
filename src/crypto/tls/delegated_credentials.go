@@ -411,10 +411,10 @@ func (dc *DelegatedCredential) Validate(cert *x509.Certificate, peer string, now
 		return false, err
 	}
 
-	// TODO: for the moment
-	if !(dc.Cred.expCertVerfAlgo == ECDSAWithP256AndSHA256 && cert.SignatureAlgorithm == x509.ECDSAWithSHA256) {
-		return false, errors.New("tls: delegated credential is not valid")
-	}
+	// TODO: needs more thought
+	//if !(dc.Cred.expCertVerfAlgo == ECDSAWithP256AndSHA256 && cert.SignatureAlgorithm == x509.ECDSAWithSHA256) {
+	//	return false, errors.New("tls: delegated credential is not valid")
+	//}
 
 	if !isValidForDelegation(cert) {
 		return false, errors.New("tls: delegated credential is not valid")
