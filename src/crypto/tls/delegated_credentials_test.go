@@ -83,7 +83,7 @@ func initialize() {
 		},
 		Rand:         zeroSource{},
 		Certificates: nil,
-		MinVersion:   VersionTLS13,
+		MinVersion:   VersionTLS10,
 		MaxVersion:   VersionTLS13,
 		CipherSuites: allCipherSuites(),
 	}
@@ -306,8 +306,12 @@ var dcTests = []struct {
 }{
 	{true, true, false, VersionTLS13, VersionTLS13, true, true, "tls13"},
 	{true, true, true, VersionTLS13, VersionTLS13, true, true, "tls13, using server skip verify"},
-	{false, true, false, VersionTLS13, VersionTLS13, true, false, "client no dc"},
-	{true, false, false, VersionTLS13, VersionTLS13, true, false, "server no dc"},
+	{false, true, false, VersionTLS13, VersionTLS13, true, false, "client no DC"},
+	{true, false, false, VersionTLS13, VersionTLS13, true, false, "server no DC"},
+	{true, false, false, VersionTLS12, VersionTLS13, true, false, "client using TLS 1.2. No DC is supported in that version."},
+	{true, false, false, VersionTLS13, VersionTLS12, true, false, "server using TLS 1.2. No DC is supported in that version."},
+	{true, false, false, VersionTLS11, VersionTLS13, true, false, "client using TLS 1.1. No DC is supported in that version."},
+	{true, false, false, VersionTLS13, VersionTLS10, false, false, "server using TLS 1.0. No DC is supported in that version."},
 }
 
 // Checks that the client suppports a version >= 1.3 and accepts delegated
