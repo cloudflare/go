@@ -22,8 +22,6 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/x509"
-	"crypto/x509/pkix"
-	"encoding/asn1"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -38,20 +36,7 @@ const (
 )
 
 var errNoDelegationUsage = errors.New("tls: certificate not authorized for delegation")
-
-// delegationUsageID is the DelegationUsage X.509 extension OID
-var delegationUsageID = asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 44363, 44}
-
-// CreateDelegationUsagePKIXExtension returns a pkix.Extension that every delegation
-// certificate must have.
-// TODO: we might not need this if we go for modifying x509
-func CreateDelegationUsagePKIXExtension() *pkix.Extension {
-	return &pkix.Extension{
-		Id:       delegationUsageID,
-		Critical: false,
-		Value:    nil,
-	}
-}
+var extensionDelegatedCredential = []int{1, 3, 6, 1, 4, 1, 44363, 44}
 
 // isValidForDelegation returns true if a certificate can be used for delegated
 // credentials.
@@ -65,7 +50,7 @@ func isValidForDelegation(cert *x509.Certificate) bool {
 	// Check that the certificate has the DelegationUsage extension and that
 	// it's non-critical (See Section 4.2 of RFC5280).
 	for _, extension := range cert.Extensions {
-		if extension.Id.Equal(delegationUsageID) {
+		if extension.Id.Equal(extensionDelegatedCredential) {
 			return true
 		}
 	}

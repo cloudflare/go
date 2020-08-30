@@ -708,6 +708,8 @@ type Certificate struct {
 	BasicConstraintsValid bool
 	IsCA                  bool
 
+	IsDC bool
+
 	// MaxPathLen and MaxPathLenZero indicate the presence and
 	// value of the BasicConstraints' "pathLenConstraint".
 	//
@@ -1635,6 +1637,7 @@ var (
 	oidExtensionCRLDistributionPoints = []int{2, 5, 29, 31}
 	oidExtensionAuthorityInfoAccess   = []int{1, 3, 6, 1, 5, 5, 7, 1, 1}
 	oidExtensionCRLNumber             = []int{2, 5, 29, 20}
+	oidExtensionDelegatedCredential   = []int{1, 3, 6, 1, 4, 1, 44363, 44}
 )
 
 var (
@@ -1755,6 +1758,15 @@ func buildExtensions(template *Certificate, subjectIsEmpty bool, authorityKeyId 
 	if len(subjectKeyId) > 0 && !oidInExtensions(oidExtensionSubjectKeyId, template.ExtraExtensions) {
 		ret[n].Id = oidExtensionSubjectKeyId
 		ret[n].Value, err = asn1.Marshal(subjectKeyId)
+		if err != nil {
+			return
+		}
+		n++
+	}
+
+	if template.KeyUsage == KeyUsageDigitalSignature && template.IsDC && !oidInExtensions(oidExtensionDelegatedCredential, template.ExtraExtensions) {
+		ret[n].Id = oidExtensionDelegatedCredential
+		ret[n].Value = nil
 		if err != nil {
 			return
 		}
@@ -2050,6 +2062,7 @@ var emptyASN1Subject = []byte{0x30, 0}
 //  - ExtraExtensions
 //  - IPAddresses
 //  - IsCA
+//  - IsDC
 //  - IssuingCertificateURL
 //  - KeyUsage
 //  - MaxPathLen

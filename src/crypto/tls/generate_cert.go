@@ -15,7 +15,6 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/rsa"
-	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
@@ -138,9 +137,9 @@ func main() {
 		template.KeyUsage |= x509.KeyUsageCertSign
 	}
 
-	if *isDC {
-		template.ExtraExtensions = append(
-			template.ExtraExtensions, *tls.CreateDelegationUsagePKIXExtension())
+	if *isDC { //TODO: should this check that it is not a CA?
+		template.IsDC = true
+		template.KeyUsage = x509.KeyUsageDigitalSignature
 	}
 
 	derBytes, err := x509.CreateCertificate(rand.Reader, &template, &template, publicKey(priv), priv)
