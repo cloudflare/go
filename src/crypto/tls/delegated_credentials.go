@@ -382,18 +382,18 @@ func NewDelegatedCredential(cert *Certificate, pubAlgo SignatureScheme, validTim
 // Validate checks that the delegated credential is valid by checking that the
 // signature is valid, that the credential hasn't expired, and that the TTL is
 // valid. It also checks that certificate can be used for delegation.
-func (dc *DelegatedCredential) Validate(cert *x509.Certificate, peer string, now time.Time) (bool, error) {
+func (dc *DelegatedCredential) Validate(cert *x509.Certificate, peer string, now time.Time) bool {
 	if dc.IsExpired(cert.NotBefore, now) {
-		return false, errors.New("tls: delegated credential is not valid")
+		return false
 	}
 
 	if dc.InvalidTTL(cert.NotBefore, now) {
-		return false, errors.New("tls: delegated credential is not valid")
+		return false
 	}
 
 	in, err := prepareDelegation(dc.Cred, cert.Raw, dc.Algorithm, peer)
 	if err != nil {
-		return false, err
+		return false
 	}
 
 	// TODO: needs more thought
@@ -402,7 +402,7 @@ func (dc *DelegatedCredential) Validate(cert *x509.Certificate, peer string, now
 	//}
 
 	if !isValidForDelegation(cert) {
-		return false, errors.New("tls: delegated credential is not valid")
+		return false
 	}
 
 	// TODO(any) This code overlaps signficantly with verifyHandshakeSignature()
@@ -413,13 +413,12 @@ func (dc *DelegatedCredential) Validate(cert *x509.Certificate, peer string, now
 		ECDSAWithP521AndSHA512:
 		pk, ok := cert.PublicKey.(*ecdsa.PublicKey)
 		if !ok {
-			return false, errors.New("expected ECDSA public key")
+			return false
 		}
 
-		return ecdsa.VerifyASN1(pk, in, dc.Signature), nil
+		return ecdsa.VerifyASN1(pk, in, dc.Signature)
 	default:
-		return false, fmt.Errorf(
-			"unsupported signature scheme: 0x%04x", dc.Algorithm)
+		return false
 	}
 }
 
