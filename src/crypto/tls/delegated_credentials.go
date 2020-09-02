@@ -262,31 +262,34 @@ func getCurve(scheme SignatureScheme) elliptic.Curve {
 // The inputs are the credential ('cred'), the DER-encoded end-entity
 // certificate ('dCert'), the signature scheme of the delegator
 // ('algo').
-func prepareDelegation(cred *Credential, dCert []byte, algo SignatureScheme, peer string) ([]byte, error) {
-	values := make([]byte, 64, 128)
-	for i := range values {
-		values[i] = 0x20
+func prepareDelegation(hash crypto.Hash, cred *Credential, dCert []byte, algo SignatureScheme, peer string) ([]byte, error) {
+	h := hash.New()
+
+	header := make([]byte, 64, 128)
+	for i := range header {
+		header[i] = 0x20
 	}
+	h.Write(header)
 
 	if peer == "server" {
-		values = append(values, []byte("TLS, server delegated credentials\x00")...)
+		h.Write([]byte("TLS, server delegated credentials\x00"))
 	} else if peer == "client" {
-		values = append(values, []byte("TLS, client delegated credentials\x00")...)
+		h.Write([]byte("TLS, client delegated credentials\x00"))
 	}
 
-	values = append(values, dCert...)
+	h.Write(dCert)
 
 	serCred, err := cred.marshal()
 	if err != nil {
 		return nil, err
 	}
-	values = append(values, serCred...)
+	h.Write(serCred)
 
 	var serAlgo [2]byte
 	binary.BigEndian.PutUint16(serAlgo[:], uint16(algo))
-	values = append(values, serAlgo[:]...)
+	h.Write(serAlgo[:])
 
-	return values, nil
+	return h.Sum(nil), nil
 }
 
 // NewDelegatedCredential creates a new delegated credential using 'cert' for
@@ -353,13 +356,13 @@ func NewDelegatedCredential(cert *Certificate, pubAlgo SignatureScheme, validTim
 	}
 
 	// Prepare the credential for digital signing.
+	hash := getHash(sigAlgo)
 	credential := &Credential{validTime, pubAlgo, pk}
-	values, err := prepareDelegation(credential, cert.Leaf.Raw, sigAlgo, peer)
+	values, err := prepareDelegation(hash, credential, cert.Leaf.Raw, sigAlgo, peer)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	hash := getHash(sigAlgo)
 	var sig []byte
 	switch sk := cert.PrivateKey.(type) {
 	case *ecdsa.PrivateKey:
@@ -391,7 +394,8 @@ func (dc *DelegatedCredential) Validate(cert *x509.Certificate, peer string, now
 		return false
 	}
 
-	in, err := prepareDelegation(dc.Cred, cert.Raw, dc.Algorithm, peer)
+	hash := getHash(dc.Algorithm)
+	in, err := prepareDelegation(hash, dc.Cred, cert.Raw, dc.Algorithm, peer)
 	if err != nil {
 		return false
 	}
