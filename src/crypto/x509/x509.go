@@ -708,6 +708,7 @@ type Certificate struct {
 	BasicConstraintsValid bool
 	IsCA                  bool
 
+	// IsDC indicates if the certificate can be used for delegated credentials.
 	IsDC bool
 
 	// MaxPathLen and MaxPathLenZero indicate the presence and

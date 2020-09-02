@@ -275,6 +275,8 @@ func prepareDelegation(hash crypto.Hash, cred *Credential, dCert []byte, algo Si
 		h.Write([]byte("TLS, server delegated credentials\x00"))
 	} else if peer == "client" {
 		h.Write([]byte("TLS, client delegated credentials\x00"))
+	} else {
+		return nil, errors.New("tls: invalid params for delegated credential")
 	}
 
 	h.Write(dCert)
@@ -336,7 +338,7 @@ func NewDelegatedCredential(cert *Certificate, pubAlgo SignatureScheme, validTim
 			return nil, nil, fmt.Errorf("using curve %s for %s is not supported", curveName, cert.Leaf.SignatureAlgorithm)
 		}
 	default:
-		return nil, nil, fmt.Errorf("unsupported algorithm for delegated credential: %T", sk)
+		return nil, nil, fmt.Errorf("unsupported algorithm for delegated credential")
 	}
 
 	// Generate the Delegated Credential Key Pair based on the provided scheme
@@ -372,7 +374,7 @@ func NewDelegatedCredential(cert *Certificate, pubAlgo SignatureScheme, validTim
 			return nil, nil, err
 		}
 	default:
-		return nil, nil, fmt.Errorf("unsupported key type for delegated credential: %T", sk)
+		return nil, nil, fmt.Errorf("unsupported key type for delegated credential")
 	}
 
 	return &DelegatedCredential{
@@ -476,7 +478,8 @@ func UnmarshalDelegatedCredential(ser []byte) (*DelegatedCredential, error) {
 	if len(ser) < int(serSignatureLen) {
 		return nil, errors.New("tls: delegated credential is not valid")
 	}
-	sig := ser[:serSignatureLen]
+	sig := make([]byte, serSignatureLen)
+	copy(sig, ser[:serSignatureLen])
 
 	return &DelegatedCredential{
 		Cred:      credential,
