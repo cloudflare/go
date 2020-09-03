@@ -53,6 +53,10 @@ func isValidForDelegation(cert *x509.Certificate) bool {
 		if extension.Id.Equal(extensionDelegatedCredential) {
 			return true
 		}
+
+		if extension.Critical == false {
+			return true
+		}
 	}
 	return false
 }
@@ -171,7 +175,7 @@ func (cred *Credential) marshal() ([]byte, error) {
 	}
 	// Assert that the public key encoding is no longer than 2^24  bytes.
 	if len(serPub) > dcMaxPubLen {
-		return nil, errors.New("tls: public key is not valid")
+		return nil, errors.New("tls: public key length exceeds 2^24-1 limit")
 	}
 
 	var serLen [2]byte
@@ -258,11 +262,11 @@ func getCurve(scheme SignatureScheme) elliptic.Curve {
 	}
 }
 
-// prepareDelegation returns the message that the delegator is going to sign.
+// prepareDelegationSignatureInput returns the message that the delegator is going to sign.
 // The inputs are the credential ('cred'), the DER-encoded end-entity
 // certificate ('dCert'), the signature scheme of the delegator
 // ('algo').
-func prepareDelegation(hash crypto.Hash, cred *Credential, dCert []byte, algo SignatureScheme, peer string) ([]byte, error) {
+func prepareDelegationSignatureInput(hash crypto.Hash, cred *Credential, dCert []byte, algo SignatureScheme, peer string) ([]byte, error) {
 	h := hash.New()
 
 	header := make([]byte, 64, 128)
@@ -360,7 +364,7 @@ func NewDelegatedCredential(cert *Certificate, pubAlgo SignatureScheme, validTim
 	// Prepare the credential for digital signing.
 	hash := getHash(sigAlgo)
 	credential := &Credential{validTime, pubAlgo, pk}
-	values, err := prepareDelegation(hash, credential, cert.Leaf.Raw, sigAlgo, peer)
+	values, err := prepareDelegationSignatureInput(hash, credential, cert.Leaf.Raw, sigAlgo, peer)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -396,18 +400,18 @@ func (dc *DelegatedCredential) Validate(cert *x509.Certificate, peer string, now
 		return false
 	}
 
-	hash := getHash(dc.Algorithm)
-	in, err := prepareDelegation(hash, dc.Cred, cert.Raw, dc.Algorithm, peer)
-	if err != nil {
-		return false
-	}
-
 	// TODO: needs more thought
 	//if !(dc.Cred.expCertVerfAlgo == ECDSAWithP256AndSHA256 && cert.SignatureAlgorithm == x509.ECDSAWithSHA256) {
 	//	return false, errors.New("tls: delegated credential is not valid")
 	//}
 
 	if !isValidForDelegation(cert) {
+		return false
+	}
+
+	hash := getHash(dc.Algorithm)
+	in, err := prepareDelegationSignatureInput(hash, dc.Cred, cert.Raw, dc.Algorithm, peer)
+	if err != nil {
 		return false
 	}
 

@@ -680,7 +680,7 @@ type Config struct {
 
 	// SupportDelegatedCredential is true if the client or server is willing
 	// to negotiate the delegated credential extension.
-	// This can only be used for TLS 1.3
+	// This can only be used with TLS 1.3.
 	//
 	// See https://tools.ietf.org/html/draft-ietf-tls-subcerts.
 	SupportDelegatedCredential bool
