@@ -693,6 +693,7 @@ type Config struct {
 
         // mutex protects sessionTicketKeys and autoSessionTicketKeys.
 	mutex sync.RWMutex
+
 	// sessionTicketKeys contains zero or more ticket keys. If set, it means the
 	// the keys were set with SessionTicketKey or SetSessionTicketKeys. The
 	// first key is used for new tickets and any subsequent keys can be used to

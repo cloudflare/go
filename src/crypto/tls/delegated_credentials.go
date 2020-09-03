@@ -217,7 +217,7 @@ func getCredentialLen(ser []byte) (int, error) {
 	// The expCertVerfAlgo.
 	ser = ser[2:]
 
-	// The lenght of the Public Key.
+	// The length of the Public Key.
 	pubLen := int(binary.BigEndian.Uint16(ser))
 	ser = ser[2:]
 
