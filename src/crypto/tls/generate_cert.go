@@ -137,7 +137,7 @@ func main() {
 		template.KeyUsage |= x509.KeyUsageCertSign
 	}
 
-	if *isDC { //TODO: should this check that it is not a CA?
+	if *isDC {
 		template.IsDC = true
 		template.KeyUsage = x509.KeyUsageDigitalSignature
 	}

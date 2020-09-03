@@ -202,7 +202,7 @@ func (m *clientHelloMsg) marshal() []byte {
 				})
 			}
 			if m.delegatedCredentialSupported {
-				// Draft: https://datatracker.ietf.org/doc/draft-ietf-tls-subcerts/, Section 4.1
+				// Draft: https://tools.ietf.org/html/draft-ietf-tls-subcerts-09#section-4.1
 				b.AddUint16(extensionDelegatedCredentials)
 				b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
 					b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {

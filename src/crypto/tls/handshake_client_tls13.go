@@ -61,7 +61,7 @@ func (hs *clientHandshakeStateTLS13) processDelegatedCredentialFromServer(dc []b
 	if dCred != nil && !c.config.InsecureSkipVerify {
 		if !dCred.Validate(c.peerCertificates[0], "server", c.config.time()) {
 			c.sendAlert(alertIllegalParameter)
-			return fmt.Errorf("delegated credential: %s", errors.New("tls: invalid delegated credential"))
+			return errors.New("tls: invalid delegated credential")
 		}
 	}
 

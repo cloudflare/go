@@ -73,8 +73,6 @@ func (c *Conn) makeClientHello() (*clientHelloMsg, ecdheParameters, error) {
 		supportedCurves:              config.curvePreferences(),
 		supportedPoints:              []uint8{pointFormatUncompressed},
 		secureRenegotiationSupported: true,
-		// for TLS 1.2, delegatedCredentials are not supported
-		delegatedCredentialSupported: false,
 		alpnProtocols:                config.NextProtos,
 		supportedVersions:            supportedVersions,
 	}

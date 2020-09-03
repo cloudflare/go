@@ -380,25 +380,23 @@ func (hs *serverHandshakeStateTLS13) pickCertificate() error {
 
 	hs.cert = certificate
 
-	if hs.clientHello.delegatedCredentialSupported {
-		if c.config.GetDelegatedCredential != nil {
-			dCred, priv, err := c.config.GetDelegatedCredential(clientHelloInfo(c, hs.clientHello))
-			if err != nil {
-				c.sendAlert(alertInternalError)
-				return nil
-			}
+	if hs.clientHello.delegatedCredentialSupported && c.config.GetDelegatedCredential != nil {
+		dCred, priv, err := c.config.GetDelegatedCredential(clientHelloInfo(c, hs.clientHello))
+		if err != nil {
+			c.sendAlert(alertInternalError)
+			return nil
+		}
 
-			if dCred != nil && priv != nil {
-				hs.cert.PrivateKey = priv
-				if dCred.Raw == nil {
-					dCred.Raw, err = dCred.Marshal()
-					if err != nil {
-						c.sendAlert(alertInternalError)
-						return err
-					}
+		if dCred != nil && priv != nil {
+			hs.cert.PrivateKey = priv
+			if dCred.Raw == nil {
+				dCred.Raw, err = dCred.Marshal()
+				if err != nil {
+					c.sendAlert(alertInternalError)
+					return err
 				}
-				hs.cert.DelegatedCredential = dCred.Raw
 			}
+			hs.cert.DelegatedCredential = dCred.Raw
 		}
 	}
 

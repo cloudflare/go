@@ -90,6 +90,7 @@ const (
 	extensionSignatureAlgorithms     uint16 = 13
 	extensionALPN                    uint16 = 16
 	extensionSCT                     uint16 = 18
+	extensionDelegatedCredentials    uint16 = 34
 	extensionSessionTicket           uint16 = 35
 	extensionPreSharedKey            uint16 = 41
 	extensionEarlyData               uint16 = 42
@@ -100,7 +101,6 @@ const (
 	extensionSignatureAlgorithmsCert uint16 = 50
 	extensionKeyShare                uint16 = 51
 	extensionRenegotiationInfo       uint16 = 0xff01
-	extensionDelegatedCredentials    uint16 = 34
 )
 
 // TLS signaling cipher suite values
@@ -1317,7 +1317,9 @@ type Certificate struct {
 	// SignedCertificateTimestamps contains an optional list of Signed
 	// Certificate Timestamps which will be served to clients that request it.
 	SignedCertificateTimestamps [][]byte
-	// DelegatedCredential is serialized Delegated Credential
+	// DelegatedCredential is a serialized Delegated Credential, signed by
+	// the leaf certificate. See
+	// https://tools.ietf.org/html/draft-ietf-tls-subcerts-09#section-4
 	DelegatedCredential []byte
 	// Leaf is the parsed form of the leaf certificate, which may be initialized
 	// using x509.ParseCertificate to reduce per-handshake processing. If nil,
