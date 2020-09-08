@@ -821,14 +821,15 @@ func clientHelloInfo(c *Conn, clientHello *clientHelloMsg) *ClientHelloInfo {
 
 	// TODO: add the delegated credential as well
 	return &ClientHelloInfo{
-		CipherSuites:      clientHello.cipherSuites,
-		ServerName:        clientHello.serverName,
-		SupportedCurves:   clientHello.supportedCurves,
-		SupportedPoints:   clientHello.supportedPoints,
-		SignatureSchemes:  clientHello.supportedSignatureAlgorithms,
-		SupportedProtos:   clientHello.alpnProtocols,
-		SupportedVersions: supportedVersions,
-		Conn:              c.conn,
-		config:            c.config,
+		CipherSuites:               clientHello.cipherSuites,
+		ServerName:                 clientHello.serverName,
+		SupportedCurves:            clientHello.supportedCurves,
+		SupportedPoints:            clientHello.supportedPoints,
+		SignatureSchemes:           clientHello.supportedSignatureAlgorithms,
+		SupportedProtos:            clientHello.alpnProtocols,
+		SupportedVersions:          supportedVersions,
+		SupportDelegatedCredential: clientHello.delegatedCredentialSupported,
+		Conn:                       c.conn,
+		config:                     c.config,
 	}
 }

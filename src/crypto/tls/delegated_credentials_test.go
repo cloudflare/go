@@ -296,7 +296,6 @@ func testServerGetCertificate(ch *ClientHelloInfo) (*Certificate, error) {
 		versOk = versOk || (vers >= uint16(VersionTLS13))
 	}
 
-	ch.SupportDelegatedCredential = true
 	if versOk && ch.SupportDelegatedCredential {
 		return dcTestCerts["dc"], nil
 	}
@@ -312,7 +311,6 @@ func testServerGetDelegatedCredential(ch *ClientHelloInfo) (*DelegatedCredential
 		schemeOk = schemeOk || (scheme == dcTestDCScheme)
 	}
 
-	ch.SupportDelegatedCredential = true
 	if schemeOk && ch.SupportDelegatedCredential {
 		return dcTest.DelegatedCredential, dcTest.privateKey, nil
 	}
