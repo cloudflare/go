@@ -113,9 +113,8 @@ type DelegatedCredential struct {
 	Signature []byte
 }
 
-// marshalSubjectPublicKeyInfo returns a DER encoded SubjectPublicKeyInfo structure
-// (as defined in the X.509 standard) for the credential.
-// TODO: maybe we can move this as well to x509
+// marshalPublicKeyInfo returns a DER encoded PublicKeyInfo
+// from a Delegated Credential (as defined in the X.509 standard).
 // TODO: add the other signatures flavors, as defined in common.go
 func (cred *Credential) marshalPublicKeyInfo() ([]byte, error) {
 	switch cred.expCertVerfAlgo {
@@ -134,8 +133,8 @@ func (cred *Credential) marshalPublicKeyInfo() ([]byte, error) {
 	}
 }
 
-// unmarshalPublicKeyInfo parses a DER encoded PublicKeyInfo
-// structure into a public key and its corresponding algorithm.
+// unmarshalPublicKeyInfo parses a DER encoded PublicKeyInfo from a Delegated
+// Credential to a public key and its corresponding algorithm.
 // TODO: add the other signatures flavors, as defined in common.go
 func unmarshalPublicKeyInfo(serialized []byte) (crypto.PublicKey, SignatureScheme, error) {
 	pubKey, err := x509.ParsePKIXPublicKey(serialized)
