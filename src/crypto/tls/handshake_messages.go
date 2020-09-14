@@ -202,17 +202,17 @@ func (m *clientHelloMsg) marshal() []byte {
 				})
 			}
 			if m.delegatedCredentialSupported {
-				//if len(m.supportedSignatureAlgorithmsCert) > 0 {
-				// Draft: https://tools.ietf.org/html/draft-ietf-tls-subcerts-09#section-4.1
-				b.AddUint16(extensionDelegatedCredentials)
-				b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
+				if len(m.supportedSignatureAlgorithms) > 0 {
+					// Draft: https://tools.ietf.org/html/draft-ietf-tls-subcerts-09#section-4.1
+					b.AddUint16(extensionDelegatedCredentials)
 					b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
-						for _, sigAlgo := range m.supportedSignatureAlgorithms {
-							b.AddUint16(uint16(sigAlgo))
-						}
+						b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
+							for _, sigAlgo := range m.supportedSignatureAlgorithms {
+								b.AddUint16(uint16(sigAlgo))
+							}
+						})
 					})
-				})
-				//}
+				}
 			}
 			if len(m.alpnProtocols) > 0 {
 				// RFC 7301, Section 3.1
