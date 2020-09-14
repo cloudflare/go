@@ -26,6 +26,8 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	"golang.org/x/crypto/cryptobyte"
 )
 
 const (
@@ -178,8 +180,10 @@ func (cred *Credential) marshal() ([]byte, error) {
 		return nil, errors.New("tls: public key length exceeds 2^24-1 limit")
 	}
 
-	var serLen [2]byte
-	binary.BigEndian.PutUint16(serLen[:], uint16(len(serPub)))
+	var b cryptobyte.Builder
+	b.AddUint24(uint32(len(serPub)))
+
+	serLen := b.BytesOrPanic()
 	ser = append(ser, serLen[:]...)
 	ser = append(ser, serPub...)
 
@@ -188,20 +192,23 @@ func (cred *Credential) marshal() ([]byte, error) {
 
 // unmarshalCredential decodes serialized bytes and returns a credential, if possible.
 func unmarshalCredential(ser []byte) (*Credential, error) {
-	if len(ser) < 8 {
+	if len(ser) < 9 {
 		return nil, errors.New("tls: delegated credential is not valid")
 	}
 
 	validTime := time.Duration(binary.BigEndian.Uint32(ser)) * time.Second
 	pubAlgo := SignatureScheme(binary.BigEndian.Uint16(ser[4:6]))
-	pubLen := binary.BigEndian.Uint16(ser[6:8])
 
-	pubKey, err := x509.ParsePKIXPublicKey(ser[8:])
+	s := cryptobyte.String(ser[6:9])
+	var pubLen uint32
+	s.ReadUint24(&pubLen)
+
+	pubKey, err := x509.ParsePKIXPublicKey(ser[9:])
 	if err != nil {
 		return nil, err
 	}
 
-	if len(ser[8:]) != int(pubLen) {
+	if len(ser[9:]) != int(pubLen) {
 		return nil, errors.New("tls: delegated credential is not valid")
 	}
 
@@ -211,7 +218,7 @@ func unmarshalCredential(ser []byte) (*Credential, error) {
 // getCredentialLen returns the number of bytes comprising the serialized
 // credential struct inside the Delegated Credential.
 func getCredentialLen(ser []byte) (int, error) {
-	if len(ser) < 8 {
+	if len(ser) < 9 {
 		return 0, errors.New("tls: delegated credential is not valid")
 	}
 
@@ -222,14 +229,17 @@ func getCredentialLen(ser []byte) (int, error) {
 	ser = ser[2:]
 
 	// The length of the Public Key.
-	pubLen := int(binary.BigEndian.Uint16(ser))
-	ser = ser[2:]
+	s := cryptobyte.String(ser[:3])
+	var pubLen uint32
+	s.ReadUint24(&pubLen)
 
-	if len(ser) < pubLen {
+	ser = ser[3:]
+
+	if len(ser) < int(pubLen) {
 		return 0, errors.New("tls: delegated credential is not valid")
 	}
 
-	return 8 + pubLen, nil
+	return 9 + int(pubLen), nil
 }
 
 // getHash maps the SignatureScheme to its corresponding hash function.

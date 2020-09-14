@@ -202,6 +202,7 @@ func (m *clientHelloMsg) marshal() []byte {
 				})
 			}
 			if m.delegatedCredentialSupported {
+				//if len(m.supportedSignatureAlgorithmsCert) > 0 {
 				// Draft: https://tools.ietf.org/html/draft-ietf-tls-subcerts-09#section-4.1
 				b.AddUint16(extensionDelegatedCredentials)
 				b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
@@ -211,6 +212,7 @@ func (m *clientHelloMsg) marshal() []byte {
 						}
 					})
 				})
+				//}
 			}
 			if len(m.alpnProtocols) > 0 {
 				// RFC 7301, Section 3.1
