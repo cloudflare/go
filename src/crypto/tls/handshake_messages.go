@@ -1304,12 +1304,12 @@ func (m *certificateMsg) unmarshal(data []byte) bool {
 	return true
 }
 
-// TODO: might be good to add here a bool for the dc to follow the whole logic as well
 type certificateMsgTLS13 struct {
-	raw          []byte
-	certificate  Certificate
-	ocspStapling bool
-	scts         bool
+	raw                 []byte
+	certificate         Certificate
+	ocspStapling        bool
+	scts                bool
+	delegatedCredential bool
 }
 
 func (m *certificateMsgTLS13) marshal() []byte {
@@ -1328,6 +1328,9 @@ func (m *certificateMsgTLS13) marshal() []byte {
 		}
 		if !m.scts {
 			certificate.SignedCertificateTimestamps = nil
+		}
+		if !m.delegatedCredential {
+			certificate.DelegatedCredential = nil
 		}
 		marshalCertificate(b, certificate)
 	})
@@ -1396,6 +1399,7 @@ func (m *certificateMsgTLS13) unmarshal(data []byte) bool {
 
 	m.scts = m.certificate.SignedCertificateTimestamps != nil
 	m.ocspStapling = m.certificate.OCSPStaple != nil
+	m.delegatedCredential = m.certificate.DelegatedCredential != nil
 
 	return true
 }

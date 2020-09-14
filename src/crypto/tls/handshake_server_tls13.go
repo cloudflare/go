@@ -619,9 +619,9 @@ func (hs *serverHandshakeStateTLS13) sendServerCertificate() error {
 	certMsg := new(certificateMsgTLS13)
 
 	certMsg.certificate = *hs.cert
-	// TODO: add as here as well
 	certMsg.scts = hs.clientHello.scts && len(hs.cert.SignedCertificateTimestamps) > 0
 	certMsg.ocspStapling = hs.clientHello.ocspStapling && len(hs.cert.OCSPStaple) > 0
+	certMsg.delegatedCredential = hs.clientHello.delegatedCredentialSupported && len(hs.cert.DelegatedCredential) > 0
 
 	hs.transcript.Write(certMsg.marshal())
 	if _, err := c.writeRecord(recordTypeHandshake, certMsg.marshal()); err != nil {
