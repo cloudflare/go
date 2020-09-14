@@ -155,8 +155,8 @@ func publicKeysEqual(publicKey, publicKey2 crypto.PublicKey, algo SignatureSchem
 }
 
 func equal(dc, dc2 *DelegatedCredential) error {
-	if dc2.Cred.ValidTime != dc.Cred.ValidTime {
-		return fmt.Errorf("ValidTime mismatch: got %d; want %d", dc2.Cred.ValidTime, dc.Cred.ValidTime)
+	if dc2.Cred.validTime != dc.Cred.validTime {
+		return fmt.Errorf("ValidTime mismatch: got %d; want %d", dc2.Cred.validTime, dc.Cred.validTime)
 	}
 
 	if dc2.Cred.expCertVerfAlgo != dc.Cred.expCertVerfAlgo {

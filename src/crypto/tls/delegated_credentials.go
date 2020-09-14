@@ -68,7 +68,7 @@ func isValidForDelegation(cert *x509.Certificate) bool {
 // plus ValidTime seconds. This function simply checks that the current time
 // ('now') is before the end of the validity interval.
 func (dc *DelegatedCredential) IsExpired(start, now time.Time) bool {
-	end := start.Add(dc.Cred.ValidTime)
+	end := start.Add(dc.Cred.validTime)
 	return !now.Before(end)
 }
 
@@ -76,7 +76,7 @@ func (dc *DelegatedCredential) IsExpired(start, now time.Time) bool {
 // maximum permitted. This is defined by the certificate's notBefore field
 // ('start') plus the ValidTime, minus the current time ('now').
 func (dc *DelegatedCredential) InvalidTTL(start, now time.Time) bool {
-	return dc.Cred.ValidTime > (now.Sub(start) + dcMaxTTL).Round(time.Second)
+	return dc.Cred.validTime > (now.Sub(start) + dcMaxTTL).Round(time.Second)
 }
 
 // Credential stores the public components of a Delegated Credential.
@@ -88,7 +88,7 @@ type Credential struct {
 	//
 	// When this data structure is serialized, this value is converted to a
 	// uint32 representing the duration in seconds.
-	ValidTime time.Duration
+	validTime time.Duration
 	// The signature scheme associated with the credential public key.
 	// This is expected to be the same as the CertificateVerify.algorithm
 	// sent by the server.
@@ -164,7 +164,7 @@ func unmarshalPublicKeyInfo(serialized []byte) (crypto.PublicKey, SignatureSchem
 // marshal encodes the credential struct of the Delegated Credential.
 func (cred *Credential) marshal() ([]byte, error) {
 	ser := make([]byte, 4)
-	binary.BigEndian.PutUint32(ser, uint32(cred.ValidTime/time.Second))
+	binary.BigEndian.PutUint32(ser, uint32(cred.validTime/time.Second))
 
 	var serAlgo [2]byte
 	binary.BigEndian.PutUint16(serAlgo[:], uint16(cred.expCertVerfAlgo))
