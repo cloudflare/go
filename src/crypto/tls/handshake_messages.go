@@ -1375,9 +1375,7 @@ func marshalCertificate(b *cryptobyte.Builder, certificate Certificate) {
 				if certificate.DelegatedCredential != nil {
 					b.AddUint16(extensionDelegatedCredentials)
 					b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
-						b.AddUint24LengthPrefixed(func(b *cryptobyte.Builder) {
-							b.AddBytes(certificate.DelegatedCredential)
-						})
+						b.AddBytes(certificate.DelegatedCredential)
 					})
 				}
 			})
@@ -1452,9 +1450,10 @@ func unmarshalCertificate(s *cryptobyte.String, certificate *Certificate) bool {
 						certificate.SignedCertificateTimestamps, sct)
 				}
 			case extensionDelegatedCredentials:
-				if !readUint24LengthPrefixed(&extData, &certificate.DelegatedCredential) {
+				if !extData.ReadBytes(&certificate.DelegatedCredential, len(extData)) {
 					return false
-				} else if len(certificate.DelegatedCredential) == 0 {
+				}
+				if len(certificate.DelegatedCredential) == 0 {
 					return false
 				}
 			default:
