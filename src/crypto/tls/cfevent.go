@@ -97,6 +97,71 @@ func createTLS13ServerHandshakeTimingInfo(timerFunc func() time.Time) CFEventTLS
 	}
 }
 
+const (
+	// Constants for ECH status events.
+	echStatusBypassed = 1 + iota
+	echStatusInner
+	echStatusOuter
+)
+
+// CFEventECHClientStatus is emitted once it is known whether the client
+// bypassed, offered, or greased ECH.
+type CFEventECHClientStatus int
+
+// Bypassed returns true if the client bypassed ECH.
+func (e CFEventECHClientStatus) Bypassed() bool {
+	return e == echStatusBypassed
+}
+
+// Offered returns true if the client offered ECH.
+func (e CFEventECHClientStatus) Offered() bool {
+	return e == echStatusInner
+}
+
+// Greased returns true if the client greased ECH.
+func (e CFEventECHClientStatus) Greased() bool {
+	return e == echStatusOuter
+}
+
+// Name is required by the CFEvent interface.
+func (e CFEventECHClientStatus) Name() string {
+	return "ech client status"
+}
+
+// CFEventECHServerStatus is emitted once it is known whether the client
+// bypassed, offered, or greased ECH.
+type CFEventECHServerStatus int
+
+// Bypassed returns true if the client bypassed ECH.
+func (e CFEventECHServerStatus) Bypassed() bool {
+	return e == echStatusBypassed
+}
+
+// Accepted returns true if the client offered ECH.
+func (e CFEventECHServerStatus) Accepted() bool {
+	return e == echStatusInner
+}
+
+// Rejected returns true if the client greased ECH.
+func (e CFEventECHServerStatus) Rejected() bool {
+	return e == echStatusOuter
+}
+
+// Name is required by the CFEvent interface.
+func (e CFEventECHServerStatus) Name() string {
+	return "ech server status"
+}
+
+// CFEventECHPublicNameMismatch is emitted if the outer SNI does not match
+// match the public name of the ECH configuration. Note that we do not record
+// the outer SNI in order to avoid collecting this potentially sensitive data.
+type CFEventECHPublicNameMismatch struct{}
+
+// Name is required by the CFEvent interface.
+func (e CFEventECHPublicNameMismatch) Name() string {
+	return "ech public name does not match outer sni"
+}
+
 // For backwards compatibility.
 type CFEventTLS13NegotiatedKEX = CFEventTLSNegotiatedNamedKEX
 
