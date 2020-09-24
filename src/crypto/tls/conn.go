@@ -114,6 +114,24 @@ type Conn struct {
 	activeCall int32
 
 	tmp [16]byte
+
+	ech struct {
+		offered      bool
+		greased      bool
+		accepted     bool
+		retryConfigs []byte // The retry configurations
+		hrrPsk       []byte // The HRR pre-shared key, used in case of HRR.
+
+		// When offering ECH, the ClientHelloInner.random sent prior to HRR.
+		hrrInnerRandom []byte
+
+		// When sending dummy ECH, the config_id sent prior to HRR.
+		hrrConfigId []byte
+	}
+
+	// Set by the client and server when an HRR message was sent in this
+	// handshake.
+	hrrTriggered bool
 }
 
 // Access to net.Conn methods.
@@ -691,6 +709,12 @@ func (c *Conn) readRecordOrCCS(expectChangeCipherSpec bool) error {
 			return c.in.setErrorLocked(io.EOF)
 		}
 		if c.vers == VersionTLS13 {
+			if !c.isClient && c.ech.greased && alert(data[1]) == alertECHRequired {
+				// This condition indicates that the client intended to offer
+				// ECH, but did not use a known ECH config.
+				c.ech.offered = true
+				c.ech.greased = false
+			}
 			return c.in.setErrorLocked(&net.OpError{Op: "remote error", Err: alert(data[1])})
 		}
 		switch data[0] {
@@ -1335,6 +1359,29 @@ func (c *Conn) Close() error {
 	if err := c.conn.Close(); err != nil {
 		return err
 	}
+
+	// Resolve ECH status.
+	if !c.isClient && c.config.MaxVersion < VersionTLS13 {
+		c.handleEvent(EXP_EventECHServerStatus(echStatusBypassed))
+	} else if !c.ech.offered {
+		if !c.ech.greased {
+			c.handleEvent(EXP_EventECHClientStatus(echStatusBypassed))
+		} else {
+			c.handleEvent(EXP_EventECHClientStatus(echStatusOuter))
+		}
+	} else {
+		c.handleEvent(EXP_EventECHClientStatus(echStatusInner))
+		if !c.ech.accepted {
+			if len(c.ech.retryConfigs) > 0 {
+				c.handleEvent(EXP_EventECHServerStatus(echStatusOuter))
+			} else {
+				c.handleEvent(EXP_EventECHServerStatus(echStatusBypassed))
+			}
+		} else {
+			c.handleEvent(EXP_EventECHServerStatus(echStatusInner))
+		}
+	}
+
 	return alertErr
 }
 
@@ -1424,6 +1471,7 @@ func (c *Conn) connectionStateLocked() ConnectionState {
 	state.VerifiedChains = c.verifiedChains
 	state.SignedCertificateTimestamps = c.scts
 	state.OCSPResponse = c.ocspResponse
+	state.ECHAccepted = c.ech.accepted
 	if !c.didResume && c.vers != VersionTLS13 {
 		if c.clientFinishedIsFirst {
 			state.TLSUnique = c.clientFinished[:]
@@ -1468,4 +1516,10 @@ func (c *Conn) VerifyHostname(host string) error {
 
 func (c *Conn) handshakeComplete() bool {
 	return atomic.LoadUint32(&c.handshakeStatus) == 1
+}
+
+func (c *Conn) handleEvent(event EXP_Event) {
+	if c.config.EXP_EventHandler != nil {
+		c.config.EXP_EventHandler(event)
+	}
 }
