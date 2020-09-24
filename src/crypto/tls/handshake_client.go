@@ -36,7 +36,7 @@ type clientHandshakeState struct {
 	session      *ClientSessionState
 }
 
-func (c *Conn) makeClientHello() (*clientHelloMsg, ecdheParameters, error) {
+func (c *Conn) makeClientHello(minVersion uint16) (*clientHelloMsg, ecdheParameters, error) {
 	config := c.config
 	if len(config.ServerName) == 0 && !config.InsecureSkipVerify {
 		return nil, nil, errors.New("tls: either ServerName or InsecureSkipVerify must be specified in the tls.Config")
@@ -54,7 +54,7 @@ func (c *Conn) makeClientHello() (*clientHelloMsg, ecdheParameters, error) {
 		return nil, nil, errors.New("tls: NextProtos values too large")
 	}
 
-	supportedVersions := config.supportedVersions()
+	supportedVersions := config.supportedVersionsFromMin(minVersion)
 	if len(supportedVersions) == 0 {
 		return nil, nil, errors.New("tls: no supported versions satisfy MinVersion and MaxVersion")
 	}
@@ -157,13 +157,30 @@ func (c *Conn) clientHandshake(ctx context.Context) (err error) {
 	// need to be reset.
 	c.didResume = false
 
-	hello, ecdheParams, err := c.makeClientHello()
+	// Determine the minimum required version for this handshake.
+	minVersion := c.config.MinVersion
+	if c.config.echCanOffer() {
+		// If the ECH extension will be offered in this handshake, then the
+		// ClientHelloInner must not offer TLS 1.2 or below.
+		minVersion = VersionTLS13
+	}
+
+	helloBase, ecdheParams, err := c.makeClientHello(minVersion)
 	if err != nil {
 		return err
 	}
-	c.serverName = hello.serverName
 
-	cacheKey, session, earlySecret, binderKey := c.loadSession(hello)
+	hello, helloInner, err := c.echOfferOrGrease(helloBase)
+	if err != nil {
+		return err
+	}
+
+	helloResumed := hello
+	if c.ech.offered {
+		helloResumed = helloInner
+	}
+
+	cacheKey, session, earlySecret, binderKey := c.loadSession(helloResumed)
 	if cacheKey != "" && session != nil {
 		defer func() {
 			// If we got a handshake failure when resuming a session, throw away
@@ -217,6 +234,7 @@ func (c *Conn) clientHandshake(ctx context.Context) (err error) {
 			ctx:         ctx,
 			serverHello: serverHello,
 			hello:       hello,
+			helloInner:  helloInner,
 			ecdheParams: ecdheParams,
 			session:     session,
 			earlySecret: earlySecret,
@@ -228,6 +246,7 @@ func (c *Conn) clientHandshake(ctx context.Context) (err error) {
 		return hs.handshake()
 	}
 
+	c.serverName = hello.serverName
 	hs := &clientHandshakeState{
 		c:           c,
 		ctx:         ctx,
@@ -251,7 +270,7 @@ func (c *Conn) clientHandshake(ctx context.Context) (err error) {
 
 func (c *Conn) loadSession(hello *clientHelloMsg) (cacheKey string,
 	session *ClientSessionState, earlySecret, binderKey []byte) {
-	if c.config.SessionTicketsDisabled || c.config.ClientSessionCache == nil {
+	if c.config.SessionTicketsDisabled || c.config.ClientSessionCache == nil || c.config.ECHEnabled {
 		return "", nil, nil, nil
 	}
 
@@ -864,10 +883,14 @@ func (c *Conn) verifyServerCertificate(certificates [][]byte) error {
 	}
 
 	if !c.config.InsecureSkipVerify {
+		dnsName := c.config.ServerName
+		if c.ech.offered && !c.ech.accepted {
+			dnsName = c.serverName
+		}
 		opts := x509.VerifyOptions{
 			Roots:         c.config.RootCAs,
 			CurrentTime:   c.config.time(),
-			DNSName:       c.config.ServerName,
+			DNSName:       dnsName,
 			Intermediates: x509.NewCertPool(),
 		}
 		for _, cert := range certs[1:] {

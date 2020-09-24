@@ -94,6 +94,7 @@ type clientHelloMsg struct {
 	pskModes                         []uint8
 	pskIdentities                    []pskIdentity
 	pskBinders                       [][]byte
+	ech                              []byte
 }
 
 func (m *clientHelloMsg) marshal() []byte {
@@ -123,6 +124,13 @@ func (m *clientHelloMsg) marshal() []byte {
 		bWithoutExtensions := *b
 
 		b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
+			if len(m.ech) > 0 {
+				// draft-ietf-tls-esni-13, "encrypted_client_hello"
+				b.AddUint16(extensionECH)
+				b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
+					b.AddBytes(m.ech)
+				})
+			}
 			if len(m.serverName) > 0 {
 				// RFC 6066, Section 3
 				b.AddUint16(extensionServerName)
@@ -409,6 +417,12 @@ func (m *clientHelloMsg) unmarshal(data []byte) bool {
 		}
 
 		switch extension {
+		case extensionECH:
+			// draft-ietf-tls-esni-13, "encrypted_client_hello"
+			if len(extData) == 0 ||
+				!extData.ReadBytes(&m.ech, len(extData)) {
+				return false
+			}
 		case extensionServerName:
 			// RFC 6066, Section 3
 			var nameList cryptobyte.String
@@ -640,6 +654,7 @@ type serverHelloMsg struct {
 	// HelloRetryRequest extensions
 	cookie        []byte
 	selectedGroup CurveID
+	ech           []byte
 }
 
 func (m *serverHelloMsg) marshal() []byte {
@@ -743,6 +758,13 @@ func (m *serverHelloMsg) marshal() []byte {
 					b.AddUint8LengthPrefixed(func(b *cryptobyte.Builder) {
 						b.AddBytes(m.supportedPoints)
 					})
+				})
+			}
+			if len(m.ech) > 0 {
+				// draft-ietf-tls-esni-13, "encrypted_client_hello"
+				b.AddUint16(extensionECH)
+				b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
+					b.AddBytes(m.ech)
 				})
 			}
 
@@ -855,6 +877,11 @@ func (m *serverHelloMsg) unmarshal(data []byte) bool {
 				len(m.supportedPoints) == 0 {
 				return false
 			}
+		case extensionECH:
+			// draft-ietf-tls-esni-13, "encrypted_client_hello"
+			if !extData.ReadBytes(&m.ech, len(extData)) {
+				return false
+			}
 		default:
 			// Ignore unknown extensions.
 			continue
@@ -871,6 +898,7 @@ func (m *serverHelloMsg) unmarshal(data []byte) bool {
 type encryptedExtensionsMsg struct {
 	raw          []byte
 	alpnProtocol string
+	ech          []byte
 }
 
 func (m *encryptedExtensionsMsg) marshal() []byte {
@@ -890,6 +918,15 @@ func (m *encryptedExtensionsMsg) marshal() []byte {
 							b.AddBytes([]byte(m.alpnProtocol))
 						})
 					})
+				})
+			}
+			if len(m.ech) > 0 {
+				// draft-ietf-tls-esni-13, "encrypted_client_hello"
+				b.AddUint16(extensionECH)
+				b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
+					// If the client-facing server rejects ECH, then it may
+					// sends retry configurations here.
+					b.AddBytes(m.ech)
 				})
 			}
 		})
@@ -929,6 +966,11 @@ func (m *encryptedExtensionsMsg) unmarshal(data []byte) bool {
 				return false
 			}
 			m.alpnProtocol = string(proto)
+		case extensionECH:
+			// draft-ietf-tls-esni-13
+			if !extData.ReadBytes(&m.ech, len(extData)) {
+				return false
+			}
 		default:
 			// Ignore unknown extensions.
 			continue
