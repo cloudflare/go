@@ -1,0 +1,73 @@
+name: CIRCL
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+jobs:
+  amd64_job:
+    name: Go-${{matrix.GOVER}}/amd64
+    runs-on: ubuntu-18.04
+    strategy:
+      matrix:
+        GOVER: ['1.15', '1.14', '1.13', '1.12']
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+      - name: Linting
+        uses: golangci/golangci-lint-action@v1
+        with:
+          version: v1.27
+          args: --config=./.etc/golangci.yml ./...
+      - name: Setup Go-${{ matrix.GOVER }}
+        uses: actions/setup-go@v2
+        with:
+          go-version: ${{ matrix.GOVER }}
+      - name: Verifying Code
+        run: |
+         go generate -v ./... && test -z "$(git status --porcelain)"
+         go vet ./...
+      - name: Building
+        run: go build -v ./...
+      - name: Testing
+        run: go test -v ./...
+  exotic_job:
+    name: Go-${{matrix.CFG[2]}}/${{matrix.CFG[0]}}
+    runs-on: ubuntu-18.04
+    strategy:
+      matrix:
+        CFG: [ [arm64,arm64v8,1.15] ]
+    steps:
+      - uses: actions/checkout@v2
+      - name: Enabling Docker Experimental
+        run: |
+          echo $'{\n    "experimental": true\n}' | sudo tee /etc/docker/daemon.json
+          sudo service docker restart
+      - name: Pulling Images
+        run: |
+          docker pull -q multiarch/qemu-user-static
+          docker pull -q --platform linux/${{matrix.CFG[0]}} ${{matrix.CFG[1]}}/golang:${{matrix.CFG[2]}}
+          docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
+      - name: Testing
+        run: |
+          docker run --rm -v `pwd`:`pwd` -w `pwd` ${{matrix.CFG[1]}}/golang:${{matrix.CFG[2]}} go test -v ./...
+  coverage_amd64_job:
+    needs: [ amd64_job ]
+    if: github.event_name == 'push'
+    runs-on: ubuntu-18.04
+    name: amd64/coverage
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+      - name: Setup Go
+        uses: actions/setup-go@v2
+        with:
+          go-version: '1.15'
+      - name: Produce Coverage
+        run: go test -race -coverprofile=./coverage.txt -covermode=atomic ./...
+      - name: Upload Codecov
+        uses: codecov/codecov-action@v1
+        with:
+          file: ./coverage.txt

@@ -31,6 +31,9 @@ import (
 	"time"
 	"unicode/utf8"
 
+	circlPki "circl/pki"
+	circlSign "circl/sign"
+
 	"golang.org/x/crypto/cryptobyte"
 	cryptobyte_asn1 "golang.org/x/crypto/cryptobyte/asn1"
 )
@@ -97,6 +100,14 @@ func marshalPublicKey(pub interface{}) (publicKeyBytes []byte, publicKeyAlgorith
 	case ed25519.PublicKey:
 		publicKeyBytes = pub
 		publicKeyAlgorithm.Algorithm = oidPublicKeyEd25519
+	case circlSign.PublicKey:
+		scheme, ok := pub.Scheme().(circlPki.CertificateScheme)
+		if !ok {
+			return nil, pkix.AlgorithmIdentifier{}, errors.New(
+				"x509: circl scheme is not CertificateScheme")
+		}
+		publicKeyBytes, _ = pub.MarshalBinary()
+		publicKeyAlgorithm.Algorithm = scheme.Oid()
 	default:
 		return nil, pkix.AlgorithmIdentifier{}, fmt.Errorf("x509: unsupported public key type: %T", pub)
 	}
@@ -199,6 +210,7 @@ const (
 	SHA384WithRSAPSS
 	SHA512WithRSAPSS
 	PureEd25519
+	PureEdDilithium3
 )
 
 func (algo SignatureAlgorithm) isRSAPSS() bool {
@@ -227,13 +239,15 @@ const (
 	DSA
 	ECDSA
 	Ed25519
+	EdDilithium3
 )
 
 var publicKeyAlgoName = [...]string{
-	RSA:     "RSA",
-	DSA:     "DSA",
-	ECDSA:   "ECDSA",
-	Ed25519: "Ed25519",
+	RSA:          "RSA",
+	DSA:          "DSA",
+	ECDSA:        "ECDSA",
+	Ed25519:      "Ed25519",
+	EdDilithium3: "Ed25519-Dilithium3",
 }
 
 func (algo PublicKeyAlgorithm) String() string {
@@ -410,7 +424,7 @@ func rsaPSSParameters(hashFunc crypto.Hash) asn1.RawValue {
 }
 
 func getSignatureAlgorithmFromAI(ai pkix.AlgorithmIdentifier) SignatureAlgorithm {
-	if ai.Algorithm.Equal(oidSignatureEd25519) {
+	if ai.Algorithm.Equal(oidSignatureEd25519) || circlPki.SchemeByOid(ai.Algorithm) != nil {
 		// RFC 8410, Section 3
 		// > For all of the OIDs, the parameters MUST be absent.
 		if len(ai.Parameters.FullBytes) != 0 {
@@ -496,8 +510,13 @@ func getPublicKeyAlgorithmFromOID(oid asn1.ObjectIdentifier) PublicKeyAlgorithm 
 		return ECDSA
 	case oid.Equal(oidPublicKeyEd25519):
 		return Ed25519
+	default:
+		scheme := circlPki.SchemeByOid(oid)
+		if scheme == nil {
+			return UnknownPublicKeyAlgorithm
+		}
+		return PublicKeyAlgorithmByCirclScheme(scheme)
 	}
-	return UnknownPublicKeyAlgorithm
 }
 
 // RFC 5480, 2.1.1.1. Named Curve
@@ -857,7 +876,7 @@ func checkSignature(algo SignatureAlgorithm, signed, signature []byte, publicKey
 
 	switch hashType {
 	case crypto.Hash(0):
-		if pubKeyAlgo != Ed25519 {
+		if pubKeyAlgo != Ed25519 && CirclSchemeByPublicKeyAlgorithm(pubKeyAlgo) == nil {
 			return ErrUnsupportedAlgorithm
 		}
 	case crypto.MD5:
@@ -917,6 +936,19 @@ func checkSignature(algo SignatureAlgorithm, signed, signature []byte, publicKey
 		}
 		if !ed25519.Verify(pub, signed, signature) {
 			return errors.New("x509: Ed25519 verification failure")
+		}
+		return
+	case circlSign.PublicKey:
+		scheme := pub.Scheme()
+		expectedAlg := PublicKeyAlgorithmByCirclScheme(scheme)
+		if expectedAlg == UnknownPublicKeyAlgorithm {
+			return ErrUnsupportedAlgorithm
+		}
+		if expectedAlg != pubKeyAlgo {
+			return signaturePublicKeyAlgoMismatchError(pubKeyAlgo, pub)
+		}
+		if !scheme.Verify(pub, signed, signature, nil) {
+			return fmt.Errorf("x509: %s verification failed", scheme.Name())
 		}
 		return
 	}
@@ -1069,6 +1101,19 @@ func parsePublicKey(algo PublicKeyAlgorithm, keyData *publicKeyInfo) (interface{
 		copy(pub, asn1Data)
 		return ed25519.PublicKey(pub), nil
 	default:
+		if scheme := CirclSchemeByPublicKeyAlgorithm(algo); scheme != nil {
+			if len(keyData.Algorithm.Parameters.FullBytes) != 0 {
+				return nil, fmt.Errorf(
+					"x509: %skey encoded with illegal parameters",
+					scheme.Name(),
+				)
+			}
+			pub, err := scheme.UnmarshalBinaryPublicKey(asn1Data)
+			if err != nil {
+				return nil, fmt.Errorf("x509: %s: %v", scheme.Name(), err)
+			}
+			return pub, nil
+		}
 		return nil, nil
 	}
 }
@@ -2004,9 +2049,21 @@ func signingParamsForPublicKey(pub interface{}, requestedSigAlgo SignatureAlgori
 	case ed25519.PublicKey:
 		pubType = Ed25519
 		sigAlgo.Algorithm = oidSignatureEd25519
-
+	case circlSign.PublicKey:
+		scheme := pub.Scheme()
+		certScheme, ok := scheme.(circlPki.CertificateScheme)
+		if !ok {
+			err = errors.New("x509: circl scheme is not CertificateScheme")
+			return
+		}
+		pubType = PublicKeyAlgorithmByCirclScheme(scheme)
+		if pubType == UnknownPublicKeyAlgorithm {
+			err = errors.New("x509: particular circl scheme not supported")
+			return
+		}
+		sigAlgo.Algorithm = certScheme.Oid()
 	default:
-		err = errors.New("x509: only RSA, ECDSA and Ed25519 keys supported")
+		err = errors.New("x509: only RSA, ECDSA, Ed25519 and circl keys supported")
 	}
 
 	if err != nil {
@@ -2025,7 +2082,8 @@ func signingParamsForPublicKey(pub interface{}, requestedSigAlgo SignatureAlgori
 				return
 			}
 			sigAlgo.Algorithm, hashFunc = details.oid, details.hash
-			if hashFunc == 0 && pubType != Ed25519 {
+			if hashFunc == 0 && (pubType != Ed25519 &&
+				CirclSchemeByPublicKeyAlgorithm(pubType) == nil) {
 				err = errors.New("x509: cannot sign with hash function requested")
 				return
 			}
