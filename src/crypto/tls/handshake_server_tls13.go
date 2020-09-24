@@ -45,6 +45,10 @@ type serverHandshakeStateTLS13 struct {
 	hsTimings CFEventTLS13ServerHandshakeTimingInfo
 }
 
+func (hs *serverHandshakeStateTLS13) echIsInner() bool {
+	return len(hs.clientHello.ech) == 1 && hs.clientHello.ech[0] == echClientHelloInnerVariant
+}
+
 // processDelegatedCredentialFromClient unmarshals the DelegatedCredential
 // offered by the client (if present) and validates it using the peer's
 // certificate.
@@ -215,12 +219,42 @@ func (hs *serverHandshakeStateTLS13) processClientHello() error {
 	hs.hello.cipherSuite = hs.suite.id
 	hs.transcript = hs.suite.hash.New()
 
+	// Resolve the server's preference for the ECDHE group.
+	supportedCurves := c.config.curvePreferences()
+	if testingTriggerHRR {
+		// A HelloRetryRequest (HRR) is sent if the client does not offer a key
+		// share for a curve supported by the server. To trigger this condition
+		// intentionally, we compute the set of ECDHE groups supported by both
+		// the client and server but for which the client did not offer a key
+		// share.
+		m := make(map[CurveID]bool)
+		for _, serverGroup := range c.config.curvePreferences() {
+			for _, clientGroup := range hs.clientHello.supportedCurves {
+				if clientGroup == serverGroup {
+					m[clientGroup] = true
+				}
+			}
+		}
+		for _, ks := range hs.clientHello.keyShares {
+			delete(m, ks.group)
+		}
+		supportedCurves = nil
+		for group := range m {
+			supportedCurves = append(supportedCurves, group)
+		}
+		if len(supportedCurves) == 0 {
+			// This occurs if the client offered a key share for each mutually
+			// supported group.
+			panic("failed to trigger HelloRetryRequest")
+		}
+	}
+
 	// Pick the ECDHE group in server preference order, but give priority to
 	// groups with a key share, to avoid a HelloRetryRequest round-trip.
 	var selectedGroup CurveID
 	var clientKeyShare *keyShare
 GroupSelection:
-	for _, preferredGroup := range c.config.curvePreferences() {
+	for _, preferredGroup := range supportedCurves {
 		for _, ks := range hs.clientHello.keyShares {
 			if ks.group == preferredGroup {
 				selectedGroup = ks.group
@@ -280,7 +314,7 @@ GroupSelection:
 func (hs *serverHandshakeStateTLS13) checkForResumption() error {
 	c := hs.c
 
-	if c.config.SessionTicketsDisabled {
+	if c.config.SessionTicketsDisabled || c.config.ECHEnabled {
 		return nil
 	}
 
@@ -522,6 +556,42 @@ func (hs *serverHandshakeStateTLS13) doHelloRetryRequest(selectedGroup CurveID) 
 		selectedGroup:     selectedGroup,
 	}
 
+	// Decide whether to send "encrypted_client_hello" extension.
+	if hs.echIsInner() {
+		// Confirm ECH acceptance if this is the inner handshake.
+		echAcceptConfHRRTranscript := cloneHash(hs.transcript, hs.suite.hash)
+		if echAcceptConfHRRTranscript == nil {
+			c.sendAlert(alertInternalError)
+			return errors.New("tls: internal error: failed to clone hash")
+		}
+
+		helloRetryRequest.ech = zeros[:8]
+		echAcceptConfHRR, err := helloRetryRequest.marshal()
+		if err != nil {
+			return fmt.Errorf("tls: ech: HRR.marshal(): %w", err)
+		}
+		echAcceptConfHRRTranscript.Write(echAcceptConfHRR)
+		echAcceptConfHRRSignal := hs.suite.expandLabel(
+			hs.suite.extract(hs.clientHello.random, nil),
+			echAcceptConfHRRLabel,
+			echAcceptConfHRRTranscript.Sum(nil),
+			8)
+
+		helloRetryRequest.ech = echAcceptConfHRRSignal
+		helloRetryRequest.raw = nil
+	} else if c.ech.greased {
+		// draft-ietf-tls-esni-13, Section 7.1:
+		//
+		// If sending a HelloRetryRequest, the server MAY include an
+		// "encrypted_client_hello" extension with a payload of 8 random bytes;
+		// see Section 10.9.4 for details.
+		helloRetryRequest.ech = make([]byte, 8)
+		if _, err := io.ReadFull(c.config.rand(), helloRetryRequest.ech); err != nil {
+			c.sendAlert(alertInternalError)
+			return fmt.Errorf("tls: internal error: rng failure: %s", err)
+		}
+	}
+
 	if _, err := hs.c.writeHandshakeRecord(helloRetryRequest, hs.transcript); err != nil {
 		return err
 	}
@@ -540,6 +610,11 @@ func (hs *serverHandshakeStateTLS13) doHelloRetryRequest(selectedGroup CurveID) 
 	if !ok {
 		c.sendAlert(alertUnexpectedMessage)
 		return unexpectedMessageError(clientHello, msg)
+	}
+
+	clientHello, err = c.echAcceptOrReject(clientHello, true) // afterHRR == true
+	if err != nil {
+		return fmt.Errorf("tls: %s", err) // Alert sent
 	}
 
 	if len(clientHello.keyShares) != 1 || clientHello.keyShares[0].group != selectedGroup {
@@ -629,6 +704,40 @@ func illegalClientHelloChange(ch, ch1 *clientHelloMsg) bool {
 func (hs *serverHandshakeStateTLS13) sendServerParameters() error {
 	c := hs.c
 
+	// Confirm ECH acceptance.
+	if hs.echIsInner() {
+		// Clear the last 8 bytes of the ServerHello.random in preparation for
+		// computing the confirmation hint.
+		copy(hs.hello.random[24:], zeros[:8])
+
+		// Set the last 8 bytes of ServerHello.random to a string derived from
+		// the inner handshake.
+		echAcceptConfTranscript := cloneHash(hs.transcript, hs.suite.hash)
+		if echAcceptConfTranscript == nil {
+			c.sendAlert(alertInternalError)
+			return errors.New("tls: internal error: failed to clone hash")
+		}
+		chMarshalled, err := hs.clientHello.marshal()
+		if err != nil {
+			return fmt.Errorf("tls: ech: clientHello.marshal(): %w", err)
+		}
+		echAcceptConfTranscript.Write(chMarshalled)
+		hMarshalled, err := hs.hello.marshal()
+		if err != nil {
+			return fmt.Errorf("tls: ech: hello.marshal(): %w", err)
+		}
+		echAcceptConfTranscript.Write(hMarshalled)
+
+		echAcceptConf := hs.suite.expandLabel(
+			hs.suite.extract(hs.clientHello.random, nil),
+			echAcceptConfLabel,
+			echAcceptConfTranscript.Sum(nil),
+			8)
+
+		copy(hs.hello.random[24:], echAcceptConf)
+		hs.hello.raw = nil
+	}
+
 	if err := transcriptMsg(hs.clientHello, hs.transcript); err != nil {
 		return err
 	}
@@ -676,6 +785,10 @@ func (hs *serverHandshakeStateTLS13) sendServerParameters() error {
 	}
 	encryptedExtensions.alpnProtocol = selectedProto
 	c.clientProtocol = selectedProto
+
+	if !c.ech.accepted && len(c.ech.retryConfigs) > 0 {
+		encryptedExtensions.ech = c.ech.retryConfigs
+	}
 
 	if _, err := hs.c.writeHandshakeRecord(encryptedExtensions, hs.transcript); err != nil {
 		return err
@@ -814,7 +927,7 @@ func (hs *serverHandshakeStateTLS13) sendServerFinished() error {
 }
 
 func (hs *serverHandshakeStateTLS13) shouldSendSessionTickets() bool {
-	if hs.c.config.SessionTicketsDisabled {
+	if hs.c.config.SessionTicketsDisabled || hs.c.config.ECHEnabled {
 		return false
 	}
 
