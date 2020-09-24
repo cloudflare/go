@@ -4,7 +4,40 @@
 
 // Package tls partially implements TLS 1.2, as specified in RFC 5246,
 // and TLS 1.3, as specified in RFC 8446.
+//
+// This package implements the "Encrypted ClientHello (ECH)" extension, as
+// specified by draft-ietf-tls-esni-08. This extension allows the client to
+// encrypt its ClientHello to the public key of an ECH-service provider, known
+// as the client-facing server. If successful, then the client-facing server
+// forwards the decrypted ClientHello to the intended recipient, known as the
+// backend server. The goal of this mechanism is to ensure that connections made
+// to backend servers are indistinguishable from one another.
 package tls
+
+// BUG(cjpatton): In order to achieve its security goal, the ECH extension
+// specifies various padding mechanisms to ensure that the length of handshake
+// messages doesn't depend on who terminates the connection. This package does
+// not yet implement client- or server-side padding.
+
+// BUG(cjpatton): Another goal of the ECH extension is that connections that use
+// ECH should be indistinguishable from connections that provide covertext in
+// the form of a "GREASE" ECH extension. This property is known informally as
+// "don't stick out". Providing this property requires additional padding, which
+// this package does not yet implement.
+
+// BUG(cjpatton): The interaction of the  ECH extension interacts with PSK has
+// not yet been fully vetted. For now, the server disables session tickets if
+// ECH is enabled.
+
+// BUG(cjpatton): Upon ECH rejection, if retry configurations are provided, then
+// the client is expected to retry the connection.  Otherwise, it may regard ECH
+// as being securely disabled by the client-facing server. The client in this
+// package does not attempt to retry the handshake.
+
+// BUG(cjpatton): If the client offers the ECH extension and the client-facing
+// server rejects it, then only the client-facing server is authenticated. In
+// particular, the client is expected to responds to a CertificateRequest with
+// an empty certificate. This package does not yet implement this behavior.
 
 // BUG(agl): The crypto/tls package only implements some countermeasures
 // against Lucky13 attacks on CBC-mode encryption, and only on SHA1

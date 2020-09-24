@@ -114,6 +114,23 @@ type Conn struct {
 	activeCall int32
 
 	tmp [16]byte
+
+	ech struct {
+		status       ECHStatus
+		offered      bool
+		retryConfigs []byte // The retry configurations
+		hrrPsk       []byte // The HRR pre-shared key, used in case of HRR.
+
+		// When offering ECH, the ClientHelloInner.random sent prior to HRR.
+		hrrInnerRandom []byte
+
+		// When sending dummy ECH, the config_id sent prior to HRR.
+		hrrConfigId []byte
+	}
+
+	// Set by the client and server when an HRR message was sent in this
+	// handshake.
+	hrrTriggered bool
 }
 
 // Access to net.Conn methods.
@@ -691,6 +708,23 @@ func (c *Conn) readRecordOrCCS(expectChangeCipherSpec bool) error {
 			return c.in.setErrorLocked(io.EOF)
 		}
 		if c.vers == VersionTLS13 {
+			if st := c.ech.status; !c.isClient && st != ECHStatusAccepted {
+				// Resolve the status of ECH usage. If ECH was not accepted,
+				// then the server does not know whether the client offered ECH
+				// or sent a dummy ECH extension until the client explicitly
+				// signals rejection.
+				c.ech.offered = true
+				if len(c.ech.retryConfigs) > 0 {
+					// If retry configurations were sent, then the status is
+					// "ECH rejection".
+					c.ech.status = ECHStatusRejected
+				} else {
+					// If no retry configurations were sent, then the server is
+					// regarded as having disabled ECH. The status is "ECH
+					// bypassed".
+					c.ech.status = ECHStatusBypassed
+				}
+			}
 			return c.in.setErrorLocked(&net.OpError{Op: "remote error", Err: alert(data[1])})
 		}
 		switch data[0] {
@@ -1436,6 +1470,8 @@ func (c *Conn) connectionStateLocked() ConnectionState {
 	} else {
 		state.ekm = c.ekm
 	}
+	state.ECHOffered = c.ech.offered
+	state.ECHStatus = c.ech.status
 	return state
 }
 

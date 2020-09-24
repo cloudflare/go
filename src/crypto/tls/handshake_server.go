@@ -137,6 +137,15 @@ func (c *Conn) readClientHello() (*clientHelloMsg, error) {
 		return nil, unexpectedMessageError(clientHello, msg)
 	}
 
+	// NOTE(cjpatton): ECH usage is resolved before calling GetConfigForClient()
+	// or GetCertifciate(). Hence, it is not currently possible to reject ECH if
+	// we don't recognize the inner SNI. This may or may not be desirable in the
+	// future.
+	clientHello, err = c.echAcceptOrBypass(clientHello)
+	if err != nil {
+		return nil, fmt.Errorf("tls: %s", err) // Alert sent.
+	}
+
 	var configForClient *Config
 	originalConfig := c.config
 	if c.config.GetConfigForClient != nil {
@@ -366,7 +375,7 @@ func (hs *serverHandshakeState) cipherSuiteOk(c *cipherSuite) bool {
 func (hs *serverHandshakeState) checkForResumption() bool {
 	c := hs.c
 
-	if c.config.SessionTicketsDisabled {
+	if c.config.SessionTicketsDisabled || c.config.ECHEnabled {
 		return false
 	}
 
@@ -463,7 +472,7 @@ func (hs *serverHandshakeState) doFullHandshake() error {
 		hs.hello.ocspStapling = true
 	}
 
-	hs.hello.ticketSupported = hs.clientHello.ticketSupported && !c.config.SessionTicketsDisabled
+	hs.hello.ticketSupported = hs.clientHello.ticketSupported && !c.config.SessionTicketsDisabled && !c.config.ECHEnabled
 	hs.hello.cipherSuite = hs.suite.id
 
 	hs.finishedHash = newFinishedHash(hs.c.vers, hs.suite)
