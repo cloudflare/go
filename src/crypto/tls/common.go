@@ -102,6 +102,8 @@ const (
 	extensionSignatureAlgorithmsCert uint16 = 50
 	extensionKeyShare                uint16 = 51
 	extensionRenegotiationInfo       uint16 = 0xff01
+	extensionECH                     uint16 = 0xfe0d // draft-ietf-tls-esni-13
+	extensionECHOuterExtensions      uint16 = 0xfd00 // draft-ietf-tls-esni-13
 )
 
 // TLS signaling cipher suite values
@@ -224,6 +226,45 @@ const (
 // include downgrade canaries even if it's using its highers supported version.
 var testingOnlyForceDowngradeCanary bool
 
+// testingTriggerHRR causes the server to intentionally trigger a
+// HelloRetryRequest (HRR). This is useful for testing new TLS features that
+// change the HRR codepath.
+var testingTriggerHRR bool
+
+// testingECHTriggerBypassAfterHRR causes the client to bypass ECH after HRR.
+// If available, the client will offer ECH in the first CH only.
+var testingECHTriggerBypassAfterHRR bool
+
+// testingECHTriggerBypassBeforeHRR causes the client to bypass ECH before HRR.
+// The client will offer ECH in the second CH only.
+var testingECHTriggerBypassBeforeHRR bool
+
+// testingECHIllegalHandleAfterHRR causes the client to illegally change the ECH
+// extension after HRR.
+var testingECHIllegalHandleAfterHRR bool
+
+// testingECHTriggerPayloadDecryptError causes the client to to send an
+// inauthentic payload.
+var testingECHTriggerPayloadDecryptError bool
+
+// testingECHOuterExtMany causes a client to incorporate a sequence of
+// outer extensions into the ClientHelloInner when it offers the ECH extension.
+// The "key_share" extension is the only incorporated extension by default.
+var testingECHOuterExtMany bool
+
+// testingECHOuterExtNone causes a client to not use the "outer_extension"
+// mechanism for ECH. The "key_shares" extension is incorporated by default.
+var testingECHOuterExtNone bool
+
+// testingECHOuterExtIncorrectOrder causes the client to send the
+// "outer_extension" extension in the wrong order when offering the ECH
+// extension.
+var testingECHOuterExtIncorrectOrder bool
+
+// testingECHOuterExtIllegal causes the client to send in its
+// "outer_extension" extension the codepoint for the ECH extension.
+var testingECHOuterExtIllegal bool
+
 // ConnectionState records basic TLS details about the connection.
 type ConnectionState struct {
 	// Version is the TLS version used by the connection (e.g. VersionTLS12).
@@ -291,6 +332,14 @@ type ConnectionState struct {
 	// to a connection. See the Security Considerations sections of RFC 5705 and
 	// RFC 7627, and https://mitls.org/pages/attacks/3SHAKE#channelbindings.
 	TLSUnique []byte
+
+	// ECHAccepted is set if the ECH extension was offered by the client and
+	// accepted by the server.
+	ECHAccepted bool
+
+	// ECHOffered is set if the ECH extension is present in the ClientHello.
+	// This means the client has offered ECH or sent GREASE ECH.
+	ECHOffered bool
 
 	// CFControl is used to pass additional TLS configuration information to
 	// HTTP requests.
@@ -711,7 +760,8 @@ type Config struct {
 
 	// SessionTicketsDisabled may be set to true to disable session ticket and
 	// PSK (resumption) support. Note that on clients, session ticket support is
-	// also disabled if ClientSessionCache is nil.
+	// also disabled if ClientSessionCache is nil. On clients or servers,
+	// support is disabled if the ECH extension is enabled.
 	SessionTicketsDisabled bool
 
 	// SessionTicketKey is used by TLS servers to provide session resumption.
@@ -774,6 +824,23 @@ type Config struct {
 	// Use of KeyLogWriter compromises security and should only be
 	// used for debugging.
 	KeyLogWriter io.Writer
+
+	// ECHEnabled determines whether the ECH extension is enabled for this
+	// connection.
+	ECHEnabled bool
+
+	// ClientECHConfigs are the parameters used by the client when it offers the
+	// ECH extension. If ECH is enabled, a suitable configuration is found, and
+	// the client supports TLS 1.3, then it will offer ECH in this handshake.
+	// Otherwise, if ECH is enabled, it will send a dummy ECH extension.
+	ClientECHConfigs []ECHConfig
+
+	// ServerECHProvider is the ECH provider used by the client-facing server
+	// for the ECH extension. If the client offers ECH and TLS 1.3 is
+	// negotiated, then the provider is used to compute the HPKE context
+	// (draft-irtf-cfrg-hpke-07), which in turn is used to decrypt the extension
+	// payload.
+	ServerECHProvider ECHProvider
 
 	// CFEventHandler, if set, is called by the client and server at various
 	// points during the handshake to handle specific events. This is used
@@ -888,6 +955,9 @@ func (c *Config) Clone() *Config {
 		Renegotiation:               c.Renegotiation,
 		KeyLogWriter:                c.KeyLogWriter,
 		SupportDelegatedCredential:  c.SupportDelegatedCredential,
+		ECHEnabled:                  c.ECHEnabled,
+		ClientECHConfigs:            c.ClientECHConfigs,
+		ServerECHProvider:           c.ServerECHProvider,
 		CFEventHandler:              c.CFEventHandler,
 		CFControl:                   c.CFControl,
 		sessionTicketKeys:           c.sessionTicketKeys,
@@ -1070,6 +1140,27 @@ func (c *Config) supportedVersions(isClient bool) []uint16 {
 			continue
 		}
 		if c != nil && c.MaxVersion != 0 && v > c.MaxVersion {
+			continue
+		}
+		versions = append(versions, v)
+	}
+	return versions
+}
+
+func (c *Config) supportedVersionsFromMin(isClient bool, minVersion uint16) []uint16 {
+	versions := make([]uint16, 0, len(supportedVersions))
+	for _, v := range supportedVersions {
+		if (c == nil || c.MinVersion == 0) && !debugEnableTLS10 &&
+			isClient && v < VersionTLS12 {
+			continue
+		}
+		if c != nil && c.MinVersion != 0 && v < c.MinVersion {
+			continue
+		}
+		if c != nil && c.MaxVersion != 0 && v > c.MaxVersion {
+			continue
+		}
+		if v < minVersion {
 			continue
 		}
 		versions = append(versions, v)
