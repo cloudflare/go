@@ -8,6 +8,7 @@ package tls
 
 import (
 	"bytes"
+	"circl/hpke"
 	"context"
 	"crypto/cipher"
 	"crypto/subtle"
@@ -118,6 +119,20 @@ type Conn struct {
 	activeCall int32
 
 	tmp [16]byte
+
+	// State used for the ECH extension.
+	ech struct {
+		sealer hpke.Sealer // The client's HPKE context
+		opener hpke.Opener // The server's HPKE context
+
+		// The state shared by the client and server.
+		offered      bool   // Client offered ECH
+		greased      bool   // Client greased ECH
+		accepted     bool   // Server accepted ECH
+		retryConfigs []byte // The retry configurations
+		configId     uint8  // The ECH config id
+		maxNameLen   int    // maximum_name_len indicated by the ECH config
+	}
 }
 
 // Access to net.Conn methods.
@@ -695,6 +710,12 @@ func (c *Conn) readRecordOrCCS(expectChangeCipherSpec bool) error {
 			return c.in.setErrorLocked(io.EOF)
 		}
 		if c.vers == VersionTLS13 {
+			if !c.isClient && c.ech.greased && alert(data[1]) == alertECHRequired {
+				// This condition indicates that the client intended to offer
+				// ECH, but did not use a known ECH config.
+				c.ech.offered = true
+				c.ech.greased = false
+			}
 			return c.in.setErrorLocked(&net.OpError{Op: "remote error", Err: alert(data[1])})
 		}
 		switch data[0] {
@@ -1339,6 +1360,29 @@ func (c *Conn) Close() error {
 	if err := c.conn.Close(); err != nil {
 		return err
 	}
+
+	// Resolve ECH status.
+	if !c.isClient && c.config.MaxVersion < VersionTLS13 {
+		c.handleCFEvent(CFEventECHServerStatus(echStatusBypassed))
+	} else if !c.ech.offered {
+		if !c.ech.greased {
+			c.handleCFEvent(CFEventECHClientStatus(echStatusBypassed))
+		} else {
+			c.handleCFEvent(CFEventECHClientStatus(echStatusOuter))
+		}
+	} else {
+		c.handleCFEvent(CFEventECHClientStatus(echStatusInner))
+		if !c.ech.accepted {
+			if len(c.ech.retryConfigs) > 0 {
+				c.handleCFEvent(CFEventECHServerStatus(echStatusOuter))
+			} else {
+				c.handleCFEvent(CFEventECHServerStatus(echStatusBypassed))
+			}
+		} else {
+			c.handleCFEvent(CFEventECHServerStatus(echStatusInner))
+		}
+	}
+
 	return alertErr
 }
 
@@ -1484,6 +1528,8 @@ func (c *Conn) connectionStateLocked() ConnectionState {
 	}
 	state.SignedCertificateTimestamps = c.scts
 	state.OCSPResponse = c.ocspResponse
+	state.ECHAccepted = c.ech.accepted
+	state.ECHOffered = c.ech.offered || c.ech.greased
 	state.CFControl = c.config.CFControl
 	if !c.didResume && c.vers != VersionTLS13 {
 		if c.clientFinishedIsFirst {
