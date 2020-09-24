@@ -10,6 +10,7 @@ import (
 	"crypto/hmac"
 	"crypto/rsa"
 	"errors"
+	"fmt"
 	"hash"
 	"io"
 	"sync/atomic"
@@ -169,12 +170,39 @@ func (hs *serverHandshakeStateTLS13) processClientHello() error {
 	hs.hello.cipherSuite = hs.suite.id
 	hs.transcript = hs.suite.hash.New()
 
+	// Resolve the server's preference for the ECDHE group.
+	supportedCurves := c.config.curvePreferences()
+	if testingTriggerHRR {
+		// A HelloRetryRequest (HRR) is sent if the client does not offer a key
+		// share for a curve supported by the server. To trigger this condition
+		// intentionally, we compute the set of ECDHE groups supported by both
+		// the client and server but for which the client did not offer a key
+		// share.
+		supportedCurves = make([]CurveID, 0)
+		for _, serverGroup := range c.config.curvePreferences() {
+			for _, clientGroup := range hs.clientHello.supportedCurves {
+				if serverGroup == clientGroup {
+					for _, ks := range hs.clientHello.keyShares {
+						if serverGroup != ks.group {
+							supportedCurves = append(supportedCurves, serverGroup)
+						}
+					}
+				}
+			}
+		}
+		if len(supportedCurves) == 0 {
+			// This occurs if the client offered a key share for each mutually
+			// supported group.
+			panic("failed to trigger HelloRetryRequest")
+		}
+	}
+
 	// Pick the ECDHE group in server preference order, but give priority to
 	// groups with a key share, to avoid a HelloRetryRequest round-trip.
 	var selectedGroup CurveID
 	var clientKeyShare *keyShare
 GroupSelection:
-	for _, preferredGroup := range c.config.curvePreferences() {
+	for _, preferredGroup := range supportedCurves {
 		for _, ks := range hs.clientHello.keyShares {
 			if ks.group == preferredGroup {
 				selectedGroup = ks.group
@@ -226,7 +254,7 @@ GroupSelection:
 func (hs *serverHandshakeStateTLS13) checkForResumption() error {
 	c := hs.c
 
-	if c.config.SessionTicketsDisabled {
+	if c.config.SessionTicketsDisabled || c.config.ECHEnabled {
 		return nil
 	}
 
@@ -396,6 +424,7 @@ func (hs *serverHandshakeStateTLS13) sendDummyChangeCipherSpec() error {
 
 func (hs *serverHandshakeStateTLS13) doHelloRetryRequest(selectedGroup CurveID) error {
 	c := hs.c
+	c.hrrTriggered = true
 
 	// The first ClientHello gets double-hashed into the transcript upon a
 	// HelloRetryRequest. See RFC 8446, Section 4.4.1.
@@ -433,6 +462,11 @@ func (hs *serverHandshakeStateTLS13) doHelloRetryRequest(selectedGroup CurveID) 
 	if !ok {
 		c.sendAlert(alertUnexpectedMessage)
 		return unexpectedMessageError(clientHello, msg)
+	}
+
+	clientHello, err = c.echAcceptOrBypass(clientHello)
+	if err != nil {
+		return fmt.Errorf("tls: %s", err) // Alert sent
 	}
 
 	if len(clientHello.keyShares) != 1 || clientHello.keyShares[0].group != selectedGroup {
@@ -515,6 +549,15 @@ func illegalClientHelloChange(ch, ch1 *clientHelloMsg) bool {
 func (hs *serverHandshakeStateTLS13) sendServerParameters() error {
 	c := hs.c
 
+	// Confirm ECH acceptance.
+	if hs.clientHello.encryptedClientHelloOffered &&
+		len(hs.clientHello.encryptedClientHello) == 0 {
+		secret := hs.suite.extract(hs.clientHello.random, nil)
+		context := hs.hello.random[:24]
+		acceptConfirmation := hs.suite.expandLabel(secret, echTls13LabelAcceptConfirm, context, 8)
+		copy(hs.hello.random[24:], acceptConfirmation)
+	}
+
 	hs.transcript.Write(hs.clientHello.marshal())
 	hs.transcript.Write(hs.hello.marshal())
 	if _, err := c.writeRecord(recordTypeHandshake, hs.hello.marshal()); err != nil {
@@ -557,6 +600,10 @@ func (hs *serverHandshakeStateTLS13) sendServerParameters() error {
 			encryptedExtensions.alpnProtocol = selectedProto
 			c.clientProtocol = selectedProto
 		}
+	}
+
+	if len(c.ech.retryConfigs) > 0 {
+		encryptedExtensions.encryptedClientHello = c.ech.retryConfigs
 	}
 
 	hs.transcript.Write(encryptedExtensions.marshal())
@@ -690,7 +737,7 @@ func (hs *serverHandshakeStateTLS13) sendServerFinished() error {
 }
 
 func (hs *serverHandshakeStateTLS13) shouldSendSessionTickets() bool {
-	if hs.c.config.SessionTicketsDisabled {
+	if hs.c.config.SessionTicketsDisabled || hs.c.config.ECHEnabled {
 		return false
 	}
 
