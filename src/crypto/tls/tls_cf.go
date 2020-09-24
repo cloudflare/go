@@ -45,3 +45,11 @@ func init() {
 			SignatureScheme(cs.scheme.(circlPki.TLSScheme).TLSIdentifier()))
 	}
 }
+
+// EXP_Event is a value emitted at various points in the handshake that is
+// handled by the callback Config.EventHandler.
+//
+// NOTE: This API is EXPERIMENTAL and subject to change.
+type EXP_Event interface {
+	Name() string
+}
