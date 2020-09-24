@@ -11,6 +11,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/ed25519"
 	"crypto/elliptic"
+	kem "crypto/kem"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha512"
@@ -115,11 +116,20 @@ const (
 // only supports Elliptic Curve based groups. See RFC 8446, Section 4.2.7.
 type CurveID uint16
 
+func (curve CurveID) isKem() bool {
+	switch curve {
+	case SIKEp434:
+		return true
+	}
+	return false
+}
+
 const (
 	CurveP256 CurveID = 23
 	CurveP384 CurveID = 24
 	CurveP521 CurveID = 25
 	X25519    CurveID = 29
+	SIKEp434  CurveID = CurveID(kem.SIKEp434)
 )
 
 // TLS 1.3 Key Share. See RFC 8446, Section 4.2.8.
@@ -190,6 +200,7 @@ var supportedSignatureAlgorithms = []SignatureScheme{
 	ECDSAWithP521AndSHA512,
 	PKCS1WithSHA1,
 	ECDSAWithSHA1,
+	KEMTLSwithSIKEp434,
 }
 
 // helloRetryRequestRandom is set as the Random value of a ServerHello
@@ -379,6 +390,10 @@ const (
 	// Legacy signature and hash algorithms for TLS 1.2.
 	PKCS1WithSHA1 SignatureScheme = 0x0201
 	ECDSAWithSHA1 SignatureScheme = 0x0203
+
+	// KEMTLS algorithms
+
+	KEMTLSwithSIKEp434 SignatureScheme = 0xfe00
 )
 
 // ClientHelloInfo contains information from a ClientHello message in order to
@@ -692,7 +707,7 @@ type Config struct {
 	// a DelegatedCredential.
 	GetDelegatedCredential func(*ClientHelloInfo) (*DelegatedCredential, crypto.PrivateKey, error)
 
-        // mutex protects sessionTicketKeys and autoSessionTicketKeys.
+	// mutex protects sessionTicketKeys and autoSessionTicketKeys.
 	mutex sync.RWMutex
 
 	// sessionTicketKeys contains zero or more ticket keys. If set, it means the
@@ -979,7 +994,7 @@ func supportedVersionsFromMax(maxVersion uint16) []uint16 {
 	return versions
 }
 
-var defaultCurvePreferences = []CurveID{X25519, CurveP256, CurveP384, CurveP521}
+var defaultCurvePreferences = []CurveID{SIKEp434, X25519, CurveP256, CurveP384, CurveP521}
 
 func (c *Config) curvePreferences() []CurveID {
 	if c == nil || len(c.CurvePreferences) == 0 {
