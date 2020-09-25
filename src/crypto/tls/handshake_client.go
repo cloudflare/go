@@ -161,6 +161,9 @@ func (c *Conn) makeClientHello() (*clientHelloMsg, []clientKeysharePrivate, erro
 		}
 
 		hello.keyShares = keyShares
+
+		// only for TLS 1.3
+		hello.delegatedCredentialSupported = config.SupportDelegatedCredential
 	}
 
 	return hello, keySharePrivates, nil
