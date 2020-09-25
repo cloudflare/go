@@ -176,6 +176,7 @@ const (
 	signatureECDSA
 	signatureEd25519
 	signatureEdDilithium3
+	authKEMTLS
 )
 
 // directSigning is a standard Hash value that signals that no pre-hashing

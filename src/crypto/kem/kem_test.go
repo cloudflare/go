@@ -12,6 +12,7 @@ func TestKemAPI(t *testing.T) {
 		kem  KemID
 	}{
 		{"Kem25519", Kem25519},
+		{"SIKEp434", SIKEp434},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
