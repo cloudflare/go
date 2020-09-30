@@ -191,6 +191,8 @@ var supportedSignatureAlgorithms = []SignatureScheme{
 	ECDSAWithSHA1,
 }
 
+var supportedSignatureAlgorithmsDC = supportedSignatureAlgorithms
+
 // helloRetryRequestRandom is set as the Random value of a ServerHello
 // to signal that the message is actually a HelloRetryRequest.
 var helloRetryRequestRandom = []byte{ // See RFC 8446, Section 4.1.3.
@@ -691,7 +693,7 @@ type Config struct {
 	// a DelegatedCredential.
 	GetDelegatedCredential func(*ClientHelloInfo) (*DelegatedCredential, crypto.PrivateKey, error)
 
-        // mutex protects sessionTicketKeys and autoSessionTicketKeys.
+	// mutex protects sessionTicketKeys and autoSessionTicketKeys.
 	mutex sync.RWMutex
 
 	// sessionTicketKeys contains zero or more ticket keys. If set, it means the

@@ -81,6 +81,7 @@ type clientHelloMsg struct {
 	sessionTicket                    []uint8
 	supportedSignatureAlgorithms     []SignatureScheme
 	supportedSignatureAlgorithmsCert []SignatureScheme
+	supportedSignatureAlgorithmsDC   []SignatureScheme
 	secureRenegotiationSupported     bool
 	secureRenegotiation              []byte
 	delegatedCredentialSupported     bool
@@ -202,12 +203,12 @@ func (m *clientHelloMsg) marshal() []byte {
 				})
 			}
 			if m.delegatedCredentialSupported {
-				if len(m.supportedSignatureAlgorithms) > 0 {
+				if len(m.supportedSignatureAlgorithmsDC) > 0 {
 					// Draft: https://tools.ietf.org/html/draft-ietf-tls-subcerts-09#section-4.1
 					b.AddUint16(extensionDelegatedCredentials)
 					b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
 						b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
-							for _, sigAlgo := range m.supportedSignatureAlgorithms {
+							for _, sigAlgo := range m.supportedSignatureAlgorithmsDC {
 								b.AddUint16(uint16(sigAlgo))
 							}
 						})
@@ -547,8 +548,8 @@ func (m *clientHelloMsg) unmarshal(data []byte) bool {
 				if !sigAndAlgs.ReadUint16(&sigAndAlg) {
 					return false
 				}
-				m.supportedSignatureAlgorithms = append(
-					m.supportedSignatureAlgorithms, SignatureScheme(sigAndAlg))
+				m.supportedSignatureAlgorithmsDC = append(
+					m.supportedSignatureAlgorithmsDC, SignatureScheme(sigAndAlg))
 			}
 			m.delegatedCredentialSupported = true
 		case extensionKeyShare:
