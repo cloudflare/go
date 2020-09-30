@@ -50,8 +50,16 @@ func (hs *serverHandshakeStateTLS13) handshake() error {
 	if err := hs.checkForResumption(); err != nil {
 		return err
 	}
-	if err := hs.pickCertificate(); err != nil {
+	isKEMTLS, err := hs.pickCertificate()
+	if err != nil {
 		return err
+	}
+	if isKEMTLS {
+		// do this separately because I don't want to be buffering
+		if err := hs.sendServerParameters(); err != nil {
+			return err
+		}
+		return hs.handshakeKEMTLS()
 	}
 	c.buffering = true
 	if err := hs.sendServerParameters(); err != nil {
@@ -358,17 +366,18 @@ func cloneHash(in hash.Hash, h crypto.Hash) hash.Hash {
 	return out
 }
 
-func (hs *serverHandshakeStateTLS13) pickCertificate() error {
+// pickCertificate returns true if we pick KEMTLS
+func (hs *serverHandshakeStateTLS13) pickCertificate() (bool, error) {
 	c := hs.c
 
 	// Only one of PSK and certificates are used at a time.
 	if hs.usingPSK {
-		return nil
+		return false, nil
 	}
 
 	// signature_algorithms is required in TLS 1.3. See RFC 8446, Section 4.2.3.
 	if len(hs.clientHello.supportedSignatureAlgorithms) == 0 {
-		return c.sendAlert(alertMissingExtension)
+		return false, c.sendAlert(alertMissingExtension)
 	}
 
 	certificate, err := c.config.getCertificate(clientHelloInfo(c, hs.clientHello))
@@ -378,39 +387,42 @@ func (hs *serverHandshakeStateTLS13) pickCertificate() error {
 		} else {
 			c.sendAlert(alertInternalError)
 		}
-		return err
+		return false, err
 	}
 	hs.sigAlg, err = selectSignatureScheme(c.vers, certificate, hs.clientHello.supportedSignatureAlgorithms)
 	if err != nil {
 		// getCertificate returned a certificate that is unsupported or
 		// incompatible with the client's signature algorithms.
 		c.sendAlert(alertHandshakeFailure)
-		return err
+		return false, err
 	}
 
 	hs.cert = certificate
 
+	isKEMTLS := false
 	if hs.clientHello.delegatedCredentialSupported && c.config.GetDelegatedCredential != nil {
 		dCred, priv, err := c.config.GetDelegatedCredential(clientHelloInfo(c, hs.clientHello))
+
 		if err != nil {
 			c.sendAlert(alertInternalError)
-			return nil
+			return false, nil
 		}
 
 		if dCred != nil && priv != nil {
+			isKEMTLS = dCred.Cred.expCertVerfAlgo.isKEMTLS()
 			hs.cert.PrivateKey = priv
 			if dCred.Raw == nil {
 				dCred.Raw, err = dCred.Marshal()
 				if err != nil {
 					c.sendAlert(alertInternalError)
-					return err
+					return isKEMTLS, err
 				}
 			}
 			hs.cert.DelegatedCredential = dCred.Raw
 		}
 	}
 
-	return nil
+	return isKEMTLS, nil
 }
 
 // sendDummyChangeCipherSpec sends a ChangeCipherSpec record for compatibility

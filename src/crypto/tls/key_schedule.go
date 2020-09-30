@@ -91,6 +91,14 @@ func (c *cipherSuiteTLS13) finishedHash(baseKey []byte, transcript hash.Hash) []
 	return verifyData.Sum(nil)
 }
 
+// the KEMTLS finished hash contains the role
+func (c *cipherSuiteTLS13) finishedHashKEMTLS(baseKey []byte, role string, transcript hash.Hash) []byte {
+	finishedKey := c.expandLabel(baseKey, role+" finished", nil, c.hash.Size())
+	verifyData := hmac.New(c.hash.New, finishedKey)
+	verifyData.Write(transcript.Sum(nil))
+	return verifyData.Sum(nil)
+}
+
 // exportKeyingMaterial implements RFC5705 exporters for TLS 1.3 according to
 // RFC 8446, Section 7.5.
 func (c *cipherSuiteTLS13) exportKeyingMaterial(masterSecret []byte, transcript hash.Hash) func(string, []byte, int) ([]byte, error) {

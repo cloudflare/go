@@ -14,6 +14,8 @@ import (
 func (hs *clientHandshakeStateTLS13) handshakeKEMTLS() error {
 	c := hs.c
 	// Send over KEM CT and derive AHS
+
+	// note that we are already buffering!
 	if err := hs.sendClientKemCiphertext(); err != nil {
 		return err
 	}
@@ -25,7 +27,9 @@ func (hs *clientHandshakeStateTLS13) handshakeKEMTLS() error {
 	if err := hs.sendKEMTLSClientFinished(); err != nil {
 		return err
 	}
-
+	if _, err := c.flush(); err != nil {
+		return err
+	}
 	// We are now ready to start writing data on the wire
 	atomic.StoreUint32(&c.handshakeStatus, 1)
 
@@ -34,10 +38,6 @@ func (hs *clientHandshakeStateTLS13) handshakeKEMTLS() error {
 		return err
 	}
 
-	// done
-	if _, err := c.flush(); err != nil {
-		return err
-	}
 	return nil
 }
 
@@ -72,6 +72,9 @@ func (hs *clientHandshakeStateTLS13) sendClientKemCiphertext() error {
 		serverAuthenticatedHandshakeTrafficLabel, hs.transcript)
 	c.in.setTrafficSecret(hs.suite, serverSecret)
 
+	hs.masterSecret = hs.suite.extract(nil,
+		hs.suite.deriveSecret(ahs, "derived", nil))
+
 	err = c.config.writeKeyLog(keyLogLabelClientAuthenticatedHandshake, hs.hello.random, clientSecret)
 	if err != nil {
 		c.sendAlert(alertInternalError)
@@ -89,11 +92,8 @@ func (hs *clientHandshakeStateTLS13) sendClientKemCiphertext() error {
 func (hs *clientHandshakeStateTLS13) sendKEMTLSClientFinished() error {
 	c := hs.c
 
-	hs.masterSecret = hs.suite.extract(nil,
-		hs.suite.deriveSecret(hs.handshakeSecret, "derived", nil))
-
 	finished := &finishedMsg{
-		verifyData: hs.suite.finishedHash(c.out.trafficSecret, hs.transcript),
+		verifyData: hs.suite.finishedHashKEMTLS(hs.masterSecret, "c", hs.transcript),
 	}
 
 	if _, err := hs.transcript.Write(finished.marshal()); err != nil {
@@ -114,11 +114,6 @@ func (hs *clientHandshakeStateTLS13) sendKEMTLSClientFinished() error {
 		return err
 	}
 
-	if !c.config.SessionTicketsDisabled && c.config.ClientSessionCache != nil {
-		c.resumptionSecret = hs.suite.deriveSecret(hs.masterSecret,
-			resumptionLabel, hs.transcript)
-	}
-
 	return nil
 }
 
@@ -135,7 +130,7 @@ func (hs *clientHandshakeStateTLS13) processKEMTLSServerFinished() error {
 		return unexpectedMessageError(finished, msg)
 	}
 
-	expectedMAC := hs.suite.finishedHash(c.in.trafficSecret, hs.transcript)
+	expectedMAC := hs.suite.finishedHashKEMTLS(hs.masterSecret, "s", hs.transcript)
 	if !hmac.Equal(expectedMAC, finished.verifyData) {
 		c.sendAlert(alertDecryptError)
 		return errors.New("tls: invalid server finished hash")
@@ -153,6 +148,11 @@ func (hs *clientHandshakeStateTLS13) processKEMTLSServerFinished() error {
 	if err != nil {
 		c.sendAlert(alertInternalError)
 		return err
+	}
+
+	if !c.config.SessionTicketsDisabled && c.config.ClientSessionCache != nil {
+		c.resumptionSecret = hs.suite.deriveSecret(hs.masterSecret,
+			resumptionLabel, hs.transcript)
 	}
 
 	c.ekm = hs.suite.exportKeyingMaterial(hs.masterSecret, hs.transcript)
