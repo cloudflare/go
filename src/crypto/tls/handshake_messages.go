@@ -208,7 +208,7 @@ func (m *clientHelloMsg) marshal() []byte {
 					b.AddUint16(extensionDelegatedCredentials)
 					b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
 						b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
-							for _, sigAlgo := range m.supportedSignatureAlgorithms {
+							for _, sigAlgo := range m.supportedSignatureAlgorithmsDC {
 								b.AddUint16(uint16(sigAlgo))
 							}
 						})
@@ -549,7 +549,7 @@ func (m *clientHelloMsg) unmarshal(data []byte) bool {
 					return false
 				}
 				m.supportedSignatureAlgorithmsDC = append(
-					m.supportedSignatureAlgorithms, SignatureScheme(sigAndAlg))
+					m.supportedSignatureAlgorithmsDC, SignatureScheme(sigAndAlg))
 			}
 			m.delegatedCredentialSupported = true
 		case extensionKeyShare:
