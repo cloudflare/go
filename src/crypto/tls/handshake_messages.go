@@ -548,7 +548,7 @@ func (m *clientHelloMsg) unmarshal(data []byte) bool {
 				if !sigAndAlgs.ReadUint16(&sigAndAlg) {
 					return false
 				}
-				m.supportedSignatureAlgorithms = append(
+				m.supportedSignatureAlgorithmsDC = append(
 					m.supportedSignatureAlgorithms, SignatureScheme(sigAndAlg))
 			}
 			m.delegatedCredentialSupported = true
