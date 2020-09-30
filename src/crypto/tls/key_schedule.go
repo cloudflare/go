@@ -21,14 +21,16 @@ import (
 // schedule. See RFC 8446, Section 7.
 
 const (
-	resumptionBinderLabel         = "res binder"
-	clientHandshakeTrafficLabel   = "c hs traffic"
-	serverHandshakeTrafficLabel   = "s hs traffic"
-	clientApplicationTrafficLabel = "c ap traffic"
-	serverApplicationTrafficLabel = "s ap traffic"
-	exporterLabel                 = "exp master"
-	resumptionLabel               = "res master"
-	trafficUpdateLabel            = "traffic upd"
+	resumptionBinderLabel                    = "res binder"
+	clientHandshakeTrafficLabel              = "c hs traffic"
+	serverHandshakeTrafficLabel              = "s hs traffic"
+	clientAuthenticatedHandshakeTrafficLabel = "c ahs traffic"
+	serverAuthenticatedHandshakeTrafficLabel = "s ahs traffic"
+	clientApplicationTrafficLabel            = "c ap traffic"
+	serverApplicationTrafficLabel            = "s ap traffic"
+	exporterLabel                            = "exp master"
+	resumptionLabel                          = "res master"
+	trafficUpdateLabel                       = "traffic upd"
 )
 
 // expandLabel implements HKDF-Expand-Label from RFC 8446, Section 7.1.

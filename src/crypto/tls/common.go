@@ -201,6 +201,21 @@ var supportedSignatureAlgorithms = []SignatureScheme{
 	ECDSAWithP521AndSHA512,
 	PKCS1WithSHA1,
 	ECDSAWithSHA1,
+}
+
+var supportedSignatureAlgorithmsDC = []SignatureScheme{
+	PSSWithSHA256,
+	ECDSAWithP256AndSHA256,
+	Ed25519,
+	PSSWithSHA384,
+	PSSWithSHA512,
+	PKCS1WithSHA256,
+	PKCS1WithSHA384,
+	PKCS1WithSHA512,
+	ECDSAWithP384AndSHA384,
+	ECDSAWithP521AndSHA512,
+	PKCS1WithSHA1,
+	ECDSAWithSHA1,
 	KEMTLSwithSIKEp434,
 }
 
@@ -396,6 +411,15 @@ const (
 
 	KEMTLSwithSIKEp434 SignatureScheme = 0xfe00
 )
+
+func (scheme SignatureScheme) isKEMTLS() bool {
+	switch scheme {
+	case KEMTLSwithSIKEp434:
+		return true
+	default:
+		return false
+	}
+}
 
 // ClientHelloInfo contains information from a ClientHello message in order to
 // guide application logic in the GetCertificate and GetConfigForClient callbacks.
@@ -1292,11 +1316,13 @@ func (c *Config) BuildNameToCertificate() {
 }
 
 const (
-	keyLogLabelTLS12           = "CLIENT_RANDOM"
-	keyLogLabelClientHandshake = "CLIENT_HANDSHAKE_TRAFFIC_SECRET"
-	keyLogLabelServerHandshake = "SERVER_HANDSHAKE_TRAFFIC_SECRET"
-	keyLogLabelClientTraffic   = "CLIENT_TRAFFIC_SECRET_0"
-	keyLogLabelServerTraffic   = "SERVER_TRAFFIC_SECRET_0"
+	keyLogLabelTLS12                        = "CLIENT_RANDOM"
+	keyLogLabelClientHandshake              = "CLIENT_HANDSHAKE_TRAFFIC_SECRET"
+	keyLogLabelServerHandshake              = "SERVER_HANDSHAKE_TRAFFIC_SECRET"
+	keyLogLabelClientAuthenticatedHandshake = "CLIENT_AUTHENTICATED_HANDSHAKE_TRAFFIC_SECRET"
+	keyLogLabelServerAuthenticatedHandshake = "SERVER_AUTHENTICATED_HANDSHAKE_TRAFFIC_SECRET"
+	keyLogLabelClientTraffic                = "CLIENT_TRAFFIC_SECRET_0"
+	keyLogLabelServerTraffic                = "SERVER_TRAFFIC_SECRET_0"
 )
 
 func (c *Config) writeKeyLog(label string, clientRandom, secret []byte) error {

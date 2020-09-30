@@ -27,13 +27,14 @@ type clientHandshakeStateTLS13 struct {
 	earlySecret []byte
 	binderKey   []byte
 
-	certReq       *certificateRequestMsgTLS13
-	usingPSK      bool
-	sentDummyCCS  bool
-	suite         *cipherSuiteTLS13
-	transcript    hash.Hash
-	masterSecret  []byte
-	trafficSecret []byte // client_application_traffic_secret_0
+	certReq         *certificateRequestMsgTLS13
+	usingPSK        bool
+	sentDummyCCS    bool
+	suite           *cipherSuiteTLS13
+	transcript      hash.Hash
+	handshakeSecret []byte
+	masterSecret    []byte
+	trafficSecret   []byte // client_application_traffic_secret_0
 }
 
 // processDelegatedCredentialFromServer unmarshals the DelegatedCredential
@@ -120,6 +121,13 @@ func (hs *clientHandshakeStateTLS13) handshake() error {
 		return err
 	}
 	if err := hs.readServerCertificate(); err != nil {
+		return err
+	}
+	// Branch off to KEMTLS land
+	if c.verifiedDC != nil && c.verifiedDC.Cred.expCertVerfAlgo.isKEMTLS() {
+		return hs.handshakeKEMTLS()
+	}
+	if err := hs.readServerCertificateVerify(); err != nil {
 		return err
 	}
 	if err := hs.readServerFinished(); err != nil {
@@ -418,13 +426,13 @@ func (hs *clientHandshakeStateTLS13) establishHandshakeKeys() error {
 	if !hs.usingPSK {
 		earlySecret = hs.suite.extract(nil, nil)
 	}
-	handshakeSecret := hs.suite.extract(sharedKey,
+	hs.handshakeSecret = hs.suite.extract(sharedKey,
 		hs.suite.deriveSecret(earlySecret, "derived", nil))
 
-	clientSecret := hs.suite.deriveSecret(handshakeSecret,
+	clientSecret := hs.suite.deriveSecret(hs.handshakeSecret,
 		clientHandshakeTrafficLabel, hs.transcript)
 	c.out.setTrafficSecret(hs.suite, clientSecret)
-	serverSecret := hs.suite.deriveSecret(handshakeSecret,
+	serverSecret := hs.suite.deriveSecret(hs.handshakeSecret,
 		serverHandshakeTrafficLabel, hs.transcript)
 	c.in.setTrafficSecret(hs.suite, serverSecret)
 
@@ -438,9 +446,6 @@ func (hs *clientHandshakeStateTLS13) establishHandshakeKeys() error {
 		c.sendAlert(alertInternalError)
 		return err
 	}
-
-	hs.masterSecret = hs.suite.extract(nil,
-		hs.suite.deriveSecret(handshakeSecret, "derived", nil))
 
 	return nil
 }
@@ -527,7 +532,12 @@ func (hs *clientHandshakeStateTLS13) readServerCertificate() error {
 		return err
 	}
 
-	msg, err = c.readHandshake()
+	return nil
+}
+func (hs *clientHandshakeStateTLS13) readServerCertificateVerify() error {
+	c := hs.c
+	// receive certificateverify from server
+	msg, err := c.readHandshake()
 	if err != nil {
 		return err
 	}
@@ -538,8 +548,15 @@ func (hs *clientHandshakeStateTLS13) readServerCertificate() error {
 		return unexpectedMessageError(certVerify, msg)
 	}
 
+	pk := c.peerCertificates[0].PublicKey
+	expectedSignatureAlgorithms := hs.hello.supportedSignatureAlgorithms
+	if c.verifiedDC != nil {
+		pk = c.verifiedDC.Cred.PublicKey
+		expectedSignatureAlgorithms = hs.hello.supportedSignatureAlgorithmsDC
+	}
+
 	// See RFC 8446, Section 4.4.3.
-	if !isSupportedSignatureAlgorithm(certVerify.signatureAlgorithm, supportedSignatureAlgorithms) {
+	if !isSupportedSignatureAlgorithm(certVerify.signatureAlgorithm, expectedSignatureAlgorithms) {
 		c.sendAlert(alertIllegalParameter)
 		return errors.New("tls: certificate used with invalid signature algorithm")
 	}
@@ -550,11 +567,6 @@ func (hs *clientHandshakeStateTLS13) readServerCertificate() error {
 	if sigType == signaturePKCS1v15 || sigHash == crypto.SHA1 {
 		c.sendAlert(alertIllegalParameter)
 		return errors.New("tls: certificate used with invalid signature algorithm")
-	}
-
-	pk := c.peerCertificates[0].PublicKey
-	if c.verifiedDC != nil {
-		pk = c.verifiedDC.Cred.PublicKey
 	}
 
 	signed := signedMessage(sigHash, serverSignatureContext, hs.transcript)
@@ -592,6 +604,9 @@ func (hs *clientHandshakeStateTLS13) readServerFinished() error {
 	hs.transcript.Write(finished.marshal())
 
 	// Derive secrets that take context through the server Finished.
+
+	hs.masterSecret = hs.suite.extract(nil,
+		hs.suite.deriveSecret(hs.handshakeSecret, "derived", nil))
 
 	hs.trafficSecret = hs.suite.deriveSecret(hs.masterSecret,
 		clientApplicationTrafficLabel, hs.transcript)

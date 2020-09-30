@@ -81,6 +81,7 @@ type clientHelloMsg struct {
 	sessionTicket                    []uint8
 	supportedSignatureAlgorithms     []SignatureScheme
 	supportedSignatureAlgorithmsCert []SignatureScheme
+	supportedSignatureAlgorithmsDC   []SignatureScheme
 	secureRenegotiationSupported     bool
 	secureRenegotiation              []byte
 	delegatedCredentialSupported     bool
@@ -202,7 +203,7 @@ func (m *clientHelloMsg) marshal() []byte {
 				})
 			}
 			if m.delegatedCredentialSupported {
-				if len(m.supportedSignatureAlgorithms) > 0 {
+				if len(m.supportedSignatureAlgorithmsDC) > 0 {
 					// Draft: https://tools.ietf.org/html/draft-ietf-tls-subcerts-09#section-4.1
 					b.AddUint16(extensionDelegatedCredentials)
 					b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {

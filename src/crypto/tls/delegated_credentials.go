@@ -20,6 +20,7 @@ import (
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/elliptic"
+	kem "crypto/kem"
 	"crypto/rand"
 	"crypto/x509"
 	"encoding/binary"
@@ -120,7 +121,8 @@ func (cred *Credential) marshalPublicKeyInfo() ([]byte, error) {
 	switch cred.expCertVerfAlgo {
 	case ECDSAWithP256AndSHA256,
 		ECDSAWithP384AndSHA384,
-		ECDSAWithP521AndSHA512:
+		ECDSAWithP521AndSHA512,
+		KEMTLSwithSIKEp434:
 		serPub, err := x509.MarshalPKIXPublicKey(cred.PublicKey)
 		if err != nil {
 			return nil, err
@@ -154,7 +156,12 @@ func unmarshalPublicKeyInfo(serialized []byte) (crypto.PublicKey, SignatureSchem
 		} else {
 			return nil, 0, fmt.Errorf("curve %s s not supported", curveName)
 		}
-
+	case kem.PublicKey:
+		switch pk.Id {
+		case kem.SIKEp434:
+			return pk, KEMTLSwithSIKEp434, nil
+		}
+		return nil, 0, errors.New("Unsupported KEM")
 	default:
 		return nil, 0, fmt.Errorf("unsupported delgation key type: %T", pk)
 	}
@@ -351,7 +358,7 @@ func NewDelegatedCredential(cert *Certificate, pubAlgo SignatureScheme, validTim
 			return nil, nil, fmt.Errorf("using curve %s for %s is not supported", curveName, cert.Leaf.SignatureAlgorithm)
 		}
 	default:
-		return nil, nil, fmt.Errorf("unsupported algorithm for delegated credential")
+		return nil, nil, fmt.Errorf("unsupported certificate public key for delegated credential")
 	}
 
 	// Generate the Delegated Credential Key Pair based on the provided scheme
@@ -366,6 +373,11 @@ func NewDelegatedCredential(cert *Certificate, pubAlgo SignatureScheme, validTim
 			return nil, nil, err
 		}
 		pk = sk.(*ecdsa.PrivateKey).Public()
+	case KEMTLSwithSIKEp434:
+		pk, sk, err = kem.Keypair(rand.Reader, kem.SIKEp434)
+		if err != nil {
+			return nil, nil, err
+		}
 	default:
 		return nil, nil, fmt.Errorf("unsupported algorithm for delegated credential: 0x%04x", pubAlgo)
 	}

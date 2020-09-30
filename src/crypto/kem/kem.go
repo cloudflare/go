@@ -23,6 +23,11 @@ const (
 	Kyber512 KemID = 0x01fd
 	// SIKEp434 is a post-quantum KEM
 	SIKEp434 KemID = 0x01fe
+
+	// minimum
+	minimum_id = Kem25519
+	// maximum
+	max_id = SIKEp434
 )
 
 // PrivateKey is a private key
@@ -46,11 +51,15 @@ func MarshalPublicKey(pubKey PublicKey) []byte {
 }
 
 // UnmarshalPublicKey produces a PublicKey from a byte array
-func UnmarshalPublicKey(algorithm KemID, input []byte) PublicKey {
-	return PublicKey{
-		Id:        algorithm,
-		PublicKey: input,
+func UnmarshalPublicKey(input []byte) (PublicKey, error) {
+	keyid := KemID(binary.LittleEndian.Uint16(input[:4]))
+	if keyid < minimum_id || keyid > max_id {
+		return PublicKey{}, errors.New("Unknown KEM id")
 	}
+	return PublicKey{
+		Id:        keyid,
+		PublicKey: input[4:],
+	}, nil
 }
 
 // Keypair generates a keypair for a given KEM

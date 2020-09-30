@@ -12,6 +12,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/ed25519"
 	"crypto/elliptic"
+	kem "crypto/kem"
 	"crypto/rsa"
 	"crypto/sha1"
 	_ "crypto/sha1"
@@ -108,6 +109,9 @@ func marshalPublicKey(pub interface{}) (publicKeyBytes []byte, publicKeyAlgorith
 		}
 		publicKeyBytes, _ = pub.MarshalBinary()
 		publicKeyAlgorithm.Algorithm = scheme.Oid()
+	case kem.PublicKey:
+		publicKeyBytes = kem.MarshalPublicKey(pub)
+		publicKeyAlgorithm.Algorithm = oidPublicKeyKEMTLS
 	default:
 		return nil, pkix.AlgorithmIdentifier{}, fmt.Errorf("x509: unsupported public key type: %T", pub)
 	}
@@ -240,6 +244,7 @@ const (
 	ECDSA
 	Ed25519
 	EdDilithium3
+	KEMTLS
 )
 
 var publicKeyAlgoName = [...]string{
@@ -248,6 +253,7 @@ var publicKeyAlgoName = [...]string{
 	ECDSA:        "ECDSA",
 	Ed25519:      "Ed25519",
 	EdDilithium3: "Ed25519-Dilithium3",
+	KEMTLS:       "KEMTLS",
 }
 
 func (algo PublicKeyAlgorithm) String() string {
@@ -498,6 +504,8 @@ var (
 	oidPublicKeyDSA     = asn1.ObjectIdentifier{1, 2, 840, 10040, 4, 1}
 	oidPublicKeyECDSA   = asn1.ObjectIdentifier{1, 2, 840, 10045, 2, 1}
 	oidPublicKeyEd25519 = oidSignatureEd25519
+	// KEMTLS
+	oidPublicKeyKEMTLS = asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 44363, 46, 1} // Cloudflare OID
 )
 
 func getPublicKeyAlgorithmFromOID(oid asn1.ObjectIdentifier) PublicKeyAlgorithm {
@@ -510,6 +518,8 @@ func getPublicKeyAlgorithmFromOID(oid asn1.ObjectIdentifier) PublicKeyAlgorithm 
 		return ECDSA
 	case oid.Equal(oidPublicKeyEd25519):
 		return Ed25519
+	case oid.Equal(oidPublicKeyKEMTLS):
+		return KEMTLS
 	default:
 		scheme := circlPki.SchemeByOid(oid)
 		if scheme == nil {
@@ -1100,6 +1110,12 @@ func parsePublicKey(algo PublicKeyAlgorithm, keyData *publicKeyInfo) (interface{
 		pub := make([]byte, ed25519.PublicKeySize)
 		copy(pub, asn1Data)
 		return ed25519.PublicKey(pub), nil
+	case KEMTLS:
+		pub, err := kem.UnmarshalPublicKey(keyData.PublicKey.Bytes)
+		if err != nil {
+			return nil, errors.New("x509: wrong KEM identifier")
+		}
+		return pub, nil
 	default:
 		if scheme := CirclSchemeByPublicKeyAlgorithm(algo); scheme != nil {
 			if len(keyData.Algorithm.Parameters.FullBytes) != 0 {
