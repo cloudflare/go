@@ -54,18 +54,19 @@ func (hs *serverHandshakeStateTLS13) handshake() error {
 	if err != nil {
 		return err
 	}
-	if isKEMTLS {
-		// do this separately because I don't want to be buffering
-		if err := hs.sendServerParameters(); err != nil {
-			return err
-		}
-		return hs.handshakeKEMTLS()
-	}
+
 	c.buffering = true
 	if err := hs.sendServerParameters(); err != nil {
 		return err
 	}
 	if err := hs.sendServerCertificate(); err != nil {
+		return err
+	}
+	// don't continue with TLS 1.3 if we're switching to KEMTLS
+	if isKEMTLS {
+		return hs.handshakeKEMTLS()
+	}
+	if err := hs.sendCertificateVerify(); err != nil {
 		return err
 	}
 	if err := hs.sendServerFinished(); err != nil {
@@ -506,6 +507,7 @@ func illegalClientHelloChange(ch, ch1 *clientHelloMsg) bool {
 		len(ch.supportedCurves) != len(ch1.supportedCurves) ||
 		len(ch.supportedSignatureAlgorithms) != len(ch1.supportedSignatureAlgorithms) ||
 		len(ch.supportedSignatureAlgorithmsCert) != len(ch1.supportedSignatureAlgorithmsCert) ||
+		len(ch.supportedSignatureAlgorithmsDC) != len(ch1.supportedSignatureAlgorithmsDC) ||
 		len(ch.alpnProtocols) != len(ch1.alpnProtocols) {
 		return true
 	}
@@ -531,6 +533,11 @@ func illegalClientHelloChange(ch, ch1 *clientHelloMsg) bool {
 	}
 	for i := range ch.supportedSignatureAlgorithmsCert {
 		if ch.supportedSignatureAlgorithmsCert[i] != ch1.supportedSignatureAlgorithmsCert[i] {
+			return true
+		}
+	}
+	for i := range ch.supportedSignatureAlgorithmsDC {
+		if ch.supportedSignatureAlgorithmsDC[i] != ch1.supportedSignatureAlgorithmsDC[i] {
 			return true
 		}
 	}
@@ -649,7 +656,13 @@ func (hs *serverHandshakeStateTLS13) sendServerCertificate() error {
 	if _, err := c.writeRecord(recordTypeHandshake, certMsg.marshal()); err != nil {
 		return err
 	}
-
+	return nil
+}
+func (hs *serverHandshakeStateTLS13) sendCertificateVerify() error {
+	c := hs.c
+	if hs.usingPSK {
+		return nil
+	}
 	certVerifyMsg := new(certificateVerifyMsg)
 	certVerifyMsg.hasSignatureAlgorithm = true
 	certVerifyMsg.signatureAlgorithm = hs.sigAlg

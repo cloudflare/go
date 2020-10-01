@@ -145,8 +145,6 @@ func (c *Conn) makeClientHello() (*clientHelloMsg, []clientKeysharePrivate, erro
 				keySharePrivates = append(keySharePrivates, params)
 			} else if curveID.isKem() && !haveKEM {
 				haveKEM = true
-				// this also enables KEMTLS support for now. TODO(Thom)
-				//hello.supportedSignatureAlgorithms = append(hello.supportedSignatureAlgorithms, )
 				kemID := kem.KemID(curveID)
 				pk, sk, err := kem.Keypair(config.rand(), kemID)
 				if err != nil {

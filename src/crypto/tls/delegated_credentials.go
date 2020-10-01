@@ -156,7 +156,7 @@ func unmarshalPublicKeyInfo(serialized []byte) (crypto.PublicKey, SignatureSchem
 		} else {
 			return nil, 0, fmt.Errorf("curve %s s not supported", curveName)
 		}
-	case kem.PublicKey:
+	case *kem.PublicKey:
 		switch pk.Id {
 		case kem.SIKEp434:
 			return pk, KEMTLSwithSIKEp434, nil

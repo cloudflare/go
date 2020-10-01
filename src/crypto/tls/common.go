@@ -448,6 +448,10 @@ type ClientHelloInfo struct {
 	// Algorithms Extension is being used (see RFC 5246, Section 7.4.1.4.1).
 	SignatureSchemes []SignatureScheme
 
+	// SignatureSchemesDC lists the signature and hash schemes that the client
+	// is willing to verify for delegated credentials
+	SignatureSchemesDC []SignatureScheme
+
 	// SupportedProtos lists the application protocols supported by the client.
 	// SupportedProtos is set only if the Application-Layer Protocol
 	// Negotiation Extension is being used (see RFC 7301, Section 3.1).

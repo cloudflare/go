@@ -364,7 +364,7 @@ func (hs *clientHandshakeStateTLS13) processServerHello() error {
 				foundGroup = true
 			}
 		} else {
-			kemShare := keyShare.(kem.PrivateKey)
+			kemShare := keyShare.(*kem.PrivateKey)
 			if CurveID(kemShare.Id) == hs.serverHello.serverShare.group {
 				foundGroup = true
 			}
@@ -412,9 +412,9 @@ func (hs *clientHandshakeStateTLS13) establishHandshakeKeys() error {
 	for _, keyShare := range hs.keyshares {
 		if params, ok := keyShare.(ecdheParameters); ok && params.CurveID() == hs.serverHello.serverShare.group {
 			sharedKey = params.SharedKey(hs.serverHello.serverShare.data)
-		} else if kemPrivate, ok := keyShare.(kem.PrivateKey); ok && kemPrivate.Id == kem.KemID(hs.serverHello.serverShare.group) {
+		} else if kemPrivate, ok := keyShare.(*kem.PrivateKey); ok && kemPrivate.Id == kem.KemID(hs.serverHello.serverShare.group) {
 			var err error
-			sharedKey, err = kem.Decapsulate(&kemPrivate, hs.serverHello.serverShare.data)
+			sharedKey, err = kem.Decapsulate(kemPrivate, hs.serverHello.serverShare.data)
 			if err != nil {
 				c.sendAlert(alertInternalError)
 				return err
@@ -535,6 +535,9 @@ func (hs *clientHandshakeStateTLS13) readServerCertificate() error {
 	return nil
 }
 func (hs *clientHandshakeStateTLS13) readServerCertificateVerify() error {
+	if hs.usingPSK {
+		return nil
+	}
 	c := hs.c
 	// receive certificateverify from server
 	msg, err := c.readHandshake()

@@ -9,6 +9,10 @@ import (
 
 func (hs *serverHandshakeStateTLS13) handshakeKEMTLS() error {
 	c := hs.c
+	// flush certificate to wire
+	if _, err := c.flush(); err != nil {
+		return err
+	}
 	// read ciphertext
 	// derives MS
 	if err := hs.readClientKEMCiphertext(); err != nil {
@@ -47,13 +51,13 @@ func (hs *serverHandshakeStateTLS13) readClientKEMCiphertext() error {
 	}
 	hs.transcript.Write(kexMsg.marshal())
 
-	sk, ok := hs.cert.PrivateKey.(kem.PrivateKey)
+	sk, ok := hs.cert.PrivateKey.(*kem.PrivateKey)
 	if !ok {
 		c.sendAlert(alertInternalError)
 		return errors.New("crypto/tls: private key unexpectedly wrong type")
 	}
 
-	ss, err := kem.Decapsulate(&sk, kexMsg.ciphertext)
+	ss, err := kem.Decapsulate(sk, kexMsg.ciphertext)
 	if err != nil {
 		return err
 	}
@@ -115,7 +119,7 @@ func (hs *serverHandshakeStateTLS13) writeKEMTLSServerFinished() error {
 	c := hs.c
 
 	finished := &finishedMsg{
-		verifyData: hs.suite.finishedHashKEMTLS(hs.masterSecret, "c", hs.transcript),
+		verifyData: hs.suite.finishedHashKEMTLS(hs.masterSecret, "s", hs.transcript),
 	}
 
 	if _, err := hs.transcript.Write(finished.marshal()); err != nil {

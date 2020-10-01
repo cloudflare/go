@@ -827,6 +827,7 @@ func clientHelloInfo(c *Conn, clientHello *clientHelloMsg) *ClientHelloInfo {
 		SupportedCurves:            clientHello.supportedCurves,
 		SupportedPoints:            clientHello.supportedPoints,
 		SignatureSchemes:           clientHello.supportedSignatureAlgorithms,
+		SignatureSchemesDC:         clientHello.supportedSignatureAlgorithmsDC,
 		SupportedProtos:            clientHello.alpnProtocols,
 		SupportedVersions:          supportedVersions,
 		SupportDelegatedCredential: clientHello.delegatedCredentialSupported,
