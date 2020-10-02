@@ -112,9 +112,6 @@ func marshalPublicKey(pub interface{}) (publicKeyBytes []byte, publicKeyAlgorith
 	case *kem.PublicKey:
 		publicKeyBytes = kem.MarshalPublicKey(pub)
 		publicKeyAlgorithm.Algorithm = oidPublicKeyKEMTLS
-	case kem.PublicKey:
-		publicKeyBytes = kem.MarshalPublicKey(&pub)
-		publicKeyAlgorithm.Algorithm = oidPublicKeyKEMTLS
 	default:
 		return nil, pkix.AlgorithmIdentifier{}, fmt.Errorf("x509: unsupported public key type: %T", pub)
 	}

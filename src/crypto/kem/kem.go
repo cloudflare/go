@@ -51,15 +51,15 @@ func MarshalPublicKey(pubKey *PublicKey) []byte {
 }
 
 // UnmarshalPublicKey produces a PublicKey from a byte array
-func UnmarshalPublicKey(input []byte) (PublicKey, error) {
+func UnmarshalPublicKey(input []byte) (*PublicKey, error) {
 	keyid := KemID(binary.LittleEndian.Uint16(input[:4]))
 	if keyid < minimum_id || keyid > max_id {
-		return PublicKey{}, errors.New("Unknown KEM id")
+		return nil, errors.New("Unknown KEM id")
 	}
-	return PublicKey{
-		Id:        keyid,
-		PublicKey: input[4:],
-	}, nil
+	pk := new(PublicKey)
+	pk.Id = keyid
+	pk.PublicKey = input[4:]
+	return pk, nil
 }
 
 // Keypair generates a keypair for a given KEM
