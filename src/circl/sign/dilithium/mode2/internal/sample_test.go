@@ -1,3 +1,5 @@
+// Code generated from mode3/internal/sample_test.go by gen.go
+
 package internal
 
 import (

@@ -6,7 +6,7 @@ import (
 	"io"
 
 	"circl/dh/sidh/internal/common"
-	"circl/internal/shake"
+	"circl/internal/sha3"
 )
 
 // SIKE KEM interface.
@@ -16,7 +16,7 @@ type KEM struct {
 	msg         []byte
 	secretBytes []byte
 	params      *common.SidhParams
-	shake       shake.Shake
+	shake       sha3.State
 }
 
 // NewSike434 instantiates SIKE/p434 KEM.
@@ -47,7 +47,7 @@ func (c *KEM) Allocate(id uint8, rng io.Reader) {
 	c.params = common.Params(id)
 	c.msg = make([]byte, c.params.MsgLen)
 	c.secretBytes = make([]byte, c.params.A.SecretByteLen)
-	c.shake = shake.NewShake256()
+	c.shake = sha3.NewShake256()
 	c.allocated = true
 }
 
@@ -196,6 +196,16 @@ func (c *KEM) CiphertextSize() int {
 // Returns size of resulting shared secret.
 func (c *KEM) SharedSecretSize() int {
 	return c.params.KemSize
+}
+
+// PublicKeySize returns size of the public key in bytes.
+func (c *KEM) PublicKeySize() int {
+	return c.params.PublicKeySize
+}
+
+// Size returns size of the private key in bytes.
+func (c *KEM) PrivateKeySize() int {
+	return int(c.params.B.SecretByteLen) + c.params.MsgLen
 }
 
 func (c *KEM) generateCiphertext(ctext []byte, skA *PrivateKey, pkA, pkB *PublicKey, ptext []byte) {

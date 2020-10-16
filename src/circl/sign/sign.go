@@ -41,7 +41,7 @@ type PrivateKey interface {
 
 // A Scheme represents a specific instance of a signature scheme.
 type Scheme interface {
-	// Name of the scheme
+	// Name of the scheme.
 	Name() string
 
 	// GenerateKey creates a new key-pair.
@@ -49,14 +49,18 @@ type Scheme interface {
 
 	// Creates a signature using the PrivateKey on the given message and
 	// returns the signature. opts are additional options which can be nil.
+	//
+	// Panics if key is nil or wrong type or opts context is not supported.
 	Sign(sk PrivateKey, message []byte, opts *SignatureOpts) []byte
 
 	// Checks whether the given signature is a valid signature set by
 	// the private key corresponding to the given public key on the
 	// given message. opts are additional options which can be nil.
+	//
+	// Panics if key is nil or wrong type or opts context is not supported.
 	Verify(pk PublicKey, message []byte, signature []byte, opts *SignatureOpts) bool
 
-	// Deterministically derives a keypair from a seed.  If you're unsure,
+	// Deterministically derives a keypair from a seed. If you're unsure,
 	// you're better off using GenerateKey().
 	//
 	// Panics if seed is not of length SeedSize().
@@ -68,25 +72,25 @@ type Scheme interface {
 	// Unmarshals a PublicKey from the provided buffer.
 	UnmarshalBinaryPrivateKey([]byte) (PrivateKey, error)
 
-	// Size of binary marshalled public keys
+	// Size of binary marshalled public keys.
 	PublicKeySize() int
 
-	// Size of binary marshalled public keys
+	// Size of binary marshalled public keys.
 	PrivateKeySize() int
 
-	// Size of signatures
+	// Size of signatures.
 	SignatureSize() int
 
-	// Size of seeds
+	// Size of seeds.
 	SeedSize() int
 
-	// Returns whether contexts are supported
+	// Returns whether contexts are supported.
 	SupportsContext() bool
 }
 
 var (
 	// ErrTypeMismatch is the error used if types of, for instance, private
-	// and public keys don't match
+	// and public keys don't match.
 	ErrTypeMismatch = errors.New("types mismatch")
 
 	// ErrSeedSize is the error used if the provided seed is of the wrong
@@ -102,6 +106,6 @@ var (
 	ErrPrivKeySize = errors.New("wrong size for private key")
 
 	// ErrContextNotSupported is the error used if a context is not
-	// supported
+	// supported.
 	ErrContextNotSupported = errors.New("context not supported")
 )

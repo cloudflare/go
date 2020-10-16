@@ -39,6 +39,9 @@ Version numbers are [Semvers](https://semver.org/). We release a minor version f
 | Key Exchange | FourQ | One of the fastest elliptic curves at 128-bit security level. | Experimental for key agreement and digital signatures. |
 | Key Exchange / Digital signatures | P-384 | Our optimizations reduce the burden when moving from P-256 to P-384. |  ECDSA and ECDH using Suite B at top secret level. |
 | Digital Signatures | Ed25519, Ed448 | RFC-8032 provides new signature schemes based on Edwards curves. | Digital certificates and authentication. |
+| Key Encapsulation | P-256, P-384, P-521, X25519 and X448 | Key encapsulation methods based on Diffie-Hellman. | HPKE |
+| Hybrid Public-Key Encryption | Base, Auth, PSK, AuthPSK | [HPKE](https://www.ietf.org/archive/id/draft-irtf-cfrg-hpke-07.html) is a combination of KEM and AEAD. | TLS |
+| PQ KEM/PKE | Kyber | Lattice (M-LWE) based IND-CCA2 secure key encapsulation mechanism and IND-CPA secure public key encryption  | Post-Quantum Key exchange |
 | PQ Digital Signatures | Dilithium, Hybrid modes | Lattice (Module LWE) based signature scheme | Post-Quantum PKI |
 
 ### Work in Progress
@@ -48,7 +51,6 @@ Version numbers are [Semvers](https://semver.org/). We release a minor version f
 | Hashing to Elliptic Curve Groups | Several algorithms: Elligator2, Ristretto, SWU, Icart. | Protocols based on elliptic curves require hash functions that map bit strings to points on an elliptic curve.  | VOPRF. OPAQUE. PAKE. Verifiable random functions. |
 | Bilinear Pairings | Plans for moving BN256 to stronger pairing curves. | A bilineal pairing is a mathematical operation that enables the implementation of advanced cryptographic protocols, such as identity-based encryption (IBE), short digital signatures (BLS), and attribute-based encryption (ABE). | Geo Key Manager, Randomness Beacon, Ethereum and other blockchain applications. |
 | PQ KEM | HRSS-SXY | Lattice (NTRU) based key encapsulation mechanism. | Key exchange for low-latency environments |
-| PQ KEM | Kyber | Lattice (M-LWE) based key encapsulation mechanism. | Post-Quantum Key exchange |
 | PQ Digital Signatures | SPHINCS+ | Stateless hash-based signature scheme | Post-Quantum PKI |
 
 ## Testing and Benchmarking
@@ -66,6 +68,37 @@ benchmarking:
 To contribute, fork this repository and make your changes, and then make a Pull
 Request. A Pull Request requires approval of the admin team and a successful
 CI build.
+
+## How to Cite 
+
+To cite CIRCL, use one of the following formats and update with the date
+you accessed this project.
+
+APA Style
+
+```
+Faz-Hernández, A. and Kwiatkowski, K. (2019). Introducing CIRCL: 
+An Advanced Cryptographic Library. Cloudflare. Available at 
+https://circl. Accessed Feb 2021.
+```
+
+Bibtex Source
+
+```bibtex
+@manual{circl,
+  title        = {Introducing CIRCL: An Advanced Cryptographic Library},
+  author       = {Armando Faz-Hern\'{a}ndez and Kris Kwiatkowski},
+  organization = {Cloudflare},
+  abstract     = {{CIRCL (Cloudflare Interoperable, Reusable Cryptographic Library) is
+                   a collection of cryptographic primitives written in Go. The goal 
+                   of this library is to be used as a tool for experimental 
+                   deployment of cryptographic algorithms targeting Post-Quantum (PQ)
+                   and Elliptic Curve Cryptography (ECC).}},
+  note         = {Available at \url{https://circl}. Accessed Feb 2021},
+  month        = jun,
+  year         = {2019}
+}
+```
 
 ## License
 
