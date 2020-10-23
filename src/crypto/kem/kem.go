@@ -7,7 +7,8 @@ import (
 	"io"
 
 	sidh "circl/dh/sidh"
-	kyber512 "circl/pke/kyber/kyber512"
+
+	circlKemSchemes "circl/kem/schemes"
 
 	"golang.org/x/crypto/curve25519"
 )
@@ -63,20 +64,19 @@ func (pubKey *PublicKey) UnmarshalBinary(data []byte) error {
 // Keypair generates a keypair for a given KEM
 // returns (public, private, err)
 func Keypair(rand io.Reader, kemID KemID) (*PublicKey, *PrivateKey, error) {
+	pk := new(PublicKey)
+	sk := new(PrivateKey)
+	pk.Id = kemID
+	sk.Id = kemID
 	switch kemID {
 	case Kyber512:
-		publicKey, secretKey, err := kyber512.GenerateKey(rand)
+		kyber512 := circlKemSchemes.ByName("Kyber512")
+		publicKey, secretKey, err := kyber512.GenerateKey()
 		if err != nil {
 			return nil, nil, err
 		}
-		pk := new(PublicKey)
-		pk.Id = Kyber512
-		pk.PublicKey = make([]byte, kyber512.PublicKeySize)
-		publicKey.Pack(pk.PublicKey)
-		sk := new(PrivateKey)
-		sk.Id = Kyber512
-		sk.PrivateKey = make([]byte, kyber512.PrivateKeySize)
-		secretKey.Pack(sk.PrivateKey)
+		pk.PublicKey, _ = publicKey.MarshalBinary()
+		sk.PrivateKey, _ = secretKey.MarshalBinary()
 
 		return pk, sk, err
 	case Kem25519:
@@ -88,11 +88,7 @@ func Keypair(rand io.Reader, kemID KemID) (*PublicKey, *PrivateKey, error) {
 		if err != nil {
 			return nil, nil, err
 		}
-		pk := new(PublicKey)
-		pk.Id = kemID
 		pk.PublicKey = publicKey
-		sk := new(PrivateKey)
-		sk.Id = kemID
 		sk.PrivateKey = privateKey
 		return pk, sk, nil
 	case SIKEp434:
@@ -107,10 +103,6 @@ func Keypair(rand io.Reader, kemID KemID) (*PublicKey, *PrivateKey, error) {
 		privBytes := make([]byte, privateKey.Size())
 		publicKey.Export(pubBytes)
 		privateKey.Export(privBytes)
-		pk := new(PublicKey)
-		sk := new(PrivateKey)
-		pk.Id = kemID
-		sk.Id = kemID
 		pk.PublicKey = pubBytes
 		sk.PrivateKey = privBytes
 		return pk, sk, nil
@@ -122,6 +114,14 @@ func Keypair(rand io.Reader, kemID KemID) (*PublicKey, *PrivateKey, error) {
 // Encapsulate returns (shared secret, ciphertext)
 func Encapsulate(rand io.Reader, pk *PublicKey) ([]byte, []byte, error) {
 	switch pk.Id {
+	case Kyber512:
+		scheme := circlKemSchemes.ByName("Kyber512")
+		pub, err := scheme.UnmarshalBinaryPublicKey(pk.PublicKey)
+		if err != nil {
+			return nil, nil, err
+		}
+		ct, ss := scheme.Encapsulate(pub)
+		return ss, ct, nil
 	case Kem25519:
 		privateKey := make([]byte, curve25519.ScalarSize)
 		if _, err := io.ReadFull(rand, privateKey); err != nil {
@@ -157,6 +157,17 @@ func Encapsulate(rand io.Reader, pk *PublicKey) ([]byte, []byte, error) {
 // Decapsulate generates the shared secret
 func Decapsulate(privateKey *PrivateKey, ciphertext []byte) ([]byte, error) {
 	switch privateKey.Id {
+	case Kyber512:
+		scheme := circlKemSchemes.ByName("Kyber512")
+		sk, err := scheme.UnmarshalBinaryPrivateKey(privateKey.PrivateKey)
+		if err != nil {
+			return nil, err
+		}
+		if len(ciphertext) != scheme.CiphertextSize() {
+			return nil, fmt.Errorf("crypto/kem: ciphertext is of len %d, expected %d", len(ciphertext), scheme.CiphertextSize())
+		}
+		ss := scheme.Decapsulate(sk, ciphertext)
+		return ss, nil
 	case Kem25519:
 		sharedSecret, err := curve25519.X25519(privateKey.PrivateKey, ciphertext)
 		if err != nil {
