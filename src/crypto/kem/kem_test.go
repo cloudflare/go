@@ -32,6 +32,19 @@ func TestKemAPI(t *testing.T) {
 			if !bytes.Equal(ss, ss2) {
 				t.Fatal("Decapsulated differing shared secret")
 			}
+
+			data, _ := publicKey.MarshalBinary()
+			pk2 := new(PublicKey)
+			err = pk2.UnmarshalBinary(data)
+			if err != nil {
+				t.Fatal("error unmarshaling")
+			}
+			if pk2.Id != publicKey.Id {
+				t.Fatal("Difference in Id")
+			}
+			if !bytes.Equal(publicKey.PublicKey, publicKey.PublicKey) {
+				t.Fatal("Difference in data for public keys")
+			}
 		})
 	}
 

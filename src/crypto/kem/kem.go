@@ -42,24 +42,21 @@ type PublicKey struct {
 	PublicKey []byte
 }
 
-// MarshalPublicKey produces the public key in bytes for the network
-func MarshalPublicKey(pubKey *PublicKey) []byte {
+func (pubKey *PublicKey) MarshalBinary() ([]byte, error) {
 	buf := make([]byte, 4+len(pubKey.PublicKey))
 	binary.LittleEndian.PutUint16(buf, uint16(pubKey.Id))
 	copy(buf[4:], pubKey.PublicKey)
-	return buf
+	return buf, nil
 }
 
-// UnmarshalPublicKey produces a PublicKey from a byte array
-func UnmarshalPublicKey(input []byte) (*PublicKey, error) {
-	keyid := KemID(binary.LittleEndian.Uint16(input[:4]))
+func (pubKey *PublicKey) UnmarshalBinary(data []byte) error {
+	keyid := KemID(binary.LittleEndian.Uint16(data[:4]))
 	if keyid < minimum_id || keyid > max_id {
-		return nil, errors.New("Unknown KEM id")
+		return errors.New("Unknown KEM id")
 	}
-	pk := new(PublicKey)
-	pk.Id = keyid
-	pk.PublicKey = input[4:]
-	return pk, nil
+	pubKey.Id = keyid
+	pubKey.PublicKey = data[4:]
+	return nil
 }
 
 // Keypair generates a keypair for a given KEM
