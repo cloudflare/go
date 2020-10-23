@@ -45,19 +45,20 @@ type PublicKey struct {
 }
 
 func (pubKey *PublicKey) MarshalBinary() ([]byte, error) {
-	buf := make([]byte, 4+len(pubKey.PublicKey))
+	buf := make([]byte, 2+len(pubKey.PublicKey))
 	binary.LittleEndian.PutUint16(buf, uint16(pubKey.Id))
-	copy(buf[4:], pubKey.PublicKey)
+	copy(buf[2:], pubKey.PublicKey)
 	return buf, nil
 }
 
 func (pubKey *PublicKey) UnmarshalBinary(data []byte) error {
-	keyid := KemID(binary.LittleEndian.Uint16(data[:4]))
+	keyid := KemID(binary.LittleEndian.Uint16(data[:2]))
 	if keyid < minimum_id || keyid > max_id {
 		return errors.New("Unknown KEM id")
 	}
 	pubKey.Id = keyid
-	pubKey.PublicKey = data[4:]
+	pubKey.PublicKey = make([]byte, len(data)-2)
+	copy(pubKey.PublicKey, data[2:])
 	return nil
 }
 
@@ -70,8 +71,8 @@ func Keypair(rand io.Reader, kemID KemID) (*PublicKey, *PrivateKey, error) {
 	sk.Id = kemID
 	switch kemID {
 	case Kyber512:
-		kyber512 := circlKemSchemes.ByName("Kyber512")
-		publicKey, secretKey, err := kyber512.GenerateKey()
+		scheme := circlKemSchemes.ByName("Kyber512")
+		publicKey, secretKey, err := scheme.GenerateKey()
 		if err != nil {
 			return nil, nil, err
 		}
