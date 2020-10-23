@@ -19,7 +19,7 @@ jobs:
       - name: Linting
         uses: golangci/golangci-lint-action@v1
         with:
-          version: v1.27
+          version: v1.29
           args: --config=./.etc/golangci.yml ./...
       - name: Setup Go-${{ matrix.GOVER }}
         uses: actions/setup-go@v2
@@ -32,7 +32,7 @@ jobs:
       - name: Building
         run: go build -v ./...
       - name: Testing
-        run: go test -v ./...
+        run: go test -v -count=1 ./...
   exotic_job:
     name: Go-${{matrix.CFG[2]}}/${{matrix.CFG[0]}}
     runs-on: ubuntu-18.04
