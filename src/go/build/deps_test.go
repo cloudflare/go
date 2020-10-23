@@ -379,6 +379,8 @@ var depsRules = `
 	< crypto/ecdsa
 	< CRYPTO-MATH;
 
+	CRYPTO < golang.org/x/crypto/sha3;
+
 	CGO, net !< CRYPTO-MATH;
 
 	# TLS, Prince of Dependencies.
