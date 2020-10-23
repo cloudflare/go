@@ -7,6 +7,7 @@ import (
 	"io"
 
 	sidh "circl/dh/sidh"
+	kyber512 "circl/pke/kyber/kyber512"
 
 	"golang.org/x/crypto/curve25519"
 )
@@ -63,6 +64,21 @@ func (pubKey *PublicKey) UnmarshalBinary(data []byte) error {
 // returns (public, private, err)
 func Keypair(rand io.Reader, kemID KemID) (*PublicKey, *PrivateKey, error) {
 	switch kemID {
+	case Kyber512:
+		publicKey, secretKey, err := kyber512.GenerateKey(rand)
+		if err != nil {
+			return nil, nil, err
+		}
+		pk := new(PublicKey)
+		pk.Id = Kyber512
+		pk.PublicKey = make([]byte, kyber512.PublicKeySize)
+		publicKey.Pack(pk.PublicKey)
+		sk := new(PrivateKey)
+		sk.Id = Kyber512
+		sk.PrivateKey = make([]byte, kyber512.PrivateKeySize)
+		secretKey.Pack(sk.PrivateKey)
+
+		return pk, sk, err
 	case Kem25519:
 		privateKey := make([]byte, curve25519.ScalarSize)
 		if _, err := io.ReadFull(rand, privateKey); err != nil {
@@ -101,7 +117,6 @@ func Keypair(rand io.Reader, kemID KemID) (*PublicKey, *PrivateKey, error) {
 	default:
 		return nil, nil, fmt.Errorf("crypto/kem: internal error: unsupported KEM %d", kemID)
 	}
-
 }
 
 // Encapsulate returns (shared secret, ciphertext)
