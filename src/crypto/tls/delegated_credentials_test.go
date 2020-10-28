@@ -364,7 +364,7 @@ func testConnWithDC(t *testing.T, clientMsg, serverMsg string, clientConfig, ser
 
 	client.Write([]byte(clientMsg))
 	n, err := server.Read(buf)
-	if n != len(clientMsg) || string(buf[:n]) != clientMsg {
+	if err != nil || n != len(clientMsg) || string(buf[:n]) != clientMsg {
 		return false, fmt.Errorf("Server read = %d, buf= %q; want %d, %s", n, buf, len(clientMsg), clientMsg)
 	}
 
