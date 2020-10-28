@@ -72,11 +72,7 @@ var dcTest *dcAndPrivateKey
 var dcNow time.Time
 var dcTestDCScheme = ECDSAWithP521AndSHA512
 
-func initialize() {
-	// Use a static time for testing at which time the test certificates are
-	// valid.
-	dcNow = time.Date(2020, time.August, 31, 11, 0, 0, 234234, time.UTC)
-
+func init() {
 	dcTestConfig = &Config{
 		Time: func() time.Time {
 			return dcNow
@@ -87,6 +83,13 @@ func initialize() {
 		MaxVersion:   VersionTLS13,
 		CipherSuites: allCipherSuites(),
 	}
+
+}
+
+func initialize() {
+	// Use a static time for testing at which time the test certificates are
+	// valid.
+	dcNow = time.Date(2020, time.August, 31, 11, 0, 0, 234234, time.UTC)
 
 	// The certificates of the server.
 	dcTestCerts = make(map[string]*Certificate)

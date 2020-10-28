@@ -1396,6 +1396,7 @@ func (c *Conn) connectionStateLocked() ConnectionState {
 	state.CipherSuite = c.cipherSuite
 	state.PeerCertificates = c.peerCertificates
 	state.VerifiedChains = c.verifiedChains
+	state.VerifiedDC = c.verifiedDC
 	state.SignedCertificateTimestamps = c.scts
 	state.OCSPResponse = c.ocspResponse
 	if !c.didResume && c.vers != VersionTLS13 {

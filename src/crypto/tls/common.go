@@ -261,6 +261,10 @@ type ConnectionState struct {
 	// (and the peer provided a certificate) or RequireAndVerifyClientCert.
 	VerifiedChains [][]*x509.Certificate
 
+	// VerifiedDC contains a delegated credential from the peer and
+	// has been verified against the leaf certificate.
+	VerifiedDC *DelegatedCredential
+
 	// SignedCertificateTimestamps is a list of SCTs provided by the peer
 	// through the TLS handshake for the leaf certificate, if any.
 	SignedCertificateTimestamps [][]byte
@@ -691,7 +695,7 @@ type Config struct {
 	// a DelegatedCredential.
 	GetDelegatedCredential func(*ClientHelloInfo) (*DelegatedCredential, crypto.PrivateKey, error)
 
-        // mutex protects sessionTicketKeys and autoSessionTicketKeys.
+	// mutex protects sessionTicketKeys and autoSessionTicketKeys.
 	mutex sync.RWMutex
 
 	// sessionTicketKeys contains zero or more ticket keys. If set, it means the
