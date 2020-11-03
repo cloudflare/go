@@ -85,7 +85,7 @@ func (hs *clientHandshakeStateTLS13) handshake() error {
 		context := hs.serverHello.random[:24]
 		acceptConfirmation := hs.suite.expandLabel(secret, echTls13LabelAcceptConfirm, context, 8)
 		if bytes.Equal(hs.serverHello.random[24:], acceptConfirmation) {
-			c.ech.status = ECHStatusAccepted
+			c.ech.accepted = true
 			hs.hello = hs.helloInner
 			hs.transcript = hs.transcriptInner
 		}
@@ -302,7 +302,7 @@ func (hs *clientHandshakeStateTLS13) processHelloRetryRequest() error {
 	}
 
 	var err error
-	hs.hello, hs.helloInner, err = c.echOfferOrBypass(hs.helloBase)
+	hs.hello, hs.helloInner, err = c.echOfferOrGrease(hs.helloBase)
 	if err != nil {
 		return err
 	}
@@ -458,20 +458,14 @@ func (hs *clientHandshakeStateTLS13) readServerParameters() error {
 	}
 	c.clientProtocol = encryptedExtensions.alpnProtocol
 
-	if c.ech.offered && c.ech.status == ECHStatusRejected {
-		// If the server rejects ECH, then it may send retry configurations. If
-		// present, we must check them for syntactic correctness and abort if they
-		// are not correct.
-		if len(encryptedExtensions.encryptedClientHello) > 0 {
-			c.ech.retryConfigs = encryptedExtensions.encryptedClientHello
-			if _, err = UnmarshalECHConfigs(c.ech.retryConfigs); err != nil {
-				c.sendAlert(alertIllegalParameter)
-				return fmt.Errorf("tls: ech: failed to parse retry configs: %s", err)
-			}
-		} else {
-			// If no retry configurations were offered, then the client regards
-			// the server as securely disabled.
-			c.ech.status = ECHStatusBypassed
+	// If the server rejects ECH, then it may send retry configurations. If
+	// present, we must check them for syntactic correctness and abort if they
+	// are not correct.
+	if c.ech.offered && len(encryptedExtensions.encryptedClientHello) > 0 {
+		c.ech.retryConfigs = encryptedExtensions.encryptedClientHello
+		if _, err = UnmarshalECHConfigs(c.ech.retryConfigs); err != nil {
+			c.sendAlert(alertIllegalParameter)
+			return fmt.Errorf("tls: ech: failed to parse retry configs: %s", err)
 		}
 	}
 
@@ -755,7 +749,7 @@ func (c *Conn) handleNewSessionTicket(msg *newSessionTicketMsgTLS13) error {
 
 func (hs *clientHandshakeStateTLS13) abortIfRequired() error {
 	c := hs.c
-	if c.ech.offered && c.ech.status != ECHStatusAccepted {
+	if c.ech.offered && !c.ech.accepted {
 		// If ECH was rejected, then abort the handshake.
 		c.sendAlert(alertECHRequired)
 		return errors.New("tls: ech: rejected")
