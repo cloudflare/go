@@ -315,27 +315,9 @@ type ConnectionState struct {
 	// RFC 7627, and https://mitls.org/pages/attacks/3SHAKE#channelbindings.
 	TLSUnique []byte
 
-	// ECHStatus reports the status of this connection's usage of the ECH
-	// extension.
-	ECHStatus ECHStatus
-
-	// ECHAOffered indicates whether the client offered a real (i.e., non-dummy)
-	// ECH extension in this connection.
-	ECHOffered bool
-
 	// ekm is a closure exposed via ExportKeyingMaterial.
 	ekm func(label string, context []byte, length int) ([]byte, error)
 }
-
-// ECHStatus represents the connection's ECH usage status.
-type ECHStatus uint8
-
-const (
-	ECHStatusBypassed ECHStatus = 0
-	ECHStatusAccepted           = 1
-	ECHStatusRejected           = 2
-	ECHStatusGrease             = 3
-)
 
 // ExportKeyingMaterial returns length bytes of exported key material in a new
 // slice as defined in RFC 5705. If context is nil, it is not used as part of
@@ -747,6 +729,13 @@ type Config struct {
 	// payload.
 	ServerECHProvider ECHProvider
 
+	// EXP_EventHandler, if set, is called by the client and server at various
+	// points during the handshake to handle specific events. For example, this
+	// callback can be used to record metrics.
+	//
+	// NOTE: This API is EXPERIMENTAL and subject to change.
+	EXP_EventHandler func(event EXP_Event)
+
 	// mutex protects sessionTicketKeys and autoSessionTicketKeys.
 	mutex sync.RWMutex
 	// sessionTicketKeys contains zero or more ticket keys. If set, it means the
@@ -836,6 +825,7 @@ func (c *Config) Clone() *Config {
 		ECHEnabled:                  c.ECHEnabled,
 		ClientECHConfigs:            c.ClientECHConfigs,
 		ServerECHProvider:           c.ServerECHProvider,
+		EXP_EventHandler:            c.EXP_EventHandler,
 		sessionTicketKeys:           c.sessionTicketKeys,
 		autoSessionTicketKeys:       c.autoSessionTicketKeys,
 	}
