@@ -158,7 +158,7 @@ func (c *Conn) clientHandshake() (err error) {
 		return err
 	}
 
-	hello, helloInner, err := c.echOfferOrBypass(helloBase)
+	hello, helloInner, err := c.echOfferOrGrease(helloBase)
 	if err != nil {
 		return err
 	}
@@ -857,7 +857,7 @@ func (c *Conn) verifyServerCertificate(certificates [][]byte) error {
 
 	if !c.config.InsecureSkipVerify {
 		dnsName := c.config.ServerName
-		if c.ech.offered && c.ech.status != ECHStatusAccepted {
+		if c.ech.offered && !c.ech.accepted {
 			dnsName = c.serverName
 		}
 		opts := x509.VerifyOptions{

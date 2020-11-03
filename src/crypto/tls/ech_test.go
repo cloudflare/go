@@ -400,7 +400,8 @@ type echTestCase struct {
 	expectClientAbort       bool // client aborts
 	expectServerAbort       bool // server aborts
 	expectOffered           bool // server indicates that ECH was offered
-	expectBypassed          bool // server indciates that ECH was bypassed
+	expectClientBypassed    bool // server bypasses ECH
+	expectServerBypassed    bool // server indicates that ECH was bypassed by client
 	expectAccepted          bool // server indicates ECH acceptance
 	expectRejected          bool // server indicates ECH rejection
 	expectGrease            bool // server indicates dummy ECH was detected
@@ -448,7 +449,7 @@ var echTestCases = []echTestCase{
 		// The client bypasses ECH, i.e., it neither offers ECH nor sends a
 		// dummy ECH extension.
 		name:                    "success / bypassed: not offered",
-		expectBypassed:          true,
+		expectClientBypassed:    true,
 		expectBackendServerName: true,
 		serverEnabled:           true,
 	},
@@ -506,12 +507,11 @@ var echTestCases = []echTestCase{
 		// connection without sending retry configurations. The client aborts
 		// with "ech_required" and regards ECH as securely disabled by the
 		// server.
-		name:              "success / rejected: not supported by client-facing server",
-		expectOffered:     true,
-		expectBypassed:    true,
-		expectClientAbort: true,
-		expectServerAbort: true,
-		clientEnabled:     true,
+		name:                 "success / rejected: not supported by client-facing server",
+		expectServerBypassed: true,
+		expectClientAbort:    true,
+		expectServerAbort:    true,
+		clientEnabled:        true,
 	},
 	{
 		// The client offers ECH. The server ECH rejects without sending retry
@@ -520,7 +520,7 @@ var echTestCases = []echTestCase{
 		name:                       "success / rejected: provider falls over",
 		expectServerAbort:          true,
 		expectOffered:              true,
-		expectBypassed:             true,
+		expectServerBypassed:       true,
 		expectClientAbort:          true,
 		clientEnabled:              true,
 		serverEnabled:              true,
@@ -530,8 +530,8 @@ var echTestCases = []echTestCase{
 		// The client offers ECH. The server does not support TLS 1.3, so it
 		// ignores the extension and continues as usual. The client does not
 		// signal rejection because TLS 1.2 has been negotiated.
-		name:                 "downgraded: client-facing invalid version",
-		expectBypassed:       true,
+		name:                 "success / bypassed: client-facing invalid version",
+		expectServerBypassed: true,
 		clientEnabled:        true,
 		serverEnabled:        true,
 		serverInvalidVersion: true,
@@ -599,6 +599,8 @@ var echTestCases = []echTestCase{
 		// The HRR code path is triggered. The client offered ECH in the first
 		// CH but not the second.
 		name:                     "hrr / server abort: bypass after offer",
+		expectOffered:            true,
+		expectAccepted:           true,
 		expectServerAbort:        true,
 		expectClientAbort:        true,
 		clientEnabled:            true,
@@ -613,6 +615,8 @@ var echTestCases = []echTestCase{
 		// falls over after the HRR is sent but before the second CH is
 		// consumed.
 		name:                         "hrr / server abort: reject after accept",
+		expectOffered:                true,
+		expectAccepted:               true,
 		expectServerAbort:            true,
 		expectClientAbort:            true,
 		clientEnabled:                true,
@@ -624,6 +628,8 @@ var echTestCases = []echTestCase{
 		// The HRR code path is triggered. In the second CH, the value of the
 		// context handle changes illegally.
 		name:                         "hrr / server abort: illegal handle",
+		expectOffered:                true,
+		expectAccepted:               true,
 		expectServerAbort:            true,
 		expectClientAbort:            true,
 		clientEnabled:                true,
@@ -658,19 +664,14 @@ var echTestCases = []echTestCase{
 		// The client offers ECH but does not implement the "outer_extension"
 		// mechanism correctly,
 		name:                          "outer extensions, incorrect order / server abort: incorrect transcript",
+		expectOffered:                 true,
+		expectAccepted:                true,
 		expectServerAbort:             true,
 		expectClientAbort:             true,
 		clientEnabled:                 true,
 		serverEnabled:                 true,
 		triggerOuterExtIncorrectOrder: true,
 	},
-}
-
-// echTestResult represents the ECH status and error status of a connection.
-type echTestResult struct {
-	status  ECHStatus
-	offered bool
-	err     error
 }
 
 // Returns the base configurations for the client and client-facing server,
@@ -722,6 +723,33 @@ func echSetupConnTest() (clientConfig, serverConfig *Config) {
 	return
 }
 
+// echTestResult represents the ECH status and error status of a connection.
+type echTestResult struct {
+	// Operational parameters
+	clientDone, serverDone bool
+	// Results
+	clientStatus EXP_EventECHClientStatus
+	serverStatus EXP_EventECHServerStatus
+	err          error
+}
+
+func (r *echTestResult) eventHandler(event EXP_Event) {
+	switch e := event.(type) {
+	case EXP_EventECHClientStatus:
+		if r.clientDone {
+			panic("expected at most one client ECH status event")
+		}
+		r.clientStatus = e
+		r.clientDone = true
+	case EXP_EventECHServerStatus:
+		if r.serverDone {
+			panic("expected at most one server ECH status event")
+		}
+		r.serverStatus = e
+		r.clientDone = true
+	}
+}
+
 // echTestConn runs the handshake and returns the ECH and error status of the
 // client and server. It also returns the server name verified by the client.
 func echTestConn(t *testing.T, clientConfig, serverConfig *Config) (serverName string, clientRes, serverRes echTestResult) {
@@ -733,30 +761,31 @@ func echTestConn(t *testing.T, clientConfig, serverConfig *Config) (serverName s
 	serverCh := make(chan echTestResult, 1)
 	go func() {
 		var res echTestResult
+		serverConfig.EXP_EventHandler = res.eventHandler
 		serverConn, err := ln.Accept()
 		if err != nil {
 			res.err = err
 			serverCh <- res
 			return
 		}
+
 		server := Server(serverConn, serverConfig)
+		defer func() {
+			server.Close()
+			serverCh <- res
+		}()
+
 		if err := server.Handshake(); err != nil {
 			res.err = err
-			serverCh <- res
 			return
 		}
-		defer server.Close()
 
 		if _, err = server.Read(buf); err != nil {
 			res.err = err
 		}
-
-		st := server.ConnectionState()
-		res.offered = st.ECHOffered
-		res.status = st.ECHStatus
-		serverCh <- res
 	}()
 
+	clientConfig.EXP_EventHandler = clientRes.eventHandler
 	client, err := Dial("tcp", ln.Addr().String(), clientConfig)
 	if err != nil {
 		serverRes = <-serverCh
@@ -772,10 +801,7 @@ func echTestConn(t *testing.T, clientConfig, serverConfig *Config) (serverName s
 		return
 	}
 
-	st := client.ConnectionState()
-	serverName = st.ServerName
-	clientRes.offered = st.ECHOffered
-	clientRes.status = st.ECHStatus
+	serverName = client.ConnectionState().ServerName
 	serverRes = <-serverCh
 	return
 }
@@ -935,30 +961,28 @@ func TestECHHandshake(t *testing.T) {
 				t.Logf("server err: %s", server.err)
 			}
 
-			rejected := server.status != ECHStatusBypassed &&
-				server.err != nil && server.err.Error() == "remote error: tls: "+alertText[alertECHRequired]
-			if test.expectRejected != rejected {
-				t.Errorf("got rejected=%v; want %v", rejected, test.expectRejected)
+			if got := server.clientStatus.Offered(); got != test.expectOffered {
+				t.Errorf("got offered=%v; want %v", got, test.expectOffered)
 			}
 
-			if test.expectOffered != server.offered {
-				t.Errorf("got offered=%v; want %v", server.offered, test.expectOffered)
+			if got := server.clientStatus.Greased(); got != test.expectGrease {
+				t.Errorf("got grease=%v; want %v", got, test.expectGrease)
 			}
 
-			if got := server.status == ECHStatusBypassed; got != test.expectBypassed && server.err == nil {
-				t.Errorf("got bypassed=%v; want %v", got, test.expectBypassed)
+			if got := server.clientStatus.Bypassed(); got != test.expectClientBypassed && server.err == nil {
+				t.Errorf("got clientBypassed=%v; want %v", got, test.expectClientBypassed)
 			}
 
-			if got := server.status == ECHStatusAccepted; got != test.expectAccepted {
+			if got := server.serverStatus.Bypassed(); got != test.expectServerBypassed && server.err == nil {
+				t.Errorf("got serverBypassed=%v; want %v", got, test.expectServerBypassed)
+			}
+
+			if got := server.serverStatus.Accepted(); got != test.expectAccepted {
 				t.Errorf("got accepted=%v; want %v", got, test.expectAccepted)
 			}
 
-			if got := server.status == ECHStatusRejected; got != test.expectRejected {
+			if got := server.serverStatus.Rejected(); got != test.expectRejected {
 				t.Errorf("got rejected=%v; want %v", got, test.expectRejected)
-			}
-
-			if got := server.status == ECHStatusGrease; got != test.expectGrease {
-				t.Errorf("got grease=%v; want %v", got, test.expectGrease)
 			}
 
 			if client.err != nil {
@@ -969,10 +993,14 @@ func TestECHHandshake(t *testing.T) {
 				t.Errorf("got backend server name=%v; want %v", serverName == echTestBackendServerName, test.expectBackendServerName)
 			}
 
-			if client.status != server.status {
-				t.Errorf("client and server disagree on usage")
-				t.Errorf("client status=%+v; offered=%v", client.status, client.offered)
-				t.Errorf("server status=%+v; offered=%v", server.status, server.offered)
+			if client.clientStatus.Greased() != server.clientStatus.Greased() ||
+				client.clientStatus.Bypassed() != server.clientStatus.Bypassed() ||
+				client.serverStatus.Bypassed() != server.serverStatus.Bypassed() ||
+				client.serverStatus.Accepted() != server.serverStatus.Accepted() ||
+				client.serverStatus.Rejected() != server.serverStatus.Rejected() {
+				t.Error("client and server disagree on ech usage")
+				t.Errorf("client=%+v", client)
+				t.Errorf("server=%+v", server)
 			}
 		})
 	}

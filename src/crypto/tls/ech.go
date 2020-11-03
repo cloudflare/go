@@ -24,7 +24,64 @@ const (
 	echHpkeHrrKeyExporter  = "tls ech hrr key"
 	echHpkeHrrKeyId        = "hrr key"
 	echHpkeHrrKeyLen       = 32
+
+	// Constants for ECH status events
+	echStatusBypassed = 1 + iota
+	echStatusInner
+	echStatusOuter
 )
+
+// EXP_EventECHClientStatus is emitted once it is known whether the client
+// bypassed, offered, or greased ECH.
+//
+// NOTE: This API is EXPERIMENTAL and subject to change.
+type EXP_EventECHClientStatus int
+
+// Bypassed returns true if the client bypassed ECH.
+func (e EXP_EventECHClientStatus) Bypassed() bool {
+	return e == echStatusBypassed
+}
+
+// Offered returns true if the client offered ECH.
+func (e EXP_EventECHClientStatus) Offered() bool {
+	return e == echStatusInner
+}
+
+// Greased returns true if the client greased ECH.
+func (e EXP_EventECHClientStatus) Greased() bool {
+	return e == echStatusOuter
+}
+
+// Name is required by the EXP_Event interface.
+func (e EXP_EventECHClientStatus) Name() string {
+	return "ech client status"
+}
+
+// EXP_EventECHServerStatus is emitted once it is known whether the client
+// bypassed, offered, or greased ECH.
+//
+// NOTE: This API is EXPERIMENTAL and subject to change.
+type EXP_EventECHServerStatus int
+
+// Bypassed returns true if the client bypassed ECH.
+func (e EXP_EventECHServerStatus) Bypassed() bool {
+	return e == echStatusBypassed
+}
+
+// Accepted returns true if the client offered ECH.
+func (e EXP_EventECHServerStatus) Accepted() bool {
+	return e == echStatusInner
+}
+
+// Rejected returns true if the client greased ECH.
+func (e EXP_EventECHServerStatus) Rejected() bool {
+	return e == echStatusOuter
+}
+
+// Name is required by the EXP_Event interface.
+func (e EXP_EventECHServerStatus) Name() string {
+	return "ech server status"
+}
 
 // A dummy client-facing server public key used to generate covertext for the
 // ECH extension. This is a random 32-byte string, which will be interpreted as
@@ -42,7 +99,7 @@ var echDummyX25519PublicKey = []byte{
 // out" issue.
 //
 // TODO(cjpatton): Implement client-side padding.
-func (c *Conn) echOfferOrBypass(helloBase *clientHelloMsg) (hello, helloInner *clientHelloMsg, err error) {
+func (c *Conn) echOfferOrGrease(helloBase *clientHelloMsg) (hello, helloInner *clientHelloMsg, err error) {
 	config := c.config
 
 	if !config.ECHEnabled ||
@@ -226,7 +283,7 @@ func (c *Conn) echOfferOrBypass(helloBase *clientHelloMsg) (hello, helloInner *c
 
 	// Bypass ECH and provide covertext.
 	c.ech.offered = false
-	c.ech.status = ECHStatusGrease
+	c.ech.greased = true
 	hello.raw = nil
 	return hello, nil, nil
 }
@@ -236,7 +293,7 @@ func (c *Conn) echAcceptOrBypass(hello *clientHelloMsg) (*clientHelloMsg, error)
 	echProvider := config.ServerECHProvider
 
 	// Decide whether to bypass ECH.
-	echSentBeforeHrr := c.ech.offered || c.ech.status == ECHStatusGrease
+	echSentBeforeHrr := c.ech.offered || c.ech.greased
 	if !config.echCanAccept() ||
 		!hello.encryptedClientHelloOffered ||
 		len(hello.encryptedClientHello) == 0 {
@@ -275,7 +332,7 @@ func (c *Conn) echAcceptOrBypass(hello *clientHelloMsg) (*clientHelloMsg, error)
 	// ClientHelloInner.
 	res := echProvider.GetContext(ech.handle.marshal(), c.ech.hrrPsk, extensionECH)
 	reject := func() (*clientHelloMsg, error) {
-		if c.hrrTriggered && c.ech.status == ECHStatusAccepted {
+		if c.hrrTriggered && c.ech.accepted {
 			// ECH was accepted prior to HRR then rejected after. Because the
 			// configuration identifier is the same in the first ClientHello as
 			// it is in the second, this indicates a server failure, likely due
@@ -287,7 +344,7 @@ func (c *Conn) echAcceptOrBypass(hello *clientHelloMsg) (*clientHelloMsg, error)
 		// Presume the client sent a dummy extension until we have information
 		// to the contrary. We won't know whether the client intended to offer
 		// ECH unless it sends an "ech_required" alert.
-		c.ech.status = ECHStatusGrease
+		c.ech.greased = true
 
 		// Send retry configs just in case our presumption is wrong and the
 		// client intended to offer ECH.
@@ -327,7 +384,7 @@ func (c *Conn) echAcceptOrBypass(hello *clientHelloMsg) (*clientHelloMsg, error)
 	helloOuterAad.encryptedClientHelloOffered = false
 	rawEncodedHelloInner, err := ctx.open(helloOuterAad.marshal(), ech.payload)
 	if err != nil {
-		if c.hrrTriggered && c.ech.status == ECHStatusAccepted {
+		if c.hrrTriggered && c.ech.accepted {
 			// Don't reject after accept, as this would result in processing the
 			// ClientHelloOuter after processing the ClientHelloInner.
 			c.sendAlert(alertDecryptError)
@@ -354,7 +411,7 @@ func (c *Conn) echAcceptOrBypass(hello *clientHelloMsg) (*clientHelloMsg, error)
 	// ClientHelloInner in case an HRR is sent.
 	c.ech.hrrPsk = ctx.hrrPsk()
 
-	if c.hrrTriggered && c.ech.status != ECHStatusAccepted {
+	if c.hrrTriggered && !c.ech.accepted {
 		// ECH was not accepted prior to HRR then accepted after. Because the
 		// configuration identifier is the same in the first ClientHello as it
 		// is in the second, this indicates a server failure, likely due to the
@@ -365,7 +422,7 @@ func (c *Conn) echAcceptOrBypass(hello *clientHelloMsg) (*clientHelloMsg, error)
 
 	// Accept ECH.
 	c.ech.offered = true
-	c.ech.status = ECHStatusAccepted
+	c.ech.accepted = true
 	return helloInner, nil
 }
 
