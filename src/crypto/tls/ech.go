@@ -377,12 +377,15 @@ func (c *Conn) echAcceptOrBypass(hello *clientHelloMsg) (*clientHelloMsg, error)
 		return nil, fmt.Errorf("ech: %s", err)
 	}
 
-	var helloOuterAad clientHelloMsg
-	helloOuterAad = *hello
-	helloOuterAad.raw = nil
-	helloOuterAad.encryptedClientHello = nil
-	helloOuterAad.encryptedClientHelloOffered = false
-	rawEncodedHelloInner, err := ctx.open(helloOuterAad.marshal(), ech.payload)
+	helloOuterAad, ok := encodeClientHelloOuterAAD(hello.raw, extensionECH)
+	if !ok {
+		// This occurs if the ClientHelloOuter is malformed. This values was
+		// already parsed into `hello`, so this should not happen.
+		c.sendAlert(alertInternalError)
+		return nil, fmt.Errorf("ech: failed to compute ClientHelloOuterAAD")
+	}
+
+	rawEncodedHelloInner, err := ctx.open(helloOuterAad, ech.payload)
 	if err != nil {
 		if c.hrrTriggered && c.ech.accepted {
 			// Don't reject after accept, as this would result in processing the
@@ -636,7 +639,7 @@ func echReadContextHandle(s *cryptobyte.String, handle *echContextHandle) bool {
 }
 
 // echEncodeClientHelloInner interprets data as a ClientHelloInner message and
-// transforms into an EncodedClinetHelloInner. It also returns a bit indicating
+// transforms into an EncodedClinetHelloInner. It also returns a bool indicating
 // if parsing the ClientHelloInner succeeded.
 //
 // outerExtensions specifies the contiguous sequence of extensions that will be
@@ -669,8 +672,12 @@ func echEncodeClientHelloInner(data []byte, outerExtensions []uint16) ([]byte, b
 		return nil, false
 	}
 
-	if !s.Empty() &&
-		(!s.ReadUint16LengthPrefixed(&extensions) || !s.Empty()) {
+	if s.Empty() {
+		// Extensions field must be present in TLS 1.3.
+		return nil, false
+	}
+
+	if !s.ReadUint16LengthPrefixed(&extensions) || !s.Empty() {
 		return nil, false
 	}
 
@@ -748,8 +755,8 @@ func echAddOuterExtensions(b *cryptobyte.Builder, outerExtensions []uint16) {
 // echDecodeClientHelloInner interprets data as an EncodedClientHelloInner
 // message and substitutes the "outer_extension" extension with extensions from
 // outerData, interpreted as the ClientHelloOuter message. Returns the decoded
-// ClientHelloInner and a bit indicating whether parsing EncodedClientHelloInner
-// succeeded.
+// ClientHelloInner and a bool indicating whether parsing
+// EncodedClientHelloInner succeeded.
 func echDecodeClientHelloInner(data []byte, outerData, outerSessionId []byte) ([]byte, bool) {
 	var (
 		errReadFailure           = errors.New("read failure")
@@ -775,8 +782,12 @@ func echDecodeClientHelloInner(data []byte, outerData, outerSessionId []byte) ([
 		return nil, false
 	}
 
-	if !s.Empty() &&
-		(!s.ReadUint16LengthPrefixed(&extensions) || !s.Empty()) {
+	if s.Empty() {
+		// Extensions field must be present in TLS 1.3.
+		return nil, false
+	}
+
+	if !s.ReadUint16LengthPrefixed(&extensions) || !s.Empty() {
 		return nil, false
 	}
 
@@ -882,8 +893,91 @@ func echIsValidVersion(ext uint16) bool {
 	return ext == extensionECH
 }
 
+// encodeClientHelloOuterAAD interprets data as ClientHelloOuter and maps it to
+// ClientHelloOuterAAD. Returns a bool indicated whether parsing
+// ClientHelloOuter succeeded.
+func encodeClientHelloOuterAAD(data []byte, ext uint16) ([]byte, bool) {
+	var (
+		errReadFailure           = errors.New("read failure")
+		msgType                  uint8
+		legacyVersion            uint16
+		random                   []byte
+		legacySessionId          cryptobyte.String
+		cipherSuites             cryptobyte.String
+		legacyCompressionMethods cryptobyte.String
+		extensions               cryptobyte.String
+		s                        cryptobyte.String
+		b                        cryptobyte.Builder
+	)
+
+	u := cryptobyte.String(data)
+	if !u.ReadUint8(&msgType) ||
+		!u.ReadUint24LengthPrefixed(&s) || !u.Empty() {
+		return nil, false
+	}
+
+	if !s.ReadUint16(&legacyVersion) ||
+		!s.ReadBytes(&random, 32) ||
+		!s.ReadUint8LengthPrefixed(&legacySessionId) ||
+		!s.ReadUint16LengthPrefixed(&cipherSuites) ||
+		!s.ReadUint8LengthPrefixed(&legacyCompressionMethods) {
+		return nil, false
+	}
+
+	if s.Empty() {
+		// Extensions field must be present in TLS 1.3.
+		return nil, false
+	}
+
+	if !s.ReadUint16LengthPrefixed(&extensions) || !s.Empty() {
+		return nil, false
+	}
+
+	b.AddUint8(msgType)
+	b.AddUint24LengthPrefixed(func(b *cryptobyte.Builder) {
+		b.AddUint16(legacyVersion)
+		b.AddBytes(random)
+		b.AddUint8LengthPrefixed(func(b *cryptobyte.Builder) {
+			b.AddBytes(legacySessionId)
+		})
+		b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
+			b.AddBytes(cipherSuites)
+		})
+		b.AddUint8LengthPrefixed(func(b *cryptobyte.Builder) {
+			b.AddBytes(legacyCompressionMethods)
+		})
+		b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
+			for !extensions.Empty() {
+				var ext uint16
+				var extData cryptobyte.String
+				if !extensions.ReadUint16(&ext) ||
+					!extensions.ReadUint16LengthPrefixed(&extData) {
+					panic(cryptobyte.BuildError{Err: errReadFailure})
+				}
+
+				// Copy all extensions except for ECH.
+				if ext != extensionECH {
+					b.AddUint16(ext)
+					b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
+						b.AddBytes(extData)
+					})
+				}
+			}
+		})
+	})
+
+	encodedData, err := b.Bytes()
+	if err == errReadFailure {
+		return nil, false // Reading failed
+	} else if err != nil {
+		panic(err) // Writing failed
+	}
+
+	return encodedData, true
+}
+
 // processClientHelloExtensions interprets data as a ClientHello and applies a
-// function proc to each extension. Returns a bit indicating whether parsing
+// function proc to each extension. Returns a bool indicating whether parsing
 // succeeded.
 func processClientHelloExtensions(data []byte, proc func(ext uint16, extData cryptobyte.String) bool) bool {
 	_, extensionsData, ok := splitClientHelloExtensions(data)
@@ -893,6 +987,7 @@ func processClientHelloExtensions(data []byte, proc func(ext uint16, extData cry
 
 	s := cryptobyte.String(extensionsData)
 	if s.Empty() {
+		// Extensions field not present.
 		return true
 	}
 
@@ -918,7 +1013,7 @@ func processClientHelloExtensions(data []byte, proc func(ext uint16, extData cry
 // splitClientHelloExtensions interprets data as a ClientHello message and
 // returns two strings: the first contains the start of the ClientHello up to
 // the start of the extensions; and the second is the length-prefixed
-// extensions. It also returns a bit indicating whether parsing succeeded.
+// extensions. It also returns a bool indicating whether parsing succeeded.
 func splitClientHelloExtensions(data []byte) ([]byte, []byte, bool) {
 	s := cryptobyte.String(data)
 
