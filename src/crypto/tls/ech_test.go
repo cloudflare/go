@@ -730,6 +730,7 @@ type echTestResult struct {
 	// Results
 	clientStatus EXP_EventECHClientStatus
 	serverStatus EXP_EventECHServerStatus
+	connState    ConnectionState
 	err          error
 }
 
@@ -752,7 +753,7 @@ func (r *echTestResult) eventHandler(event EXP_Event) {
 
 // echTestConn runs the handshake and returns the ECH and error status of the
 // client and server. It also returns the server name verified by the client.
-func echTestConn(t *testing.T, clientConfig, serverConfig *Config) (serverName string, clientRes, serverRes echTestResult) {
+func echTestConn(t *testing.T, clientConfig, serverConfig *Config) (clientRes, serverRes echTestResult) {
 	testMessage := []byte("hey bud")
 	buf := make([]byte, len(testMessage))
 	ln := newLocalListener(t)
@@ -783,6 +784,8 @@ func echTestConn(t *testing.T, clientConfig, serverConfig *Config) (serverName s
 		if _, err = server.Read(buf); err != nil {
 			res.err = err
 		}
+
+		res.connState = server.ConnectionState()
 	}()
 
 	clientConfig.EXP_EventHandler = clientRes.eventHandler
@@ -801,7 +804,7 @@ func echTestConn(t *testing.T, clientConfig, serverConfig *Config) (serverName s
 		return
 	}
 
-	serverName = client.ConnectionState().ServerName
+	clientRes.connState = client.ConnectionState()
 	serverRes = <-serverCh
 	return
 }
@@ -940,7 +943,7 @@ func TestECHHandshake(t *testing.T) {
 			t.Logf("%s", test.name)
 
 			// Run the handshake.
-			serverName, client, server := echTestConn(t, clientConfig, serverConfig)
+			client, server := echTestConn(t, clientConfig, serverConfig)
 			if !test.expectClientAbort && client.err != nil {
 				t.Error("client aborts; want success")
 			}
@@ -989,8 +992,8 @@ func TestECHHandshake(t *testing.T) {
 				return
 			}
 
-			if test.expectBackendServerName != (serverName == echTestBackendServerName) {
-				t.Errorf("got backend server name=%v; want %v", serverName == echTestBackendServerName, test.expectBackendServerName)
+			if name := client.connState.ServerName; test.expectBackendServerName != (name == echTestBackendServerName) {
+				t.Errorf("got backend server name=%v; want %v", name == echTestBackendServerName, test.expectBackendServerName)
 			}
 
 			if client.clientStatus.Greased() != server.clientStatus.Greased() ||
@@ -1001,6 +1004,14 @@ func TestECHHandshake(t *testing.T) {
 				t.Error("client and server disagree on ech usage")
 				t.Errorf("client=%+v", client)
 				t.Errorf("server=%+v", server)
+			}
+
+			if accepted := client.connState.ECHAccepted; accepted != client.serverStatus.Accepted() {
+				t.Errorf("client got ECHAccepted=%v; want %v", accepted, client.serverStatus.Accepted())
+			}
+
+			if accepted := server.connState.ECHAccepted; accepted != server.serverStatus.Accepted() {
+				t.Errorf("server got ECHAccepted=%v; want %v", accepted, server.serverStatus.Accepted())
 			}
 		})
 	}
