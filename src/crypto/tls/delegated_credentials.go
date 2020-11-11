@@ -56,7 +56,7 @@ func isValidForDelegation(cert *x509.Certificate) bool {
 			return true
 		}
 
-		if extension.Critical == false {
+		if !extension.Critical {
 			return true
 		}
 	}
