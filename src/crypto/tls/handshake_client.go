@@ -130,6 +130,7 @@ func (c *Conn) makeClientHello() (*clientHelloMsg, ecdheParameters, error) {
 		hello.keyShares = []keyShare{{group: curveID, data: params.PublicKey()}}
 		// only for TLS 1.3
 		hello.delegatedCredentialSupported = config.SupportDelegatedCredential
+		hello.supportedSignatureAlgorithmsDC = supportedSignatureAlgorithmsDC
 	}
 
 	return hello, params, nil

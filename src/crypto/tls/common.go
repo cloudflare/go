@@ -191,6 +191,23 @@ var supportedSignatureAlgorithms = []SignatureScheme{
 	ECDSAWithSHA1,
 }
 
+// supportedSignatureAlgorithmsDC contains the signature and hash algorithms that
+// the code advertises as supported in a TLS 1.2+ ClientHello and in a TLS 1.2+
+// CertificateRequest. The two fields are merged to match with TLS 1.3.
+// Note that in TLS 1.2, the ECDSA algorithms are not constrained to P-256, etc.
+// This excludes 'rsa_pss_rsae_' algorithms.
+var supportedSignatureAlgorithmsDC = []SignatureScheme{
+	ECDSAWithP256AndSHA256,
+	Ed25519,
+	PKCS1WithSHA256,
+	PKCS1WithSHA384,
+	PKCS1WithSHA512,
+	ECDSAWithP384AndSHA384,
+	ECDSAWithP521AndSHA512,
+	PKCS1WithSHA1,
+	ECDSAWithSHA1,
+}
+
 // helloRetryRequestRandom is set as the Random value of a ServerHello
 // to signal that the message is actually a HelloRetryRequest.
 var helloRetryRequestRandom = []byte{ // See RFC 8446, Section 4.1.3.
@@ -410,6 +427,10 @@ type ClientHelloInfo struct {
 	// is willing to verify. SignatureSchemes is set only if the Signature
 	// Algorithms Extension is being used (see RFC 5246, Section 7.4.1.4.1).
 	SignatureSchemes []SignatureScheme
+
+	// SignatureSchemesDC lists the signature and hash schemes that the client
+	// is willing to verify when using delegated credentials.
+	SignatureSchemesDC []SignatureScheme
 
 	// SupportedProtos lists the application protocols supported by the client.
 	// SupportedProtos is set only if the Application-Layer Protocol

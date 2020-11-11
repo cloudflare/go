@@ -484,6 +484,7 @@ func illegalClientHelloChange(ch, ch1 *clientHelloMsg) bool {
 		len(ch.supportedCurves) != len(ch1.supportedCurves) ||
 		len(ch.supportedSignatureAlgorithms) != len(ch1.supportedSignatureAlgorithms) ||
 		len(ch.supportedSignatureAlgorithmsCert) != len(ch1.supportedSignatureAlgorithmsCert) ||
+		len(ch.supportedSignatureAlgorithmsDC) != len(ch1.supportedSignatureAlgorithmsDC) ||
 		len(ch.alpnProtocols) != len(ch1.alpnProtocols) {
 		return true
 	}
@@ -509,6 +510,11 @@ func illegalClientHelloChange(ch, ch1 *clientHelloMsg) bool {
 	}
 	for i := range ch.supportedSignatureAlgorithmsCert {
 		if ch.supportedSignatureAlgorithmsCert[i] != ch1.supportedSignatureAlgorithmsCert[i] {
+			return true
+		}
+	}
+	for i := range ch.supportedSignatureAlgorithmsDC {
+		if ch.supportedSignatureAlgorithmsDC[i] != ch1.supportedSignatureAlgorithmsDC[i] {
 			return true
 		}
 	}
