@@ -516,9 +516,10 @@ func (hs *clientHandshakeStateTLS13) readServerCertificate() error {
 		return errors.New("tls: certificate used with invalid signature algorithm")
 	}
 
-	// TODO: it will be good to check here if the bool is present on certMsg
-	if err := hs.processDelegatedCredentialFromServer(certMsg.certificate.DelegatedCredential, certVerify); err != nil {
-		return err
+	if certMsg.delegatedCredential {
+		if err := hs.processDelegatedCredentialFromServer(certMsg.certificate.DelegatedCredential, certVerify); err != nil {
+			return err
+		}
 	}
 
 	pk := c.peerCertificates[0].PublicKey
@@ -605,8 +606,7 @@ func (hs *clientHandshakeStateTLS13) sendClientCertificate() error {
 	certMsg.certificate = *cert
 	certMsg.scts = hs.certReq.scts && len(cert.SignedCertificateTimestamps) > 0
 	certMsg.ocspStapling = hs.certReq.ocspStapling && len(cert.OCSPStaple) > 0
-	// TODO: for client auth
-	//certMsg.delegatedCredential = hs.certReq.delegatedCredentialSupported && len(hs.cert.DelegatedCredential) > 0
+	certMsg.delegatedCredential = false
 
 	hs.transcript.Write(certMsg.marshal())
 	if _, err := c.writeRecord(recordTypeHandshake, certMsg.marshal()); err != nil {

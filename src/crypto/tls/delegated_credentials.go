@@ -64,6 +64,31 @@ func isValidForDelegation(cert *x509.Certificate) bool {
 	return false
 }
 
+func isValidInCertVerify(expCertVerfAlgo SignatureScheme, certVerifyMsgAlgo SignatureScheme) bool {
+	switch expCertVerfAlgo {
+	case ECDSAWithP256AndSHA256:
+		if certVerifyMsgAlgo != ECDSAWithP256AndSHA256 {
+			return false
+		}
+	case ECDSAWithP384AndSHA384:
+		if certVerifyMsgAlgo != ECDSAWithP384AndSHA384 {
+			return false
+		}
+	case ECDSAWithP521AndSHA512:
+		if certVerifyMsgAlgo != ECDSAWithP521AndSHA512 {
+			return false
+		}
+	case Ed25519:
+		if certVerifyMsgAlgo != Ed25519 {
+			return false
+		}
+	default:
+		return false
+	}
+
+	return true
+}
+
 // IsExpired returns true if the credential has expired. The end of the validity
 // interval is defined as the delegator certificate's notBefore field ('start')
 // plus ValidTime seconds. This function simply checks that the current time
@@ -303,6 +328,32 @@ func prepareDelegationSignatureInput(hash crypto.Hash, cred *Credential, dCert [
 	return h.Sum(nil), nil
 }
 
+// Extract the algorithm used to sign the DelegatedCredential from the end-entity (leaf) certificate
+func getSigAlgo(cert *Certificate) (SignatureScheme, error) {
+	var sigAlgo SignatureScheme
+	switch sk := cert.PrivateKey.(type) {
+	case *ecdsa.PrivateKey:
+		pk := sk.Public().(*ecdsa.PublicKey)
+		curveName := pk.Curve.Params().Name
+		certAlg := cert.Leaf.SignatureAlgorithm
+		if certAlg == x509.ECDSAWithSHA256 && curveName == "P-256" {
+			sigAlgo = ECDSAWithP256AndSHA256
+		} else if certAlg == x509.ECDSAWithSHA384 && curveName == "P-384" {
+			sigAlgo = ECDSAWithP384AndSHA384
+		} else if certAlg == x509.ECDSAWithSHA512 && curveName == "P-521" {
+			sigAlgo = ECDSAWithP521AndSHA512
+		} else {
+			return SignatureScheme(0x00), fmt.Errorf("using curve %s for %s is not supported", curveName, cert.Leaf.SignatureAlgorithm)
+		}
+	case ed25519.PublicKey:
+		sigAlgo = Ed25519
+	default:
+		return SignatureScheme(0x00), fmt.Errorf("tls: unsupported algorithm for delegated credential")
+	}
+
+	return sigAlgo, nil
+}
+
 // NewDelegatedCredential creates a new delegated credential using 'cert' for
 // delegation. It generates a public/private key pair for the provided signature
 // algorithm ('scheme'), validity interval (defined by 'cert.Leaf.notBefore' and
@@ -329,42 +380,25 @@ func NewDelegatedCredential(cert *Certificate, pubAlgo SignatureScheme, validTim
 		return nil, nil, errNoDelegationUsage
 	}
 
-	// Extract the algorithm used to sign the DelegatedCredential from the end-entity (leaf) certificate
-	var sigAlgo SignatureScheme
-	switch sk := cert.PrivateKey.(type) {
-	case *ecdsa.PrivateKey:
-		pk := sk.Public().(*ecdsa.PublicKey)
-		curveName := pk.Curve.Params().Name
-		certAlg := cert.Leaf.SignatureAlgorithm
-		if certAlg == x509.ECDSAWithSHA256 && curveName == "P-256" {
-			sigAlgo = ECDSAWithP256AndSHA256
-		} else if certAlg == x509.ECDSAWithSHA384 && curveName == "P-384" {
-			sigAlgo = ECDSAWithP384AndSHA384
-		} else if certAlg == x509.ECDSAWithSHA512 && curveName == "P-521" {
-			sigAlgo = ECDSAWithP521AndSHA512
-		} else {
-			return nil, nil, fmt.Errorf("using curve %s for %s is not supported", curveName, cert.Leaf.SignatureAlgorithm)
-		}
-	case ed25519.PublicKey:
-		sigAlgo = Ed25519
-	default:
-		return nil, nil, fmt.Errorf("tls: unsupported algorithm for delegated credential")
+	sigAlgo, err := getSigAlgo(cert)
+	if err != nil {
+		return nil, nil, err
 	}
 
 	// Generate the Delegated Credential Key Pair based on the provided scheme
-	var sk crypto.PrivateKey
-	var pk crypto.PublicKey
+	var privK crypto.PrivateKey
+	var pubK crypto.PublicKey
 	switch pubAlgo {
 	case ECDSAWithP256AndSHA256,
 		ECDSAWithP384AndSHA384,
 		ECDSAWithP521AndSHA512:
-		sk, err = ecdsa.GenerateKey(getCurve(pubAlgo), rand.Reader)
+		privK, err = ecdsa.GenerateKey(getCurve(pubAlgo), rand.Reader)
 		if err != nil {
 			return nil, nil, err
 		}
-		pk = sk.(*ecdsa.PrivateKey).Public()
+		pubK = privK.(*ecdsa.PrivateKey).Public()
 	case Ed25519:
-		pk, sk, err = ed25519.GenerateKey(rand.Reader)
+		pubK, privK, err = ed25519.GenerateKey(rand.Reader)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -374,7 +408,7 @@ func NewDelegatedCredential(cert *Certificate, pubAlgo SignatureScheme, validTim
 
 	// Prepare the credential for signing
 	hash := getHash(sigAlgo)
-	credential := &Credential{validTime, pubAlgo, pk}
+	credential := &Credential{validTime, pubAlgo, pubK}
 	values, err := prepareDelegationSignatureInput(hash, credential, cert.Leaf.Raw, sigAlgo, peer)
 	if err != nil {
 		return nil, nil, err
@@ -402,7 +436,7 @@ func NewDelegatedCredential(cert *Certificate, pubAlgo SignatureScheme, validTim
 		Cred:      credential,
 		Algorithm: sigAlgo,
 		Signature: sig,
-	}, sk, nil
+	}, privK, nil
 }
 
 // Validate checks that the delegated credential is valid by checking that the
@@ -417,24 +451,7 @@ func (dc *DelegatedCredential) Validate(cert *x509.Certificate, peer string, now
 		return false
 	}
 
-	switch dc.Cred.expCertVerfAlgo {
-	case ECDSAWithP256AndSHA256:
-		if certVerifyMsg.signatureAlgorithm != ECDSAWithP256AndSHA256 {
-			return false
-		}
-	case ECDSAWithP384AndSHA384:
-		if certVerifyMsg.signatureAlgorithm != ECDSAWithP384AndSHA384 {
-			return false
-		}
-	case ECDSAWithP521AndSHA512:
-		if certVerifyMsg.signatureAlgorithm != ECDSAWithP521AndSHA512 {
-			return false
-		}
-	case Ed25519:
-		if certVerifyMsg.signatureAlgorithm != Ed25519 {
-			return false
-		}
-	default:
+	if !isValidInCertVerify(dc.Cred.expCertVerfAlgo, certVerifyMsg.signatureAlgorithm) {
 		return false
 	}
 
@@ -448,8 +465,6 @@ func (dc *DelegatedCredential) Validate(cert *x509.Certificate, peer string, now
 		return false
 	}
 
-	// TODO(any) This code overlaps signficantly with verifyHandshakeSignature()
-	// in ../auth.go. This should be refactored.
 	switch dc.Algorithm {
 	case ECDSAWithP256AndSHA256,
 		ECDSAWithP384AndSHA384,

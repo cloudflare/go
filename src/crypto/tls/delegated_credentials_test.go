@@ -230,13 +230,12 @@ func TestDelegateCredentialsValidate(t *testing.T) {
 		t.Error("valid Delegated Credential is invalid; want valid")
 	}
 
-	//cert.Leaf.SignatureAlgorithm = x509.ECDSAWithSHA256
-	//delegatedCred.Algorithm = ECDSAWithP521AndSHA512
+	delegatedCred.Algorithm = ECDSAWithP521AndSHA512
 
 	// Test signature algorithm binding
-	//if delegatedCred.Validate(cert.Leaf, "server", dcNow) {
-	//	t.Error("Delegated Credential with wrong scheme is valid; want invalid")
-	//}
+	if delegatedCred.Validate(cert.Leaf, "server", dcNow, m) {
+		t.Error("Delegated Credential with wrong scheme is valid; want invalid")
+	}
 
 	delegatedCred.Algorithm = ECDSAWithP256AndSHA256
 
