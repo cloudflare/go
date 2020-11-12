@@ -636,9 +636,17 @@ func (hs *serverHandshakeStateTLS13) sendServerCertificate() error {
 
 	certVerifyMsg := new(certificateVerifyMsg)
 	certVerifyMsg.hasSignatureAlgorithm = true
-	certVerifyMsg.signatureAlgorithm = hs.sigAlg
+	if certMsg.delegatedCredential {
+		dCred, err := UnmarshalDelegatedCredential(certMsg.certificate.DelegatedCredential)
+		if err != nil {
+			return errors.New("tls: failed: " + err.Error())
+		}
+		certVerifyMsg.signatureAlgorithm = dCred.Cred.expCertVerfAlgo
+	} else {
+		certVerifyMsg.signatureAlgorithm = hs.sigAlg
+	}
 
-	sigType, sigHash, err := typeAndHashFromSignatureScheme(hs.sigAlg)
+	sigType, sigHash, err := typeAndHashFromSignatureScheme(certVerifyMsg.signatureAlgorithm)
 	if err != nil {
 		return c.sendAlert(alertInternalError)
 	}

@@ -138,7 +138,6 @@ func (cred *Credential) marshalPublicKeyInfo() ([]byte, error) {
 
 // unmarshalPublicKeyInfo parses a DER encoded PublicKeyInfo from a Delegated
 // Credential to a public key and its corresponding algorithm.
-// TODO: add the other signatures flavors, as defined in common.go
 func unmarshalPublicKeyInfo(serialized []byte) (crypto.PublicKey, SignatureScheme, error) {
 	pubKey, err := x509.ParsePKIXPublicKey(serialized)
 	if err != nil {
@@ -409,7 +408,7 @@ func NewDelegatedCredential(cert *Certificate, pubAlgo SignatureScheme, validTim
 // Validate checks that the delegated credential is valid by checking that the
 // signature is valid, that the credential hasn't expired, and that the TTL is
 // valid. It also checks that certificate can be used for delegation.
-func (dc *DelegatedCredential) Validate(cert *x509.Certificate, peer string, now time.Time) bool {
+func (dc *DelegatedCredential) Validate(cert *x509.Certificate, peer string, now time.Time, certVerifyMsg *certificateVerifyMsg) bool {
 	if dc.IsExpired(cert.NotBefore, now) {
 		return false
 	}
@@ -418,10 +417,26 @@ func (dc *DelegatedCredential) Validate(cert *x509.Certificate, peer string, now
 		return false
 	}
 
-	// TODO: needs more thought
-	//if !(dc.Cred.expCertVerfAlgo == ECDSAWithP256AndSHA256 && cert.SignatureAlgorithm == x509.ECDSAWithSHA256) {
-	//	return false, errors.New("tls: delegated credential is not valid")
-	//}
+	switch dc.Cred.expCertVerfAlgo {
+	case ECDSAWithP256AndSHA256:
+		if certVerifyMsg.signatureAlgorithm != ECDSAWithP256AndSHA256 {
+			return false
+		}
+	case ECDSAWithP384AndSHA384:
+		if certVerifyMsg.signatureAlgorithm != ECDSAWithP384AndSHA384 {
+			return false
+		}
+	case ECDSAWithP521AndSHA512:
+		if certVerifyMsg.signatureAlgorithm != ECDSAWithP521AndSHA512 {
+			return false
+		}
+	case Ed25519:
+		if certVerifyMsg.signatureAlgorithm != Ed25519 {
+			return false
+		}
+	default:
+		return false
+	}
 
 	if !isValidForDelegation(cert) {
 		return false
@@ -478,7 +493,6 @@ func (dc *DelegatedCredential) Marshal() ([]byte, error) {
 	ser = append(ser, dc.Signature...)
 
 	dc.Raw = ser
-
 	return ser, nil
 }
 

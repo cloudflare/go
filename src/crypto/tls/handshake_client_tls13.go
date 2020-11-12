@@ -38,7 +38,7 @@ type clientHandshakeStateTLS13 struct {
 // processDelegatedCredentialFromServer unmarshals the DelegatedCredential
 // offered by the server (if present) and validates it using the peer
 // certificate.
-func (hs *clientHandshakeStateTLS13) processDelegatedCredentialFromServer(dc []byte) error {
+func (hs *clientHandshakeStateTLS13) processDelegatedCredentialFromServer(dc []byte, certVerifyMsg *certificateVerifyMsg) error {
 	c := hs.c
 
 	var dCred *DelegatedCredential
@@ -47,7 +47,6 @@ func (hs *clientHandshakeStateTLS13) processDelegatedCredentialFromServer(dc []b
 		// Assert that the DC extension was indicated by the client.
 		if !hs.hello.delegatedCredentialSupported {
 			c.sendAlert(alertUnexpectedMessage)
-			// TODO: check this error is consistent
 			return errors.New("tls: got delegated credential extension without indication")
 		}
 
@@ -59,7 +58,7 @@ func (hs *clientHandshakeStateTLS13) processDelegatedCredentialFromServer(dc []b
 	}
 
 	if dCred != nil && !c.config.InsecureSkipVerify {
-		if !dCred.Validate(c.peerCertificates[0], "server", c.config.time()) {
+		if !dCred.Validate(c.peerCertificates[0], "server", c.config.time(), certVerifyMsg) {
 			c.sendAlert(alertIllegalParameter)
 			return errors.New("tls: invalid delegated credential")
 		}
@@ -492,11 +491,6 @@ func (hs *clientHandshakeStateTLS13) readServerCertificate() error {
 		return err
 	}
 
-	// TODO: it will be good to check here if the bool is present on certMsg
-	if err := hs.processDelegatedCredentialFromServer(certMsg.certificate.DelegatedCredential); err != nil {
-		return err
-	}
-
 	msg, err = c.readHandshake()
 	if err != nil {
 		return err
@@ -520,6 +514,11 @@ func (hs *clientHandshakeStateTLS13) readServerCertificate() error {
 	if sigType == signaturePKCS1v15 || sigHash == crypto.SHA1 {
 		c.sendAlert(alertIllegalParameter)
 		return errors.New("tls: certificate used with invalid signature algorithm")
+	}
+
+	// TODO: it will be good to check here if the bool is present on certMsg
+	if err := hs.processDelegatedCredentialFromServer(certMsg.certificate.DelegatedCredential, certVerify); err != nil {
+		return err
 	}
 
 	pk := c.peerCertificates[0].PublicKey
