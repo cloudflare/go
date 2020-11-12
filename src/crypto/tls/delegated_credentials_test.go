@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"crypto"
 	"crypto/ecdsa"
+	"crypto/ed25519"
 	"crypto/elliptic"
 	"crypto/x509"
 	"errors"
@@ -142,16 +143,25 @@ func initialize() {
 	dcTest = &dcAndPrivateKey{dc, sk}
 }
 
-// TODO: generalize for all schemes
 func publicKeysEqual(publicKey, publicKey2 crypto.PublicKey, algo SignatureScheme) error {
-	curve := getCurve(algo)
-	pk := publicKey.(*ecdsa.PublicKey)
-	pk2 := publicKey2.(*ecdsa.PublicKey)
+	switch publicKey.(type) {
+	case *ecdsa.PublicKey:
+		curve := getCurve(algo)
+		pk := publicKey.(*ecdsa.PublicKey)
+		pk2 := publicKey2.(*ecdsa.PublicKey)
 
-	serPubKey := elliptic.Marshal(curve, pk.X, pk.Y)
-	serPubKey2 := elliptic.Marshal(curve, pk2.X, pk2.Y)
-	if !bytes.Equal(serPubKey2, serPubKey) {
-		return errors.New("Public Keys mismatch")
+		serPubKey := elliptic.Marshal(curve, pk.X, pk.Y)
+		serPubKey2 := elliptic.Marshal(curve, pk2.X, pk2.Y)
+		if !bytes.Equal(serPubKey2, serPubKey) {
+			return errors.New("ecdsa public Keys mismatch")
+		}
+	case ed25519.PublicKey:
+		pk := publicKey.(ed25519.PublicKey)
+		pk2 := publicKey2.(ed25519.PublicKey)
+
+		if !bytes.Equal(pk, pk2) {
+			return errors.New("ed25519 Public Keys mismatch")
+		}
 	}
 
 	return nil
@@ -235,38 +245,42 @@ func TestDelegateCredentialsValidate(t *testing.T) {
 	}
 }
 
+var sigTypes = []SignatureScheme{ECDSAWithP256AndSHA256, ECDSAWithP384AndSHA384, ECDSAWithP521AndSHA512, Ed25519}
+
 // Test encoding/decoding of delegated credentials.
 func TestDelegatedCredentialMarshal(t *testing.T) {
 	initialize()
 	cert := dcTestCerts["dc"]
 	time := dcNow.Sub(cert.Leaf.NotBefore) + dcMaxTTL
 
-	delegatedCred, _, err := NewDelegatedCredential(cert, ECDSAWithP256AndSHA256, time, "server")
-	if err != nil {
-		t.Fatal(err)
-	}
+	for _, sig := range sigTypes {
+		delegatedCred, _, err := NewDelegatedCredential(cert, sig, time, "server")
+		if err != nil {
+			t.Fatal(err)
+		}
 
-	ser, err := delegatedCred.Marshal()
-	if err != nil {
-		t.Error(err)
-	}
+		ser, err := delegatedCred.Marshal()
+		if err != nil {
+			t.Error(err)
+		}
 
-	delegatedCred2, err := UnmarshalDelegatedCredential(ser)
-	if err != nil {
-		t.Error(err)
-	}
+		delegatedCred2, err := UnmarshalDelegatedCredential(ser)
+		if err != nil {
+			t.Error(err)
+		}
 
-	err = equal(delegatedCred, delegatedCred2)
-	if err != nil {
-		t.Error(err)
-	}
+		err = equal(delegatedCred, delegatedCred2)
+		if err != nil {
+			t.Error(err)
+		}
 
-	if delegatedCred.Algorithm != delegatedCred2.Algorithm {
-		t.Errorf("scheme mismatch: got %04x; want %04x", delegatedCred2.Algorithm, delegatedCred.Algorithm)
-	}
+		if delegatedCred.Algorithm != delegatedCred2.Algorithm {
+			t.Errorf("scheme mismatch: got %04x; want %04x", delegatedCred2.Algorithm, delegatedCred.Algorithm)
+		}
 
-	if !bytes.Equal(delegatedCred2.Signature, delegatedCred.Signature) {
-		t.Error("Signature mismatch")
+		if !bytes.Equal(delegatedCred2.Signature, delegatedCred.Signature) {
+			t.Error("Signature mismatch")
+		}
 	}
 }
 
