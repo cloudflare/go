@@ -192,10 +192,8 @@ var supportedSignatureAlgorithms = []SignatureScheme{
 }
 
 // supportedSignatureAlgorithmsDC contains the signature and hash algorithms that
-// the code advertises as supported in a TLS 1.2+ ClientHello and in a TLS 1.2+
-// CertificateRequest. The two fields are merged to match with TLS 1.3.
-// Note that in TLS 1.2, the ECDSA algorithms are not constrained to P-256, etc.
-// This excludes 'rsa_pss_rsae_' algorithms.
+// the code advertises as supported in a TLS 1.3 ClientHello and in a TLS 1.3
+// CertificateRequest. This excludes 'rsa_pss_rsae_' algorithms.
 var supportedSignatureAlgorithmsDC = []SignatureScheme{
 	ECDSAWithP256AndSHA256,
 	Ed25519,
@@ -711,9 +709,10 @@ type Config struct {
 	SupportDelegatedCredential bool
 
 	// GetDelegatedCredential returns a DelegatedCredential for use with the
-	// delegated credential extension based on the ClientHello and TLS version
-	// selected for the session. If this is nil, then the server will not offer
-	// a DelegatedCredential.
+	// delegated credential extension based on the ClientHello. It only works
+	// with TLS 1.3. If this is nil, then the server will not offer
+	// a DelegatedCredential. If the call returns nil, the server is also
+	// not offering a DelegatedCredential.
 	GetDelegatedCredential func(*ClientHelloInfo) (*DelegatedCredential, crypto.PrivateKey, error)
 
 	// mutex protects sessionTicketKeys and autoSessionTicketKeys.

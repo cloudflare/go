@@ -54,39 +54,22 @@ func isValidForDelegation(cert *x509.Certificate) bool {
 	// it's non-critical (See Section 4.2 of RFC5280).
 	for _, extension := range cert.Extensions {
 		if extension.Id.Equal(extensionDelegatedCredential) {
-			return true
-		}
-
-		if !extension.Critical {
+			if extension.Critical {
+				return false
+			}
 			return true
 		}
 	}
+
 	return false
 }
 
 func isValidInCertVerify(expCertVerfAlgo SignatureScheme, certVerifyMsgAlgo SignatureScheme) bool {
-	switch expCertVerfAlgo {
-	case ECDSAWithP256AndSHA256:
-		if certVerifyMsgAlgo != ECDSAWithP256AndSHA256 {
-			return false
-		}
-	case ECDSAWithP384AndSHA384:
-		if certVerifyMsgAlgo != ECDSAWithP384AndSHA384 {
-			return false
-		}
-	case ECDSAWithP521AndSHA512:
-		if certVerifyMsgAlgo != ECDSAWithP521AndSHA512 {
-			return false
-		}
-	case Ed25519:
-		if certVerifyMsgAlgo != Ed25519 {
-			return false
-		}
-	default:
+	if expCertVerfAlgo == certVerifyMsgAlgo {
 		return false
 	}
 
-	return true
+	return false
 }
 
 // IsExpired returns true if the credential has expired. The end of the validity
