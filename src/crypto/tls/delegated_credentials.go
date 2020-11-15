@@ -66,7 +66,7 @@ func isValidForDelegation(cert *x509.Certificate) bool {
 
 func isValidInCertVerify(expCertVerfAlgo SignatureScheme, certVerifyMsgAlgo SignatureScheme) bool {
 	if expCertVerfAlgo == certVerifyMsgAlgo {
-		return false
+		return true
 	}
 
 	return false

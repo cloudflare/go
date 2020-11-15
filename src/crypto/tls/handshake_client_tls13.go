@@ -55,6 +55,11 @@ func (hs *clientHandshakeStateTLS13) processDelegatedCredentialFromServer(dc []b
 			c.sendAlert(alertDecodeError)
 			return fmt.Errorf("tls: delegated credential: %s", err)
 		}
+
+		if !isSupportedSignatureAlgorithm(dCred.Cred.expCertVerfAlgo, supportedSignatureAlgorithmsDC) {
+			c.sendAlert(alertIllegalParameter)
+			return errors.New("tls: delegated credential used with invalid signature algorithm")
+		}
 	}
 
 	if dCred != nil && !c.config.InsecureSkipVerify {
@@ -507,6 +512,7 @@ func (hs *clientHandshakeStateTLS13) readServerCertificate() error {
 		c.sendAlert(alertIllegalParameter)
 		return errors.New("tls: certificate used with invalid signature algorithm")
 	}
+
 	sigType, sigHash, err := typeAndHashFromSignatureScheme(certVerify.signatureAlgorithm)
 	if err != nil {
 		return c.sendAlert(alertInternalError)
