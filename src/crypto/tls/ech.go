@@ -355,9 +355,14 @@ func (c *Conn) echAcceptOrBypass(hello *clientHelloMsg) (*clientHelloMsg, error)
 	}
 
 	if res.Status == ECHProviderAbort {
-		// This condition indicates the connection must be aborted.
-		c.sendAlert(alert(res.Alert))
-		return nil, fmt.Errorf("ech: %s", res.Error)
+		if alert := alert(res.Alert); alert == alertIllegalParameter {
+			// This alert signals that the context handle sent by the client is
+			// malformed. An abort here would stick out, so reject instead.
+			return reject()
+		} else {
+			c.sendAlert(alert)
+			return nil, fmt.Errorf("ech: %s", err)
+		}
 	}
 
 	if res.Status == ECHProviderReject {
