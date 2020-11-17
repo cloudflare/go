@@ -8,10 +8,12 @@ import (
 	"bytes"
 	"crypto"
 	"crypto/ecdsa"
+	"crypto/ed25519"
 	"crypto/elliptic"
 	"crypto/x509"
 	"errors"
 	"fmt"
+	"math/rand"
 	"testing"
 	"time"
 )
@@ -72,11 +74,7 @@ var dcTest *dcAndPrivateKey
 var dcNow time.Time
 var dcTestDCScheme = ECDSAWithP521AndSHA512
 
-func initialize() {
-	// Use a static time for testing at which time the test certificates are
-	// valid.
-	dcNow = time.Date(2020, time.August, 31, 11, 0, 0, 234234, time.UTC)
-
+func init() {
 	dcTestConfig = &Config{
 		Time: func() time.Time {
 			return dcNow
@@ -87,6 +85,13 @@ func initialize() {
 		MaxVersion:   VersionTLS13,
 		CipherSuites: allCipherSuites(),
 	}
+
+}
+
+func initialize() {
+	// Use a static time for testing at which time the test certificates are
+	// valid.
+	dcNow = time.Date(2020, time.August, 31, 11, 0, 0, 234234, time.UTC)
 
 	// The certificates of the server.
 	dcTestCerts = make(map[string]*Certificate)
@@ -139,16 +144,25 @@ func initialize() {
 	dcTest = &dcAndPrivateKey{dc, sk}
 }
 
-// TODO: generalize for all schemes
 func publicKeysEqual(publicKey, publicKey2 crypto.PublicKey, algo SignatureScheme) error {
-	curve := getCurve(algo)
-	pk := publicKey.(*ecdsa.PublicKey)
-	pk2 := publicKey2.(*ecdsa.PublicKey)
+	switch publicKey.(type) {
+	case *ecdsa.PublicKey:
+		curve := getCurve(algo)
+		pk := publicKey.(*ecdsa.PublicKey)
+		pk2 := publicKey2.(*ecdsa.PublicKey)
 
-	serPubKey := elliptic.Marshal(curve, pk.X, pk.Y)
-	serPubKey2 := elliptic.Marshal(curve, pk2.X, pk2.Y)
-	if !bytes.Equal(serPubKey2, serPubKey) {
-		return errors.New("Public Keys mismatch")
+		serPubKey := elliptic.Marshal(curve, pk.X, pk.Y)
+		serPubKey2 := elliptic.Marshal(curve, pk2.X, pk2.Y)
+		if !bytes.Equal(serPubKey2, serPubKey) {
+			return errors.New("ecdsa public Keys mismatch")
+		}
+	case ed25519.PublicKey:
+		pk := publicKey.(ed25519.PublicKey)
+		pk2 := publicKey2.(ed25519.PublicKey)
+
+		if !bytes.Equal(pk, pk2) {
+			return errors.New("ed25519 Public Keys mismatch")
+		}
 	}
 
 	return nil
@@ -179,9 +193,19 @@ func TestDelegateCredentialsValidate(t *testing.T) {
 		t.Fatal("unable to generate a Delegated Credential")
 	}
 
+	rand := rand.New(rand.NewSource(time.Now().UnixNano()))
+	m := &certificateVerifyMsg{}
+	m.hasSignatureAlgorithm = true
+	m.signatureAlgorithm = ECDSAWithP256AndSHA256
+	m.signature = randomBytes(rand.Intn(15)+1, rand)
+
 	// Valid Delegated Credential
 	if !delegatedCred.Validate(cert.Leaf, "server", dcNow) {
 		t.Error("generated valid Delegated Credential is rendered invalid")
+	}
+
+	if !isValidInCertVerify(delegatedCred.Cred.expCertVerfAlgo, m.signatureAlgorithm) {
+		t.Error("signatureAlgorithm should be valid for delegated credential")
 	}
 
 	// Expired Delegated Credential
@@ -210,13 +234,12 @@ func TestDelegateCredentialsValidate(t *testing.T) {
 		t.Error("valid Delegated Credential is invalid; want valid")
 	}
 
-	//cert.Leaf.SignatureAlgorithm = x509.ECDSAWithSHA256
-	//delegatedCred.Algorithm = ECDSAWithP521AndSHA512
+	delegatedCred.Algorithm = ECDSAWithP521AndSHA512
 
 	// Test signature algorithm binding
-	//if delegatedCred.Validate(cert.Leaf, "server", dcNow) {
-	//	t.Error("Delegated Credential with wrong scheme is valid; want invalid")
-	//}
+	if delegatedCred.Validate(cert.Leaf, "server", dcNow) {
+		t.Error("Delegated Credential with wrong scheme is valid; want invalid")
+	}
 
 	delegatedCred.Algorithm = ECDSAWithP256AndSHA256
 
@@ -232,38 +255,42 @@ func TestDelegateCredentialsValidate(t *testing.T) {
 	}
 }
 
+var sigTypes = []SignatureScheme{ECDSAWithP256AndSHA256, ECDSAWithP384AndSHA384, ECDSAWithP521AndSHA512, Ed25519}
+
 // Test encoding/decoding of delegated credentials.
 func TestDelegatedCredentialMarshal(t *testing.T) {
 	initialize()
 	cert := dcTestCerts["dc"]
 	time := dcNow.Sub(cert.Leaf.NotBefore) + dcMaxTTL
 
-	delegatedCred, _, err := NewDelegatedCredential(cert, ECDSAWithP256AndSHA256, time, "server")
-	if err != nil {
-		t.Fatal(err)
-	}
+	for _, sig := range sigTypes {
+		delegatedCred, _, err := NewDelegatedCredential(cert, sig, time, "server")
+		if err != nil {
+			t.Fatal(err)
+		}
 
-	ser, err := delegatedCred.Marshal()
-	if err != nil {
-		t.Error(err)
-	}
+		ser, err := delegatedCred.Marshal()
+		if err != nil {
+			t.Error(err)
+		}
 
-	delegatedCred2, err := UnmarshalDelegatedCredential(ser)
-	if err != nil {
-		t.Error(err)
-	}
+		delegatedCred2, err := UnmarshalDelegatedCredential(ser)
+		if err != nil {
+			t.Error(err)
+		}
 
-	err = equal(delegatedCred, delegatedCred2)
-	if err != nil {
-		t.Error(err)
-	}
+		err = equal(delegatedCred, delegatedCred2)
+		if err != nil {
+			t.Error(err)
+		}
 
-	if delegatedCred.Algorithm != delegatedCred2.Algorithm {
-		t.Errorf("scheme mismatch: got %04x; want %04x", delegatedCred2.Algorithm, delegatedCred.Algorithm)
-	}
+		if delegatedCred.Algorithm != delegatedCred2.Algorithm {
+			t.Errorf("scheme mismatch: got %04x; want %04x", delegatedCred2.Algorithm, delegatedCred.Algorithm)
+		}
 
-	if !bytes.Equal(delegatedCred2.Signature, delegatedCred.Signature) {
-		t.Error("Signature mismatch")
+		if !bytes.Equal(delegatedCred2.Signature, delegatedCred.Signature) {
+			t.Error("Signature mismatch")
+		}
 	}
 }
 
@@ -361,7 +388,7 @@ func testConnWithDC(t *testing.T, clientMsg, serverMsg string, clientConfig, ser
 
 	client.Write([]byte(clientMsg))
 	n, err := server.Read(buf)
-	if n != len(clientMsg) || string(buf[:n]) != clientMsg {
+	if err != nil || n != len(clientMsg) || string(buf[:n]) != clientMsg {
 		return false, fmt.Errorf("Server read = %d, buf= %q; want %d, %s", n, buf, len(clientMsg), clientMsg)
 	}
 

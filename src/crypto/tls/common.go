@@ -203,12 +203,12 @@ var supportedSignatureAlgorithms = []SignatureScheme{
 	ECDSAWithSHA1,
 }
 
+// supportedSignatureAlgorithmsDC contains the signature and hash algorithms that
+// the code advertises as supported in a TLS 1.3 ClientHello and in a TLS 1.3
+// CertificateRequest. This excludes 'rsa_pss_rsae_' algorithms.
 var supportedSignatureAlgorithmsDC = []SignatureScheme{
-	PSSWithSHA256,
 	ECDSAWithP256AndSHA256,
 	Ed25519,
-	PSSWithSHA384,
-	PSSWithSHA512,
 	PKCS1WithSHA256,
 	PKCS1WithSHA384,
 	PKCS1WithSHA512,
@@ -288,6 +288,10 @@ type ConnectionState struct {
 	// the server side, it's set if Config.ClientAuth is VerifyClientCertIfGiven
 	// (and the peer provided a certificate) or RequireAndVerifyClientCert.
 	VerifiedChains [][]*x509.Certificate
+
+	// VerifiedDC contains a delegated credential from the peer and
+	// has been verified against the leaf certificate.
+	VerifiedDC *DelegatedCredential
 
 	// SignedCertificateTimestamps is a list of SCTs provided by the peer
 	// through the TLS handshake for the leaf certificate, if any.
@@ -449,7 +453,7 @@ type ClientHelloInfo struct {
 	SignatureSchemes []SignatureScheme
 
 	// SignatureSchemesDC lists the signature and hash schemes that the client
-	// is willing to verify for delegated credentials
+	// is willing to verify when using delegated credentials.
 	SignatureSchemesDC []SignatureScheme
 
 	// SupportedProtos lists the application protocols supported by the client.
@@ -731,9 +735,10 @@ type Config struct {
 	SupportDelegatedCredential bool
 
 	// GetDelegatedCredential returns a DelegatedCredential for use with the
-	// delegated credential extension based on the ClientHello and TLS version
-	// selected for the session. If this is nil, then the server will not offer
-	// a DelegatedCredential.
+	// delegated credential extension based on the ClientHello. It only works
+	// with TLS 1.3. If this is nil, then the server will not offer
+	// a DelegatedCredential. If the call returns nil, the server is also
+	// not offering a DelegatedCredential.
 	GetDelegatedCredential func(*ClientHelloInfo) (*DelegatedCredential, crypto.PrivateKey, error)
 
 	// mutex protects sessionTicketKeys and autoSessionTicketKeys.

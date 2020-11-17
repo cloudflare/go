@@ -658,6 +658,7 @@ func (hs *serverHandshakeStateTLS13) sendServerCertificate() error {
 	}
 	return nil
 }
+
 func (hs *serverHandshakeStateTLS13) sendCertificateVerify() error {
 	c := hs.c
 	if hs.usingPSK {
@@ -665,9 +666,17 @@ func (hs *serverHandshakeStateTLS13) sendCertificateVerify() error {
 	}
 	certVerifyMsg := new(certificateVerifyMsg)
 	certVerifyMsg.hasSignatureAlgorithm = true
-	certVerifyMsg.signatureAlgorithm = hs.sigAlg
+	if hs.clientHello.delegatedCredentialSupported && len(hs.cert.DelegatedCredential) > 0 {
+		dCred, err := UnmarshalDelegatedCredential(hs.cert.DelegatedCredential)
+		if err != nil {
+			return errors.New("tls: failed: " + err.Error())
+		}
+		certVerifyMsg.signatureAlgorithm = dCred.Cred.expCertVerfAlgo
+	} else {
+		certVerifyMsg.signatureAlgorithm = hs.sigAlg
+	}
 
-	sigType, sigHash, err := typeAndHashFromSignatureScheme(hs.sigAlg)
+	sigType, sigHash, err := typeAndHashFromSignatureScheme(certVerifyMsg.signatureAlgorithm)
 	if err != nil {
 		return c.sendAlert(alertInternalError)
 	}
