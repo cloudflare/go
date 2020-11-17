@@ -72,14 +72,15 @@ func Keypair(rand io.Reader, kemID KemID) (*PublicKey, *PrivateKey, error) {
 	switch kemID {
 	case Kyber512:
 		scheme := circlKemSchemes.ByName("Kyber512")
-		publicKey, secretKey, err := scheme.GenerateKey()
-		if err != nil {
+		seed := make([]byte, scheme.SeedSize())
+		if _, err := io.ReadFull(rand, seed); err != nil {
 			return nil, nil, err
 		}
+		publicKey, secretKey := scheme.DeriveKey(seed)
 		pk.PublicKey, _ = publicKey.MarshalBinary()
 		sk.PrivateKey, _ = secretKey.MarshalBinary()
 
-		return pk, sk, err
+		return pk, sk, nil
 	case Kem25519:
 		privateKey := make([]byte, curve25519.ScalarSize)
 		if _, err := io.ReadFull(rand, privateKey); err != nil {
@@ -121,7 +122,11 @@ func Encapsulate(rand io.Reader, pk *PublicKey) ([]byte, []byte, error) {
 		if err != nil {
 			return nil, nil, err
 		}
-		ct, ss := scheme.Encapsulate(pub)
+		seed := make([]byte, scheme.EncapsulationSeedSize())
+		if _, err := io.ReadFull(rand, seed); err != nil {
+			return nil, nil, err
+		}
+		ct, ss := scheme.EncapsulateDeterministically(pub, seed)
 		return ss, ct, nil
 	case Kem25519:
 		privateKey := make([]byte, curve25519.ScalarSize)

@@ -334,7 +334,7 @@ func testServerGetCertificate(ch *ClientHelloInfo) (*Certificate, error) {
 // server, and that the server has a Delegated Credential.
 func testServerGetDelegatedCredential(ch *ClientHelloInfo) (*DelegatedCredential, crypto.PrivateKey, error) {
 	schemeOk := false
-	for _, scheme := range ch.SignatureSchemes {
+	for _, scheme := range ch.SignatureSchemesDC {
 		schemeOk = schemeOk || (scheme == dcTestDCScheme)
 	}
 

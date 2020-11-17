@@ -134,7 +134,7 @@ func (cred *Credential) marshalPublicKeyInfo() ([]byte, error) {
 		ECDSAWithP384AndSHA384,
 		ECDSAWithP521AndSHA512,
 		Ed25519,
-		KEMTLSwithSIKEp434:
+		KEMTLSwithSIKEp434, KEMTLSwithKyber512:
 		serPub, err := x509.MarshalPKIXPublicKey(cred.PublicKey)
 		if err != nil {
 			return nil, err
@@ -172,6 +172,8 @@ func unmarshalPublicKeyInfo(serialized []byte) (crypto.PublicKey, SignatureSchem
 		switch pk.Id {
 		case kem.SIKEp434:
 			return pk, KEMTLSwithSIKEp434, nil
+		case kem.Kyber512:
+			return pk, KEMTLSwithKyber512, nil
 		}
 		return nil, 0, errors.New("Unsupported KEM")
 	default:
@@ -395,6 +397,11 @@ func NewDelegatedCredential(cert *Certificate, pubAlgo SignatureScheme, validTim
 		}
 	case KEMTLSwithSIKEp434:
 		pubK, privK, err = kem.Keypair(rand.Reader, kem.SIKEp434)
+		if err != nil {
+			return nil, nil, err
+		}
+	case KEMTLSwithKyber512:
+		pubK, privK, err = kem.Keypair(rand.Reader, kem.Kyber512)
 		if err != nil {
 			return nil, nil, err
 		}

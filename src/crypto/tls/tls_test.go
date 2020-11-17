@@ -1472,32 +1472,38 @@ func TestPKCS1OnlyCert(t *testing.T) {
 }
 
 func TestKEMEphemeralTLS13(t *testing.T) {
-	clientConfig := testConfig.Clone()
-	clientConfig.CurvePreferences = []CurveID{SIKEp434}
-	clientConfig.MinVersion = VersionTLS13
-	clientConfig.MaxVersion = VersionTLS13
-	serverConfig := testConfig.Clone()
-	if _, _, err := testHandshake(t, clientConfig, serverConfig); err != nil {
-		t.Fatal("Failed to connect with KEM-only client")
+	tests := []CurveID{
+		SIKEp434,
+		//Kyber512,
 	}
-	clientConfig = testConfig.Clone()
-	serverConfig = testConfig.Clone()
-	serverConfig.MinVersion = VersionTLS13
-	serverConfig.MaxVersion = VersionTLS13
-	serverConfig.CurvePreferences = []CurveID{SIKEp434}
-	if _, _, err := testHandshake(t, clientConfig, serverConfig); err != nil {
-		t.Fatal("Failed to connect with KEM-only server")
-	}
-	clientConfig.CurvePreferences = []CurveID{X25519}
-	if _, _, err := testHandshake(t, clientConfig, serverConfig); err == nil {
-		t.Fatal("Still connected with KEM-only server and no-KEM Client")
-	}
+	for _, kem := range tests {
+		clientConfig := testConfig.Clone()
+		clientConfig.CurvePreferences = []CurveID{kem}
+		clientConfig.MinVersion = VersionTLS13
+		clientConfig.MaxVersion = VersionTLS13
+		serverConfig := testConfig.Clone()
+		if _, _, err := testHandshake(t, clientConfig, serverConfig); err != nil {
+			t.Fatalf("Failed to connect with KEM-only client with kem %d", kem)
+		}
+		clientConfig = testConfig.Clone()
+		serverConfig = testConfig.Clone()
+		serverConfig.MinVersion = VersionTLS13
+		serverConfig.MaxVersion = VersionTLS13
+		serverConfig.CurvePreferences = []CurveID{kem}
+		if _, _, err := testHandshake(t, clientConfig, serverConfig); err != nil {
+			t.Fatalf("Failed to connect with KEM-only server with kem %d", kem)
+		}
+		clientConfig.CurvePreferences = []CurveID{X25519}
+		if _, _, err := testHandshake(t, clientConfig, serverConfig); err == nil {
+			t.Fatal("Still connected with KEM-only server and no-KEM Client")
+		}
 
-	clientConfig = testConfig.Clone()
-	serverConfig = testConfig.Clone()
-	clientConfig.CurvePreferences = []CurveID{SIKEp434}
-	clientConfig.MaxVersion = VersionTLS12
-	if _, _, err := testHandshake(t, clientConfig, serverConfig); err == nil {
-		t.Fatal("Still connected with KEM-only server and TLS 1.2 Client")
+		clientConfig = testConfig.Clone()
+		serverConfig = testConfig.Clone()
+		clientConfig.CurvePreferences = []CurveID{kem}
+		clientConfig.MaxVersion = VersionTLS12
+		if _, _, err := testHandshake(t, clientConfig, serverConfig); err == nil {
+			t.Fatal("Still connected with KEM-only server and TLS 1.2 Client")
+		}
 	}
 }

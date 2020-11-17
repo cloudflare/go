@@ -121,7 +121,6 @@ func (c *Conn) makeClientHello() (*clientHelloMsg, []clientKeysharePrivate, erro
 		hello.supportedSignatureAlgorithms = supportedSignatureAlgorithms
 	}
 
-	// TODO(Thom): Add KEM public keys
 	var params ecdheParameters
 	var keyShares []keyShare
 	var keySharePrivates []clientKeysharePrivate

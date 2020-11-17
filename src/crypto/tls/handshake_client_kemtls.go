@@ -44,9 +44,9 @@ func (hs *clientHandshakeStateTLS13) handshakeKEMTLS() error {
 func (hs *clientHandshakeStateTLS13) sendClientKemCiphertext() error {
 	c := hs.c
 
-	pk := c.verifiedDC.Cred.PublicKey.(kem.PublicKey)
+	pk := c.verifiedDC.Cred.PublicKey.(*kem.PublicKey)
 
-	ss, ct, err := kem.Encapsulate(hs.c.config.Rand, &pk)
+	ss, ct, err := kem.Encapsulate(hs.c.config.Rand, pk)
 	if err != nil {
 		return err
 	}

@@ -155,7 +155,7 @@ type clientTest struct {
 	sendKeyUpdate bool
 }
 
-var serverCommand = []string{"openssl", "s_server", "-no_ticket", "-num_tickets", "0"}
+var serverCommand = []string{"/home/thom/vscode/openssl/apps/openssl", "s_server", "-no_ticket", "-num_tickets", "0"}
 
 // connFromCommand starts the reference server process, connects to it and
 // returns a recordingConn for the connection. The stdin return value is an
