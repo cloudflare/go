@@ -403,7 +403,6 @@ func testConnWithDC(t *testing.T, clientMsg, serverMsg string, clientConfig, ser
 
 // Test the handshake with the delegated credential extension.
 func TestDCHandshake(t *testing.T) {
-	initialize()
 	serverMsg := "hello, client"
 	clientMsg := "hello, server"
 
