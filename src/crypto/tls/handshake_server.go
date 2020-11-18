@@ -5,7 +5,7 @@
 package tls
 
 import (
-	circlSign "circl/sign"
+	circlSign "github.com/cloudflare/circl/sign"
 
 	"crypto"
 	"crypto/ecdsa"

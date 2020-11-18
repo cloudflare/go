@@ -2,7 +2,6 @@ package hpke
 
 import (
 	"bytes"
-	"circl/dh/sidh"
 	"crypto"
 	"crypto/aes"
 	"crypto/cipher"
@@ -17,6 +16,8 @@ import (
 
 	_ "crypto/sha256"
 	_ "crypto/sha512"
+
+	"github.com/cloudflare/circl/dh/sidh"
 
 	"golang.org/x/crypto/chacha20poly1305"
 	"golang.org/x/crypto/curve25519"

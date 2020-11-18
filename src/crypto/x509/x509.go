@@ -31,8 +31,8 @@ import (
 	"time"
 	"unicode/utf8"
 
-	circlPki "circl/pki"
-	circlSign "circl/sign"
+	circlPki "github.com/cloudflare/circl/pki"
+	circlSign "github.com/cloudflare/circl/sign"
 
 	"golang.org/x/crypto/cryptobyte"
 	cryptobyte_asn1 "golang.org/x/crypto/cryptobyte/asn1"

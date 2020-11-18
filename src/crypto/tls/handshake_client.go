@@ -20,7 +20,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	circlSign "circl/sign"
+	circlSign "github.com/cloudflare/circl/sign"
 )
 
 type clientHandshakeState struct {

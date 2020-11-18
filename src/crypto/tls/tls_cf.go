@@ -1,10 +1,10 @@
 package tls
 
 import (
-	circlPki "circl/pki"
-	circlSign "circl/sign"
+	circlPki "github.com/cloudflare/circl/pki"
+	circlSign "github.com/cloudflare/circl/sign"
 
-	"circl/sign/eddilithium3"
+	"github.com/cloudflare/circl/sign/eddilithium3"
 )
 
 // To add a signature scheme from Circl
@@ -18,7 +18,7 @@ var circlSchemes = [...]struct {
 	sigType uint8
 	scheme  circlSign.Scheme
 }{
-	{signatureEdDilithium3, eddilithium3.Scheme},
+	{signatureEdDilithium3, eddilithium3.Scheme()},
 }
 
 func circlSchemeBySigType(sigType uint8) circlSign.Scheme {

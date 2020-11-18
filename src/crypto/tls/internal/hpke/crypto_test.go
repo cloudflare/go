@@ -2,11 +2,12 @@ package hpke
 
 import (
 	"bytes"
-	"circl/dh/sidh"
 	"crypto"
 	"crypto/elliptic"
 	"crypto/rand"
 	"testing"
+
+	"github.com/cloudflare/circl/dh/sidh"
 )
 
 func randomBytes(size int) []byte {

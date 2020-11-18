@@ -10,7 +10,6 @@
 package main
 
 import (
-	circlSchemes "circl/sign/schemes"
 	"crypto/ecdsa"
 	"crypto/ed25519"
 	"crypto/elliptic"
@@ -26,6 +25,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	circlSchemes "github.com/cloudflare/circl/sign/schemes"
 )
 
 var (

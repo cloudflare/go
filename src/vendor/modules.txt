@@ -1,3 +1,31 @@
+# github.com/cloudflare/circl v1.0.1-0.20201123155603-cd1efefc7f5f
+## explicit
+github.com/cloudflare/circl/dh/sidh
+github.com/cloudflare/circl/dh/sidh/internal/common
+github.com/cloudflare/circl/dh/sidh/internal/p434
+github.com/cloudflare/circl/dh/sidh/internal/p503
+github.com/cloudflare/circl/dh/sidh/internal/p751
+github.com/cloudflare/circl/ecc/goldilocks
+github.com/cloudflare/circl/internal/conv
+github.com/cloudflare/circl/internal/sha3
+github.com/cloudflare/circl/math
+github.com/cloudflare/circl/math/fp25519
+github.com/cloudflare/circl/math/fp448
+github.com/cloudflare/circl/math/mlsbset
+github.com/cloudflare/circl/pki
+github.com/cloudflare/circl/sign
+github.com/cloudflare/circl/sign/dilithium/internal/common
+github.com/cloudflare/circl/sign/dilithium/internal/common/params
+github.com/cloudflare/circl/sign/dilithium/mode3
+github.com/cloudflare/circl/sign/dilithium/mode3/internal
+github.com/cloudflare/circl/sign/dilithium/mode4
+github.com/cloudflare/circl/sign/dilithium/mode4/internal
+github.com/cloudflare/circl/sign/ed25519
+github.com/cloudflare/circl/sign/ed448
+github.com/cloudflare/circl/sign/eddilithium3
+github.com/cloudflare/circl/sign/eddilithium4
+github.com/cloudflare/circl/sign/schemes
+github.com/cloudflare/circl/simd/keccakf1600
 # golang.org/x/crypto v0.0.0-20200622213623-75b288015ac9
 ## explicit
 golang.org/x/crypto/chacha20
@@ -18,8 +46,7 @@ golang.org/x/net/idna
 golang.org/x/net/lif
 golang.org/x/net/nettest
 golang.org/x/net/route
-# golang.org/x/sys v0.0.0-20200501145240-bc7a7d42d5c3
-## explicit
+# golang.org/x/sys v0.0.0-20200602225109-6fdc65e7d980
 golang.org/x/sys/cpu
 # golang.org/x/text v0.3.3-0.20200430171850-afb9336c4530
 ## explicit

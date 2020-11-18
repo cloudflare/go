@@ -13,8 +13,8 @@ import (
 	"errors"
 	"fmt"
 
-	circlPki "circl/pki"
-	circlSign "circl/sign"
+	circlPki "github.com/cloudflare/circl/pki"
+	circlSign "github.com/cloudflare/circl/sign"
 )
 
 // pkcs8 reflects an ASN.1, PKCS #8 PrivateKey. See

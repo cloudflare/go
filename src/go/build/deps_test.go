@@ -383,16 +383,46 @@ var depsRules = `
 
 	CGO, net !< CRYPTO-MATH;
 
+	# CIRCL-X509 ...TODO>
+	CRYPTO-MATH, NET, encoding/hex, encoding/pem
+	< crypto/x509/pkix
+	< crypto/x509/internal/macos
+	< github.com/cloudflare/circl/sign
+	< github.com/cloudflare/circl/dh/sidh/internal/common
+	< github.com/cloudflare/circl/dh/sidh/internal/p434
+	< github.com/cloudflare/circl/dh/sidh/internal/p503
+	< github.com/cloudflare/circl/dh/sidh/internal/p751
+	< github.com/cloudflare/circl/internal/sha3
+	< github.com/cloudflare/circl/dh/sidh
+	< github.com/cloudflare/circl/internal/conv
+	< github.com/cloudflare/circl/math
+	< github.com/cloudflare/circl/math/fp448
+	< github.com/cloudflare/circl/math/mlsbset
+	< github.com/cloudflare/circl/ecc/goldilocks
+	< github.com/cloudflare/circl/math/fp25519
+	< github.com/cloudflare/circl/sign/dilithium/internal/common/params
+	< github.com/cloudflare/circl/sign/dilithium/internal/common
+	< github.com/cloudflare/circl/simd/keccakf1600
+	< github.com/cloudflare/circl/sign/dilithium/mode3/internal
+	< github.com/cloudflare/circl/sign/dilithium/mode3
+	< github.com/cloudflare/circl/sign/dilithium/mode4/internal
+	< github.com/cloudflare/circl/sign/dilithium/mode4
+	< github.com/cloudflare/circl/sign/ed25519
+	< github.com/cloudflare/circl/sign/ed448
+	< github.com/cloudflare/circl/sign/eddilithium3
+	< github.com/cloudflare/circl/sign/eddilithium4
+	< github.com/cloudflare/circl/sign/schemes
+	< github.com/cloudflare/circl/pki
+	< crypto/x509
+	< CIRCL-X509;
+
 	# TLS, Prince of Dependencies.
-	CGO, CRYPTO-MATH, NET, container/list, encoding/hex, encoding/pem
+	CGO, CIRCL-X509, NET, container/list, encoding/hex, encoding/pem
 	< golang.org/x/crypto/internal/subtle
 	< golang.org/x/crypto/chacha20
 	< golang.org/x/crypto/poly1305
 	< golang.org/x/crypto/chacha20poly1305
 	< golang.org/x/crypto/hkdf
-	< crypto/x509/internal/macos
-	< crypto/x509/pkix
-	< crypto/x509
 	< crypto/tls/internal/syntax # TOOD(cjpatton): Remove this dependency once HPKE is implemented in CIRCL
 	< crypto/tls/internal/hpke   # TODO(cjpatton): Remove this dependency once HPKE is implemented in CIRCL
 	< crypto/tls;
@@ -550,11 +580,11 @@ func TestDependencies(t *testing.T) {
 		var bad []string
 		for _, imp := range imports {
 			sawImport[pkg][imp] = true
-			if !ok[imp] && !strings.HasPrefix(imp, "circl/") {
+			if !ok[imp] {
 				bad = append(bad, imp)
 			}
 		}
-		if bad != nil && !strings.HasPrefix(pkg, "circl") {
+		if bad != nil {
 			t.Errorf("unexpected dependency: %s imports %v", pkg, bad)
 		}
 	}
@@ -579,7 +609,8 @@ var buildIgnore = []byte("\n// +build ignore")
 
 func findImports(pkg string) ([]string, error) {
 	vpkg := pkg
-	if strings.HasPrefix(pkg, "golang.org") {
+	if strings.HasPrefix(pkg, "golang.org") ||
+		strings.HasPrefix(pkg, "github.com") {
 		vpkg = "vendor/" + pkg
 	}
 	dir := filepath.Join(Default.GOROOT, "src", vpkg)
