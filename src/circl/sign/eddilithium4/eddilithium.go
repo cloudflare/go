@@ -7,7 +7,7 @@ import (
 	"errors"
 	"io"
 
-	"circl/internal/shake"
+	"circl/internal/sha3"
 	"circl/sign"
 	"circl/sign/dilithium/mode4"
 	"circl/sign/ed448"
@@ -60,7 +60,7 @@ func NewKeyFromSeed(seed *[SeedSize]byte) (*PublicKey, *PrivateKey) {
 	var seed1 [32]byte
 	var seed2 [ed448.SeedSize]byte
 
-	h := shake.NewShake256()
+	h := sha3.NewShake256()
 	_, _ = h.Write(seed[:])
 	_, _ = h.Read(seed1[:])
 	_, _ = h.Read(seed2[:])
@@ -181,8 +181,8 @@ func (sk *PrivateKey) UnmarshalBinary(data []byte) error {
 	return nil
 }
 
-func (sk *PrivateKey) Scheme() sign.Scheme { return Scheme }
-func (pk *PublicKey) Scheme() sign.Scheme  { return Scheme }
+func (sk *PrivateKey) Scheme() sign.Scheme { return sch }
+func (pk *PublicKey) Scheme() sign.Scheme  { return sch }
 
 func (sk *PrivateKey) Equal(other crypto.PrivateKey) bool {
 	castOther, ok := other.(*PrivateKey)

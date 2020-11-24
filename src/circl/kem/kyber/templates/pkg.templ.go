@@ -5,17 +5,17 @@
 // Code generated from pkg.templ.go. DO NOT EDIT.
 
 // {{.Pkg}} implements the IND-CCA2 secure key encapsulation mechanism
-// {{.Name}}.CCAKEM as submitted to round2 of the NIST PQC competition and
+// {{.Name}}.CCAKEM as submitted to round 3 of the NIST PQC competition and
 // described in
 //
-// https://pq-crystals.org/kyber/data/kyber-specification-round2.pdf
+// https://pq-crystals.org/kyber/data/kyber-specification-round3.pdf
 package {{.Pkg}}
 
 import (
 	"circl/kem"
 	cpapke "circl/pke/kyber/{{.Pkg}}"
 
-	"golang.org/x/crypto/sha3"
+	"circl/internal/sha3"
 
 	"bytes"
 	cryptoRand "crypto/rand"
@@ -267,7 +267,10 @@ func (pk *PublicKey) Unpack(buf []byte) {
 
 type scheme struct{}
 
-var Scheme kem.Scheme = &scheme{}
+var sch kem.Scheme = &scheme{}
+
+// Scheme returns a KEM interface.
+func Scheme() kem.Scheme { return sch }
 
 func (*scheme) Name() string               { return "{{ .Name }}" }
 func (*scheme) PublicKeySize() int         { return PublicKeySize }
@@ -277,8 +280,8 @@ func (*scheme) SharedKeySize() int         { return SharedKeySize }
 func (*scheme) CiphertextSize() int        { return CiphertextSize }
 func (*scheme) EncapsulationSeedSize() int { return EncapsulationSeedSize }
 
-func (sk *PrivateKey) Scheme() kem.Scheme { return Scheme }
-func (pk *PublicKey) Scheme() kem.Scheme  { return Scheme }
+func (sk *PrivateKey) Scheme() kem.Scheme { return sch }
+func (pk *PublicKey) Scheme() kem.Scheme  { return sch }
 
 func (sk *PrivateKey) MarshalBinary() ([]byte, error) {
 	var ret [PrivateKeySize]byte
@@ -335,22 +338,22 @@ func (*scheme) DeriveKey(seed []byte) (kem.PublicKey, kem.PrivateKey) {
 	return NewKeyFromSeed(seed[:])
 }
 
-func (*scheme) Encapsulate(pk kem.PublicKey) (ct []byte, ss []byte) {
+func (*scheme) Encapsulate(pk kem.PublicKey) (ct, ss []byte, err error) {
 	ct = make([]byte, CiphertextSize)
 	ss = make([]byte, SharedKeySize)
 
 	pub, ok := pk.(*PublicKey)
 	if !ok {
-		panic(kem.ErrTypeMismatch)
+		return nil, nil, kem.ErrTypeMismatch
 	}
 	pub.EncapsulateTo(ct, ss, nil)
 	return
 }
 
 func (*scheme) EncapsulateDeterministically(pk kem.PublicKey, seed []byte) (
-	ct []byte, ss []byte) {
+	ct, ss []byte, err error) {
 	if len(seed) != EncapsulationSeedSize {
-		panic(kem.ErrSeedSize)
+		return nil, nil, kem.ErrSeedSize
 	}
 
 	ct = make([]byte, CiphertextSize)
@@ -358,24 +361,24 @@ func (*scheme) EncapsulateDeterministically(pk kem.PublicKey, seed []byte) (
 
 	pub, ok := pk.(*PublicKey)
 	if !ok {
-		panic(kem.ErrTypeMismatch)
+		return nil, nil, kem.ErrTypeMismatch
 	}
 	pub.EncapsulateTo(ct, ss, seed)
 	return
 }
 
-func (*scheme) Decapsulate(sk kem.PrivateKey, ct []byte) []byte {
+func (*scheme) Decapsulate(sk kem.PrivateKey, ct []byte) ([]byte, error) {
 	if len(ct) != CiphertextSize {
-		panic(kem.ErrCiphertextSize)
+		return nil, kem.ErrCiphertextSize
 	}
 
 	priv, ok := sk.(*PrivateKey)
 	if !ok {
-		panic(kem.ErrTypeMismatch)
+		return nil, kem.ErrTypeMismatch
 	}
 	ss := make([]byte, SharedKeySize)
 	priv.DecapsulateTo(ss, ct)
-	return ss
+	return ss, nil
 }
 
 func (*scheme) UnmarshalBinaryPublicKey(buf []byte) (kem.PublicKey, error) {
