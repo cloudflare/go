@@ -1,8 +1,7 @@
 package internal
 
 import (
-	"golang.org/x/crypto/sha3"
-
+	"circl/internal/sha3"
 	"circl/pke/kyber/internal/common"
 )
 
@@ -65,11 +64,11 @@ func NewKeyFromSeed(seed []byte) (*PublicKey, *PrivateKey) {
 	pk.aT.Derive(&pk.rho, false) // Expand ρ to matrix A; we'll transpose later
 
 	var eh Vec
-	sk.sh.DeriveNoise(sigma, 0) // Sample secret vector s
+	sk.sh.DeriveNoise(sigma, 0, Eta1) // Sample secret vector s
 	sk.sh.NTT()
 	sk.sh.Normalize()
 
-	eh.DeriveNoise(sigma, K) // Sample blind e
+	eh.DeriveNoise(sigma, K, Eta1) // Sample blind e
 	eh.NTT()
 
 	// Next, we compute t = A s + e.
@@ -104,6 +103,7 @@ func (sk *PrivateKey) DecryptTo(pt, ct []byte) {
 	// Compute m = v - <s, u>
 	u.NTT()
 	PolyDotHat(&m, &sk.sh, &u)
+	m.BarrettReduce()
 	m.InvNTT()
 	m.Sub(&v, &m)
 	m.Normalize()
@@ -122,12 +122,12 @@ func (pk *PublicKey) EncryptTo(ct, seed, pt []byte) {
 	var e2, v, m common.Poly
 
 	// Sample r, e₁ and e₂ from B_η
-	rh.DeriveNoise(seed, 0)
+	rh.DeriveNoise(seed, 0, Eta1)
 	rh.NTT()
 	rh.BarrettReduce()
 
-	e1.DeriveNoise(seed, K)
-	e2.DeriveNoise(seed, 2*K)
+	e1.DeriveNoise(seed, K, common.Eta2)
+	e2.DeriveNoise(seed, 2*K, common.Eta2)
 
 	// Next we compute u = Aᵀ r + e₁.  First Aᵀ.
 	for i := 0; i < K; i++ {
@@ -137,8 +137,6 @@ func (pk *PublicKey) EncryptTo(ct, seed, pt []byte) {
 		PolyDotHat(&u[i], &pk.aT[i], &rh)
 	}
 
-	// XXX InvNTT actually works with inputs only bounded by ~3q so we might
-	//     be able to remove this reduction for some K.
 	u.BarrettReduce()
 
 	// Aᵀ and r were not in Montgomery form, so the Montgomery
