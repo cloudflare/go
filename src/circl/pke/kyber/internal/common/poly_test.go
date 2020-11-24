@@ -1,10 +1,17 @@
 package common
 
 import (
-	"crypto/rand"
+	cryptoRand "crypto/rand"
 	"fmt"
+	mathRand "math/rand"
 	"testing"
 )
+
+func (p *Poly) RandAbsLe9Q() {
+	for i := 0; i < N; i++ {
+		p[i] = int16(mathRand.Intn(18*int(Q) - 9*int(Q)))
+	}
+}
 
 // Returns x mod^± q
 func sModQ(x int16) int16 {
@@ -15,18 +22,11 @@ func sModQ(x int16) int16 {
 	return x
 }
 
-func BenchmarkMulhat(b *testing.B) {
-	var a Poly
-	for i := 0; i < b.N; i++ {
-		a.MulHat(&a, &a)
-	}
-}
-
 func TestDecompressMessage(t *testing.T) {
 	var m, m2 [PlaintextSize]byte
 	var p Poly
 	for i := 0; i < 1000; i++ {
-		_, _ = rand.Read(m[:])
+		_, _ = cryptoRand.Read(m[:])
 		p.DecompressMessage(m[:])
 		p.CompressMessageTo(m2[:])
 		if m != m2 {
@@ -36,7 +36,7 @@ func TestDecompressMessage(t *testing.T) {
 }
 
 func TestCompress(t *testing.T) {
-	for _, d := range []int{3, 4, 5, 10, 11} {
+	for _, d := range []int{4, 5, 10, 11} {
 		d := d
 		t.Run(fmt.Sprintf("d=%d", d), func(t *testing.T) {
 			var p, q Poly
@@ -95,6 +95,7 @@ func TestMulHat(t *testing.T) {
 		ah.NTT()
 		bh.NTT()
 		ph.MulHat(&ah, &bh)
+		ph.BarrettReduce()
 		ph.InvNTT()
 
 		for i := 0; i < N; i++ {
@@ -121,6 +122,148 @@ func TestMulHat(t *testing.T) {
 
 		if p != ph {
 			t.Fatalf("%v\n%v\n%v\n%v", a, b, p, ph)
+		}
+	}
+}
+
+func TestAddAgainstGeneric(t *testing.T) {
+	for k := 0; k < 1000; k++ {
+		var p1, p2, a, b Poly
+		a.RandAbsLeQ()
+		b.RandAbsLeQ()
+		p1.Add(&a, &b)
+		p2.addGeneric(&a, &b)
+		if p1 != p2 {
+			t.Fatalf("Add(%v, %v) = \n%v \n!= %v", a, b, p1, p2)
+		}
+	}
+}
+
+func BenchmarkAdd(b *testing.B) {
+	var p Poly
+	for i := 0; i < b.N; i++ {
+		p.Add(&p, &p)
+	}
+}
+
+func BenchmarkAddGeneric(b *testing.B) {
+	var p Poly
+	for i := 0; i < b.N; i++ {
+		p.addGeneric(&p, &p)
+	}
+}
+
+func TestSubAgainstGeneric(t *testing.T) {
+	for k := 0; k < 1000; k++ {
+		var p1, p2, a, b Poly
+		a.RandAbsLeQ()
+		b.RandAbsLeQ()
+		p1.Sub(&a, &b)
+		p2.subGeneric(&a, &b)
+		if p1 != p2 {
+			t.Fatalf("Sub(%v, %v) = \n%v \n!= %v", a, b, p1, p2)
+		}
+	}
+}
+
+func BenchmarkSub(b *testing.B) {
+	var p Poly
+	for i := 0; i < b.N; i++ {
+		p.Sub(&p, &p)
+	}
+}
+
+func BenchmarkSubGeneric(b *testing.B) {
+	var p Poly
+	for i := 0; i < b.N; i++ {
+		p.subGeneric(&p, &p)
+	}
+}
+
+func TestMulHatAgainstGeneric(t *testing.T) {
+	for k := 0; k < 1000; k++ {
+		var p1, p2, a, b Poly
+		a.RandAbsLeQ()
+		b.RandAbsLeQ()
+		a2 := a
+		b2 := b
+		a2.Tangle()
+		b2.Tangle()
+		p1.MulHat(&a2, &b2)
+		p1.Detangle()
+		p2.mulHatGeneric(&a, &b)
+		if p1 != p2 {
+			t.Fatalf("MulHat(%v, %v) = \n%v \n!= %v", a, b, p1, p2)
+		}
+	}
+}
+
+func BenchmarkMulHat(b *testing.B) {
+	var p Poly
+	for i := 0; i < b.N; i++ {
+		p.MulHat(&p, &p)
+	}
+}
+
+func BenchmarkMulHatGeneric(b *testing.B) {
+	var p Poly
+	for i := 0; i < b.N; i++ {
+		p.mulHatGeneric(&p, &p)
+	}
+}
+
+func BenchmarkBarrettReduce(b *testing.B) {
+	var p Poly
+	for i := 0; i < b.N; i++ {
+		p.BarrettReduce()
+	}
+}
+
+func BenchmarkBarrettReduceGeneric(b *testing.B) {
+	var p Poly
+	for i := 0; i < b.N; i++ {
+		p.barrettReduceGeneric()
+	}
+}
+
+func TestBarrettReduceAgainstGeneric(t *testing.T) {
+	for k := 0; k < 1000; k++ {
+		var p1, p2, a Poly
+		a.RandAbsLe9Q()
+		p1 = a
+		p2 = a
+		p1.BarrettReduce()
+		p2.barrettReduceGeneric()
+		if p1 != p2 {
+			t.Fatalf("BarrettReduce(%v) = \n%v \n!= %v", a, p1, p2)
+		}
+	}
+}
+
+func BenchmarkNormalize(b *testing.B) {
+	var p Poly
+	for i := 0; i < b.N; i++ {
+		p.Normalize()
+	}
+}
+
+func BenchmarkNormalizeGeneric(b *testing.B) {
+	var p Poly
+	for i := 0; i < b.N; i++ {
+		p.barrettReduceGeneric()
+	}
+}
+
+func TestNormalizeAgainstGeneric(t *testing.T) {
+	for k := 0; k < 1000; k++ {
+		var p1, p2, a Poly
+		a.RandAbsLe9Q()
+		p1 = a
+		p2 = a
+		p1.Normalize()
+		p2.normalizeGeneric()
+		if p1 != p2 {
+			t.Fatalf("Normalize(%v) = \n%v \n!= %v", a, p1, p2)
 		}
 	}
 }

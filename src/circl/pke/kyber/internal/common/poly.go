@@ -3,18 +3,21 @@ package common
 // An element of our base ring R which are polynomials over ℤ_q
 // modulo the equation Xᴺ = -1, where q=3329 and N=256.
 //
+// This type is also used to store NTT-transformed polynomials,
+// see Poly.NTT().
+//
 // Coefficients aren't always reduced.  See Normalize().
 type Poly [N]int16
 
 // Sets p to a + b.  Does not normalize coefficients.
-func (p *Poly) Add(a, b *Poly) {
+func (p *Poly) addGeneric(a, b *Poly) {
 	for i := 0; i < N; i++ {
 		p[i] = a[i] + b[i]
 	}
 }
 
 // Sets p to a - b.  Does not normalize coefficients.
-func (p *Poly) Sub(a, b *Poly) {
+func (p *Poly) subGeneric(a, b *Poly) {
 	for i := 0; i < N; i++ {
 		p[i] = a[i] - b[i]
 	}
@@ -23,7 +26,7 @@ func (p *Poly) Sub(a, b *Poly) {
 // Almost normalizes coefficients.
 //
 // Ensures each coefficient is in {0, …, q}.
-func (p *Poly) BarrettReduce() {
+func (p *Poly) barrettReduceGeneric() {
 	for i := 0; i < N; i++ {
 		p[i] = barrettReduce(p[i])
 	}
@@ -32,7 +35,7 @@ func (p *Poly) BarrettReduce() {
 // Normalizes coefficients.
 //
 // Ensures each coefficient is in {0, …, q-1}.
-func (p *Poly) Normalize() {
+func (p *Poly) normalizeGeneric() {
 	for i := 0; i < N; i++ {
 		p[i] = csubq(barrettReduce(p[i]))
 	}
@@ -53,8 +56,11 @@ func (p *Poly) ToMont() {
 // That is: InvNTT(p) = InvNTT(a) * InvNTT(b).  Assumes a and b are in
 // Montgomery form.  Products between coefficients of a and b must be strictly
 // bounded in absolute value by 2¹⁵q.  p will be in Montgomery form and
-// bounded in absolute value by q.
-func (p *Poly) MulHat(a, b *Poly) {
+// bounded in absolute value by 2q.
+//
+// Requires a and b to be in "tangled" order, see Tangle().  p will be in
+// tangled order as well.
+func (p *Poly) mulHatGeneric(a, b *Poly) {
 	// Recall from the discussion in NTT(), that a transformed polynomial is
 	// an element of ℤ_q[x]/(x²-ζ) x … x  ℤ_q[x]/(x²+ζ¹²⁷);
 	// that is: 128 degree-one polynomials instead of simply 256 elements
@@ -62,7 +68,7 @@ func (p *Poly) MulHat(a, b *Poly) {
 	// we multiply the 128 pairs of degree-one polynomials modulo the
 	// right equation:
 	//
-	//  (a₁ + a_2x)(b₁ + b_2x) = a_1b_1 + a_2b_2ζ' + (a_1b_2 + a_2b_1)x,
+	//  (a₁ + a₂x)(b₁ + b₂x) = a₁b₁ + a₂b₂ζ' + (a₁b₂ + a₂b₁)x,
 	//
 	// where ζ' is the appropriate power of ζ.
 
@@ -82,7 +88,7 @@ func (p *Poly) MulHat(a, b *Poly) {
 		p[i+1] = p1
 
 		p2 := montReduce(int32(a[i+3]) * int32(b[i+3]))
-		p2 = montReduce(-int32(p2) * zeta)
+		p2 = -montReduce(int32(p2) * zeta)
 		p2 += montReduce(int32(a[i+2]) * int32(b[i+2]))
 
 		p3 := montReduce(int32(a[i+2]) * int32(b[i+3]))
@@ -95,18 +101,23 @@ func (p *Poly) MulHat(a, b *Poly) {
 
 // Packs p into buf.  buf should be of length PolySize.
 //
-// Assumes p is normalized (and not just Barrett reduced.)
+// Assumes p is normalized (and not just Barrett reduced) and "tangled",
+// see Tangle().
 func (p *Poly) Pack(buf []byte) {
+	q := *p
+	q.Detangle()
 	for i := 0; i < 128; i++ {
-		t0 := p[2*i]
-		t1 := p[2*i+1]
+		t0 := q[2*i]
+		t1 := q[2*i+1]
 		buf[3*i] = byte(t0)
 		buf[3*i+1] = byte(t0>>8) | byte(t1<<4)
 		buf[3*i+2] = byte(t1 >> 4)
 	}
 }
 
-// Unpacks p from buf.  buf should be of length PolySize.
+// Unpacks p from buf.
+//
+// buf should be of length PolySize.  p will be "tangled", see Detangle().
 //
 // p will not be normalized; instead 0 ≤ p[i] < 4096.
 func (p *Poly) Unpack(buf []byte) {
@@ -114,6 +125,7 @@ func (p *Poly) Unpack(buf []byte) {
 		p[2*i] = int16(buf[3*i]) | ((int16(buf[3*i+1]) << 8) & 0xfff)
 		p[2*i+1] = int16(buf[3*i+1]>>4) | (int16(buf[3*i+2]) << 4)
 	}
+	p.Tangle()
 }
 
 // Set p to Decompress_q(m, 1).
@@ -161,26 +173,6 @@ func (p *Poly) Decompress(m []byte, d int) {
 	//                    = ⌊(qx + 2ᵈ⁻¹)/2ᵈ⌋
 	//                    = (qx + (1<<(d-1))) >> d
 	switch d {
-	case 3:
-		var t [8]uint16
-		idx := 0
-		for i := 0; i < N/8; i++ {
-			t[0] = uint16(m[idx])
-			t[1] = uint16(m[idx]) >> 3
-			t[2] = (uint16(m[idx]) >> 6) | (uint16(m[idx+1]) << 2)
-			t[3] = (uint16(m[idx+1]) >> 1)
-			t[4] = (uint16(m[idx+1]) >> 4)
-			t[5] = (uint16(m[idx+1]) >> 7) | (uint16(m[idx+2] << 1))
-			t[6] = uint16(m[idx+2]) >> 2
-			t[7] = uint16(m[idx+2]) >> 5
-
-			for j := 0; j < 8; j++ {
-				p[8*i+j] = int16(((1 << 2) +
-					uint32(t[j]&((1<<3)-1))*uint32(Q)) >> 3)
-			}
-
-			idx += 3
-		}
 	case 4:
 		for i := 0; i < N/2; i++ {
 			p[2*i] = int16(((1 << 3) +
@@ -259,19 +251,6 @@ func (p *Poly) CompressTo(m []byte, d int) {
 	//					= ⌊((x << d) + q/2) / q⌋ mod⁺ 2ᵈ
 	//					= DIV((x << d) + q/2, q) & ((1<<d) - 1)
 	switch d {
-	case 3:
-		var t [8]uint16
-		idx := 0
-		for i := 0; i < N/8; i++ {
-			for j := 0; j < 8; j++ {
-				t[j] = uint16(((uint32(p[8*i+j])<<3)+uint32(Q)/2)/
-					uint32(Q)) & ((1 << 3) - 1)
-			}
-			m[idx] = byte(t[0]) | byte(t[1]<<3) | byte(t[2]<<6)
-			m[idx+1] = byte(t[2]>>2) | byte(t[3]<<1) | byte(t[4]<<4) | byte(t[5]<<7)
-			m[idx+2] = byte(t[5]>>1) | byte(t[6]<<2) | byte(t[7]<<5)
-			idx += 3
-		}
 	case 4:
 		var t [8]uint16
 		idx := 0

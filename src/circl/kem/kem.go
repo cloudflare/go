@@ -36,15 +36,13 @@ type Scheme interface {
 	// GenerateKey creates a new key pair.
 	GenerateKey() (PublicKey, PrivateKey, error)
 
-	// Encapsulate generates a shared key ss for the public key  and
+	// Encapsulate generates a shared key ss for the public key and
 	// encapsulates it into a ciphertext ct.
-	Encapsulate(pk PublicKey) (ct []byte, ss []byte)
+	Encapsulate(pk PublicKey) (ct []byte, ss []byte, err error)
 
 	// Returns the shared key encapsulated in ciphertext ct for the
 	// private key sk.
-	//
-	// Panics if ct is not of size CiphertextSize().
-	Decapsulate(sk PrivateKey, ct []byte) []byte
+	Decapsulate(sk PrivateKey, ct []byte) ([]byte, error)
 
 	// Unmarshals a PublicKey from the provided buffer.
 	UnmarshalBinaryPublicKey([]byte) (PublicKey, error)
@@ -64,7 +62,7 @@ type Scheme interface {
 	// Size of packed public keys.
 	PublicKeySize() int
 
-	// Deterministicallly derives a keypair from a seed.  If you're unsure,
+	// Deterministicallly derives a keypair from a seed. If you're unsure,
 	// you're better off using GenerateKey().
 	//
 	// Panics if seed is not of length SeedSize().
@@ -75,10 +73,9 @@ type Scheme interface {
 
 	// EncapsulateDeterministically generates a shared key ss for the public
 	// key deterministically from the given seed and encapsulates it into
-	// a ciphertext ct.  If unsure, you're better off using Encapsulate().
-	//
-	// Panics if seed is not of length EncapsulationSeedSize().
-	EncapsulateDeterministically(pk PublicKey, seed []byte) (ct, ss []byte)
+	// a ciphertext ct. If unsure, you're better off using Encapsulate().
+	EncapsulateDeterministically(pk PublicKey, seed []byte) (
+		ct, ss []byte, err error)
 
 	// Size of seed used in EncapsulateDeterministically().
 	EncapsulationSeedSize() int
@@ -104,4 +101,10 @@ var (
 	// ErrPrivKeySize is the error used if the provided private key is of
 	// the wrong size.
 	ErrPrivKeySize = errors.New("wrong size for private key")
+
+	// ErrPubKey is the error used if the provided public key is invalid.
+	ErrPubKey = errors.New("invalid public key")
+
+	// ErrCipherText is the error used if the provided ciphertext is invalid.
+	ErrCipherText = errors.New("invalid ciphertext")
 )

@@ -4,7 +4,7 @@ import (
 	"encoding/binary"
 	"fmt"
 
-	sha3 "circl/internal/shake"
+	"circl/internal/sha3"
 	"circl/simd/keccakf1600"
 )
 

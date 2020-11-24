@@ -9,11 +9,13 @@ import (
 // A vector of K polynomials
 type Vec [K]common.Poly
 
-// Samples v[i] from the centered binomial distribution with p=½ and n=4
-// with the given seed and nonce+i.
-func (v *Vec) DeriveNoise(seed []byte, nonce uint8) {
+// Samples v[i] from a centered binomial distribution with given η,
+// seed and nonce+i.
+//
+// Essentially CBD_η(PRF(seed, nonce+i)) from the specification.
+func (v *Vec) DeriveNoise(seed []byte, nonce uint8, eta int) {
 	for i := 0; i < K; i++ {
-		v[i].DeriveNoise(seed, nonce+uint8(i))
+		v[i].DeriveNoise(seed, nonce+uint8(i), eta)
 	}
 }
 
@@ -21,7 +23,7 @@ func (v *Vec) DeriveNoise(seed []byte, nonce uint8) {
 //
 // See MulHat() and NTT() for a description of the multiplication.
 // Assumes a and b are in Montgomery form.  p will be in Montgomery form,
-// and its coefficients will be bounded in absolute value by kq.
+// and its coefficients will be bounded in absolute value by 2kq.
 // If a and b are not in Montgomery form, then the action is the same
 // as "pointwise" multiplication followed by multiplying by R⁻¹, the inverse
 // of the Montgomery factor.
@@ -110,8 +112,6 @@ func (v *Vec) Decompress(m []byte, d int) {
 // ⌈(256 d)/8⌉
 func compressedPolySize(d int) int {
 	switch d {
-	case 3:
-		return 96
 	case 4:
 		return 128
 	case 5:
