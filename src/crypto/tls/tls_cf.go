@@ -18,7 +18,7 @@ var circlSchemes = [...]struct {
 	sigType uint8
 	scheme  circlSign.Scheme
 }{
-	{signatureEdDilithium3, eddilithium3.Scheme},
+	{signatureEdDilithium3, eddilithium3.Scheme()},
 }
 
 func circlSchemeBySigType(sigType uint8) circlSign.Scheme {

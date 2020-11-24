@@ -22,7 +22,7 @@ var circlSchemes = [...]struct {
 	alg    PublicKeyAlgorithm
 	scheme circlSign.Scheme
 }{
-	{PureEdDilithium3, EdDilithium3, eddilithium3.Scheme},
+	{PureEdDilithium3, EdDilithium3, eddilithium3.Scheme()},
 }
 
 func CirclSchemeByPublicKeyAlgorithm(alg PublicKeyAlgorithm) circlSign.Scheme {
