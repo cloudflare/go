@@ -33,6 +33,7 @@ print("Removing avo sourcecode (for now) ...")
 subprocess.check_call(['rm', '-r',
     os.path.join(circl, 'simd/keccakf1600/internal/asm'),
     os.path.join(circl, 'sign/dilithium/internal/common/asm'),
+    os.path.join(circl, 'pke/kyber/internal/common/asm'),
 ])
 
 print("Removing templates (for now)  ...")
@@ -42,6 +43,11 @@ subprocess.check_call(['rm', '-r',
     os.path.join(circl, 'sign/dilithium/templates'),
     os.path.join(circl, 'sign/dilithium/gen.go'),
 ])
+
+#print("Removing unused packages ...")
+#subprocess.check_call(['rm', '-r', '-f',
+#    os.path.join(circl, 'group'),
+#])
 
 print("Removing misc cruft ...")
 subprocess.check_call(['rm', '-r', '-f',

@@ -1,4 +1,10 @@
 // Package schemes contains a register of signature algorithms.
+//
+// Implemented schemes:
+//  Ed25519
+//  Ed448
+//  Ed25519-Dilithium3
+//  Ed448-Dilithium4
 package schemes
 
 import (
@@ -12,10 +18,10 @@ import (
 )
 
 var allSchemes = [...]sign.Scheme{
-	ed25519.Scheme,
-	ed448.Scheme,
-	eddilithium3.Scheme,
-	eddilithium4.Scheme,
+	ed25519.Scheme(),
+	ed448.Scheme(),
+	eddilithium3.Scheme(),
+	eddilithium4.Scheme(),
 }
 
 var allSchemeNames map[string]sign.Scheme

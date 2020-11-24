@@ -8,12 +8,18 @@ import (
 	"circl/kem/kyber/kyber1024"
 	"circl/kem/kyber/kyber512"
 	"circl/kem/kyber/kyber768"
+	"circl/kem/sike/sikep434"
+	"circl/kem/sike/sikep503"
+	"circl/kem/sike/sikep751"
 )
 
 var allSchemes = [...]kem.Scheme{
-	kyber512.Scheme,
-	kyber768.Scheme,
-	kyber1024.Scheme,
+	kyber512.Scheme(),
+	kyber768.Scheme(),
+	kyber1024.Scheme(),
+	sikep434.Scheme(),
+	sikep503.Scheme(),
+	sikep751.Scheme(),
 }
 
 var allSchemeNames map[string]kem.Scheme

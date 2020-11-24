@@ -17,6 +17,7 @@ import (
 type Instance struct {
 	Name           string
 	K              int
+	Eta1           int
 	CiphertextSize int
 	DU             int
 	DV             int
@@ -33,13 +34,15 @@ var (
 	Instances = []Instance{
 		{
 			Name:           "Kyber512",
+			Eta1:           3,
 			K:              2,
-			CiphertextSize: 736,
+			CiphertextSize: 768,
 			DU:             10,
-			DV:             3,
+			DV:             4,
 		},
 		{
 			Name:           "Kyber768",
+			Eta1:           2,
 			K:              3,
 			CiphertextSize: 1088,
 			DU:             10,
@@ -47,6 +50,7 @@ var (
 		},
 		{
 			Name:           "Kyber1024",
+			Eta1:           2,
 			K:              4,
 			CiphertextSize: 1568,
 			DU:             11,
@@ -156,7 +160,7 @@ func generateSourceFiles() {
 			}
 			_, ok := files[name]
 			if !ok {
-				fmt.Printf("Removing superfluous file: %s", fn)
+				fmt.Printf("Removing superfluous file: %s\n", fn)
 				err = os.Remove(fn)
 				if err != nil {
 					panic(err)

@@ -580,10 +580,14 @@ func TestDependencies(t *testing.T) {
 		var bad []string
 		for _, imp := range imports {
 			sawImport[pkg][imp] = true
+			// TODO(anY): Remove this exception for circl/ and add CIRCL to the
+			// dependency graph specified by `depsRules`.
 			if !ok[imp] && !strings.HasPrefix(imp, "circl/") {
 				bad = append(bad, imp)
 			}
 		}
+		// TODO(anY): Remove this exception for circl/ and add CIRCL to the
+		// dependency graph specified by `depsRules`.
 		if bad != nil && !strings.HasPrefix(pkg, "circl") {
 			t.Errorf("unexpected dependency: %s imports %v", pkg, bad)
 		}
