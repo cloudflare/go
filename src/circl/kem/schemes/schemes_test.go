@@ -13,6 +13,45 @@ func TestCaseSensitivity(t *testing.T) {
 	}
 }
 
+func BenchmarkGenerateKey(b *testing.B) {
+	allSchemes := schemes.All()
+	for _, scheme := range allSchemes {
+		scheme := scheme
+		b.Run(scheme.Name(), func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				_, _, _ = scheme.GenerateKey()
+			}
+		})
+	}
+}
+
+func BenchmarkEncapsulate(b *testing.B) {
+	allSchemes := schemes.All()
+	for _, scheme := range allSchemes {
+		scheme := scheme
+		pk, _, _ := scheme.GenerateKey()
+		b.Run(scheme.Name(), func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				_, _, _ = scheme.Encapsulate(pk)
+			}
+		})
+	}
+}
+
+func BenchmarkDecapsulate(b *testing.B) {
+	allSchemes := schemes.All()
+	for _, scheme := range allSchemes {
+		scheme := scheme
+		pk, sk, _ := scheme.GenerateKey()
+		ct, _, _ := scheme.Encapsulate(pk)
+		b.Run(scheme.Name(), func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				_, _ = scheme.Decapsulate(sk, ct)
+			}
+		})
+	}
+}
+
 func TestApi(t *testing.T) {
 	allSchemes := schemes.All()
 	for _, scheme := range allSchemes {
@@ -63,8 +102,10 @@ func TestApi(t *testing.T) {
 				t.Fatal()
 			}
 
-			ct, ss := scheme.Encapsulate(pk2)
-
+			ct, ss, err := scheme.Encapsulate(pk2)
+			if err != nil {
+				t.Fatal(err)
+			}
 			if len(ct) != scheme.CiphertextSize() {
 				t.Fatal()
 			}
@@ -72,7 +113,10 @@ func TestApi(t *testing.T) {
 				t.Fatal()
 			}
 
-			ss2 := scheme.Decapsulate(sk2, ct)
+			ss2, err := scheme.Decapsulate(sk2, ct)
+			if err != nil {
+				t.Fatal(err)
+			}
 			if !bytes.Equal(ss, ss2) {
 				t.Fatal()
 			}

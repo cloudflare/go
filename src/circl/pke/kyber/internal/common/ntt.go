@@ -27,13 +27,37 @@ var Zetas = [128]int16{
 	2459, 478, 3221, 3021, 996, 991, 958, 1869, 1522, 1628,
 }
 
+// InvNTTReductions keeps track of which coefficients to apply Barrett
+// reduction to in Poly.InvNTT().
+//
+// Generated in a lazily: once a butterfly is computed which is about to
+// overflow the int16, the largest coefficient is reduced.  If that is
+// not enough, the other coefficient is reduced as well.
+//
+// This is actually optimal, as proven in https://eprint.iacr.org/2020/1377.pdf
+var InvNTTReductions = [...]int{
+	-1, // after layer 1
+	-1, // after layer 2
+	16, 17, 48, 49, 80, 81, 112, 113, 144, 145, 176, 177, 208, 209, 240,
+	241, -1, // after layer 3
+	0, 1, 32, 33, 34, 35, 64, 65, 96, 97, 98, 99, 128, 129, 160, 161, 162, 163,
+	192, 193, 224, 225, 226, 227, -1, // after layer 4
+	2, 3, 66, 67, 68, 69, 70, 71, 130, 131, 194, 195, 196, 197, 198,
+	199, -1, // after layer 5
+	4, 5, 6, 7, 132, 133, 134, 135, 136, 137, 138, 139, 140, 141, 142,
+	143, -1, // after layer 6
+	-1, //  after layer 7
+}
+
 // Executes an in-place forward "NTT" on p.
 //
 // Assumes the coefficients are in absolute value ≤q.  The resulting
 // coefficients are in absolute value ≤7q.  If the input is in Montgomery
 // form, then the result is in Montgomery form and so (by linearity of the NTT)
 // if the input is in regular form, then the result is also in regular form.
-func (p *Poly) NTT() {
+// The order of coefficients will be "tangled". These can be put back into
+// their proper order by calling Detangle().
+func (p *Poly) nttGeneric() {
 	// Note that ℤ_q does not have a primitive 512ᵗʰ root of unity (as 512
 	// does not divide into q) and so we cannot do a regular NTT.  ℤ_q
 	// does have a primitive 256ᵗʰ root of unity, the smallest of which
@@ -113,44 +137,56 @@ func (p *Poly) NTT() {
 // Executes an in-place inverse "NTT" on p and multiply by the Montgomery
 // factor R.
 //
+// Requires coefficients to be in "tangled" order, see Tangle().
 // Assumes the coefficients are in absolute value ≤q.  The resulting
 // coefficients are in absolute value ≤q.  If the input is in Montgomery
 // form, then the result is in Montgomery form and so (by linearity)
 // if the input is in regular form, then the result is also in regular form.
-func (p *Poly) InvNTT() {
+func (p *Poly) invNTTGeneric() {
 	k := 127 // Index into Zetas
+	r := -1  // Index into InvNTTReductions.
 
 	// We basically do the oppposite of NTT, but postpone dividing by 2 in the
 	// inverse of the Cooley-Tukey butterfly and accumulate that into a big
 	// division by 2⁷ at the end.  See the comments in the NTT() function.
 
 	for l := 2; l < N; l <<= 1 {
-		// At the start of the nᵗʰ iteration of this loop, the coefficients
-		// are bounded in absolute value by nq.
-
-		// XXX Get rid of Barrett reduction?
-
 		for offset := 0; offset < N-l; offset += 2 * l {
-			// As we're inverting, we need powers of ζ⁻¹ (instead of
-			// ζ).  To be precise, we need ζᵇʳᵛ⁽ᵏ⁾⁻¹²⁸. However, as
-			// ζ⁻¹²⁸ = -1, we can use the existing Zetas table instead of
+			// As we're inverting, we need powers of ζ⁻¹ (instead of ζ).
+			// To be precise, we need ζᵇʳᵛ⁽ᵏ⁾⁻¹²⁸. However, as ζ⁻¹²⁸ = -1,
+			// we can use the existing Zetas table instead of
 			// keeping a separate InvZetas table as in Dilithium.
 
-			zeta := -int32(Zetas[k])
+			minZeta := int32(Zetas[k])
 			k--
 
 			for j := offset; j < offset+l; j++ {
-				t := barrettReduce(p[j]) // Gentleman-Sande butterfly
-				p[j] = t + p[j+l]
-				t -= p[j+l]
-				p[j+l] = montReduce(zeta * int32(t))
+				// Gentleman-Sande butterfly: (a, b) ↦ (a + b, ζ(a-b))
+				t := p[j+l] - p[j]
+				p[j] += p[j+l]
+				p[j+l] = montReduce(minZeta * int32(t))
+
+				// Note that if we had |a| < αq and |b| < βq before the
+				// butterfly, then now we have |a| < (α+β)q and |b| < q.
 			}
+		}
+
+		// We let the InvNTTReductions instruct us which coefficients to
+		// Barrett reduce.  See TestInvNTTReductions, which tests whether
+		// there is an overflow.
+		for {
+			r++
+			i := InvNTTReductions[r]
+			if i < 0 {
+				break
+			}
+			p[i] = barrettReduce(p[i])
 		}
 	}
 
 	for j := 0; j < N; j++ {
-		// Note 1441 = (128)⁻¹ R².  The coefficients are bounded by 7q, so
-		// as 1441 * 7 ≈ 2⁹ < 2¹⁵, we're within the required bounds
+		// Note 1441 = (128)⁻¹ R².  The coefficients are bounded by 9q, so
+		// as 1441 * 9 ≈ 2¹⁴ < 2¹⁵, we're within the required bounds
 		// for montReduce().
 		p[j] = montReduce(1441 * int32(p[j]))
 	}
