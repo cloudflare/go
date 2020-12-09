@@ -377,6 +377,7 @@ var depsRules = `
 	< golang.org/x/crypto/curve25519
 	< crypto/dsa, crypto/elliptic, crypto/rsa
 	< crypto/ecdsa
+	< crypto/kem
 	< CRYPTO-MATH;
 
 	CRYPTO < golang.org/x/crypto/sha3;

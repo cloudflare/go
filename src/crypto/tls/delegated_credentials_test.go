@@ -140,9 +140,12 @@ ZyJKvc2KqjGeZh0Or5pq6ZJb0zR7WPdz5aJIzaZ5YcxLMSv0KwaAEPH2
 var dcTestConfig *Config
 var dcTestCerts map[string]*Certificate
 var serverDC []*dcAndPrivateKey
+var serverKEMDC []*dcAndPrivateKey
 var clientDC []*dcAndPrivateKey
+var clientKEMDC []*dcAndPrivateKey
 var dcNow time.Time
 var dcTestDCScheme = []SignatureScheme{ECDSAWithP256AndSHA256, ECDSAWithP384AndSHA384, ECDSAWithP521AndSHA512, Ed25519}
+var dcTestDCKEMScheme = []SignatureScheme{KEMTLSWithSIKEp434, KEMTLSWithKyber512}
 
 func init() {
 	dcTestConfig = &Config{
@@ -256,6 +259,19 @@ func initialize() {
 		clientDC = append(clientDC, &dcAndPrivateKey{dc, sk})
 	}
 
+	for i := 0; i < len(dcTestDCKEMScheme); i++ {
+		dc, sk, err := NewDelegatedCredential(dcCertP256, dcTestDCKEMScheme[i], dcNow.Sub(dcCertP256.Leaf.NotBefore)+dcMaxTTL, DCServer)
+		if err != nil {
+			panic(err)
+		}
+		serverKEMDC = append(serverKEMDC, &dcAndPrivateKey{dc, sk})
+
+		dc, sk, err = NewDelegatedCredential(dcCertP256, dcTestDCKEMScheme[i], dcNow.Sub(dcCertP256.Leaf.NotBefore)+dcMaxTTL, DCClient)
+		if err != nil {
+			panic(err)
+		}
+		clientKEMDC = append(clientKEMDC, &dcAndPrivateKey{dc, sk})
+	}
 }
 
 func publicKeysEqual(publicKey, publicKey2 crypto.PublicKey, algo SignatureScheme) error {
@@ -314,13 +330,13 @@ func TestDelegateCredentialsValidate(t *testing.T) {
 	m.signature = randomBytes(rand.Intn(15)+1, rand)
 
 	// Valid Delegated Credential
-	if !delegatedCred.Validate(cert.Leaf, DCServer, dcNow, m) {
+	if !delegatedCred.Validate(cert.Leaf, DCServer, dcNow, m.signatureAlgorithm) {
 		t.Error("generated valid Delegated Credential is rendered invalid")
 	}
 
 	// Expired Delegated Credential
 	expired := dcNow.Add(dcMaxTTL).Add(time.Nanosecond)
-	if delegatedCred.Validate(cert.Leaf, DCServer, expired, m) {
+	if delegatedCred.Validate(cert.Leaf, DCServer, expired, m.signatureAlgorithm) {
 		t.Error("expired delegated credential is valid; want invalid")
 	}
 
@@ -329,7 +345,7 @@ func TestDelegateCredentialsValidate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if invalidDelegatedCred.Validate(cert.Leaf, DCServer, dcNow, m) {
+	if invalidDelegatedCred.Validate(cert.Leaf, DCServer, dcNow, m.signatureAlgorithm) {
 		t.Error("Delegated Credential validation with long TTL succeeded; want failure")
 	}
 
@@ -340,14 +356,14 @@ func TestDelegateCredentialsValidate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !delegatedCred.Validate(cert.Leaf, DCServer, dcNow, m) {
+	if !delegatedCred.Validate(cert.Leaf, DCServer, dcNow, m.signatureAlgorithm) {
 		t.Error("valid Delegated Credential is invalid; want valid")
 	}
 
 	delegatedCred.algorithm = ECDSAWithP521AndSHA512
 
 	// Test signature algorithm binding
-	if delegatedCred.Validate(cert.Leaf, DCServer, dcNow, m) {
+	if delegatedCred.Validate(cert.Leaf, DCServer, dcNow, m.signatureAlgorithm) {
 		t.Error("Delegated Credential with wrong scheme is valid; want invalid")
 	}
 
@@ -355,12 +371,12 @@ func TestDelegateCredentialsValidate(t *testing.T) {
 
 	// Test delegation certificate binding
 	cert.Leaf.Raw[0] ^= byte(42)
-	if delegatedCred.Validate(cert.Leaf, DCServer, dcNow, m) {
+	if delegatedCred.Validate(cert.Leaf, DCServer, dcNow, m.signatureAlgorithm) {
 		t.Error("Delegated Credential with wrong certificate is valid; want invalid")
 	}
 
 	// Test validation of DC using a certificate that can't delegate.
-	if delegatedCred.Validate(dcTestCerts["no dc"].Leaf, DCServer, dcNow, m) {
+	if delegatedCred.Validate(dcTestCerts["no dc"].Leaf, DCServer, dcNow, m.signatureAlgorithm) {
 		t.Error("Delegated Credential with non-delegation cert is valid; want invalid")
 	}
 
@@ -375,7 +391,7 @@ func TestDelegateCredentialsValidate(t *testing.T) {
 	}
 
 	// Valid Delegated Credential
-	if !delegatedCred.Validate(cert.Leaf, DCServer, dcNow, m) {
+	if !delegatedCred.Validate(cert.Leaf, DCServer, dcNow, m.signatureAlgorithm) {
 		t.Error("generated valid Delegated Credential is rendered invalid")
 	}
 }
@@ -669,4 +685,130 @@ func TestDCHandshakeClientAndServerAuth(t *testing.T) {
 	if usedDC != true {
 		t.Errorf("test server and client auth does not succed")
 	}
+}
+
+var dcKEMTests = []struct {
+	clientDCSupport bool
+	serverDCSupport bool
+	clientMaxVers   uint16
+	serverMaxVers   uint16
+	expectSuccess   bool
+	expectDC        bool
+	name            string
+}{
+	{true, true, VersionTLS13, VersionTLS13, true, true, "tls13: KEM DC server and client support"},
+	{false, false, VersionTLS13, VersionTLS13, true, false, "KEM DC not server and client support"},
+	{true, true, VersionTLS12, VersionTLS13, true, false, "client using TLS 1.2. No KEM DC is supported in that version."},
+	{true, true, VersionTLS13, VersionTLS12, true, false, "server using TLS 1.2. No KEM DC is supported in that version."},
+	{true, true, VersionTLS11, VersionTLS13, true, false, "client using TLS 1.1. No KEM DC is supported in that version."},
+	{true, true, VersionTLS13, VersionTLS10, false, false, "server using TLS 1.0. No KEM DC is supported in that version."},
+}
+
+// Checks that the client supports the signature algorithm supported by the test
+// server, and that the server has a Delegated Credential.
+func testGetDelegatedCredentialKEM(ch *ClientHelloInfo, cr *CertificateRequestInfo) (*DelegatedCredential, crypto.PrivateKey, error) {
+	if ch != nil {
+		schemeOk := false
+		for _, scheme := range ch.SignatureSchemesDC {
+			schemeOk = schemeOk || (scheme == dcTestDCKEMScheme[inc])
+		}
+
+		if schemeOk && ch.SupportsDelegatedCredential {
+			return serverKEMDC[inc].DelegatedCredential, serverKEMDC[inc].privateKey, nil
+		}
+	} else if cr != nil {
+		schemeOk := false
+		for _, scheme := range cr.SignatureSchemesDC {
+			schemeOk = schemeOk || (scheme == dcTestDCKEMScheme[inc])
+		}
+
+		if schemeOk && cr.SupportsDelegatedCredential {
+			return clientKEMDC[inc].DelegatedCredential, clientKEMDC[inc].privateKey, nil
+		}
+	}
+
+	return nil, nil, nil
+}
+
+// Test the server KEM authentication with the delegated credential extension.
+func TestDCKEMHandshakeServerAuth(t *testing.T) {
+	serverMsg := "hello, client"
+	clientMsg := "hello, server"
+
+	clientConfig := dcTestConfig.Clone()
+	serverConfig := dcTestConfig.Clone()
+	serverConfig.GetCertificate = testServerGetCertificate
+
+	for i, test := range dcKEMTests {
+		clientConfig.SupportDelegatedCredential = test.clientDCSupport
+
+		for inc < len(dcTestDCKEMScheme)-1 {
+			if test.serverDCSupport {
+				serverConfig.GetDelegatedCredential = testGetDelegatedCredentialKEM
+				inc++
+			} else {
+				serverConfig.GetDelegatedCredential = nil
+			}
+
+			clientConfig.MaxVersion = test.clientMaxVers
+			serverConfig.MaxVersion = test.serverMaxVers
+
+			usedDC, err := testConnWithDC(t, clientMsg, serverMsg, clientConfig, serverConfig, "client")
+
+			if err != nil && test.expectSuccess {
+				t.Errorf("test #%d (%s) fails: %s", i+1, test.name, err.Error())
+			} else if err == nil && !test.expectSuccess {
+				t.Errorf("test #%d (%s) succeeds; expected failure", i+1, test.name)
+			}
+
+			if usedDC != test.expectDC {
+				t.Errorf("test #%d (%s) usedDC = %v; expected %v", i+1, test.name, usedDC, test.expectDC)
+			}
+		}
+	}
+
+	inc = 0
+}
+
+// Test the client KEM authentication with the delegated credential extension.
+func TestDCKEMHandshakeClientAuth(t *testing.T) {
+	clientMsg := "hello, server"
+	serverMsg := "hello, client"
+
+	serverConfig := dcTestConfig.Clone()
+	serverConfig.ClientAuth = RequestClientKEMCert
+	serverConfig.GetCertificate = testServerGetCertificate
+
+	clientConfig := dcTestConfig.Clone()
+	clientConfig.GetClientCertificate = testClientGetCertificate
+
+	for i, test := range dcKEMTests {
+		serverConfig.SupportDelegatedCredential = test.serverDCSupport
+		clientConfig.SupportDelegatedCredential = test.clientDCSupport
+
+		if test.serverDCSupport && test.clientDCSupport {
+			serverConfig.GetDelegatedCredential = testGetDelegatedCredentialKEM
+			clientConfig.GetDelegatedCredential = testGetDelegatedCredentialKEM
+			inc++
+		} else {
+			serverConfig.GetDelegatedCredential = nil
+			clientConfig.GetDelegatedCredential = nil
+		}
+
+		clientConfig.MaxVersion = test.clientMaxVers
+		serverConfig.MaxVersion = test.serverMaxVers
+
+		usedDC, err := testConnWithDC(t, clientMsg, serverMsg, clientConfig, serverConfig, "both")
+
+		if err != nil && test.expectSuccess {
+			t.Errorf("test #%d (%s) fails: %s", i+1, test.name, err.Error())
+		} else if err == nil && !test.expectSuccess {
+			t.Errorf("test #%d (%s) succeeds; expected failure", i+1, test.name)
+		}
+
+		if usedDC != test.expectDC {
+			t.Errorf("test #%d (%s) usedDC = %v; expected %v", i+1, test.name, usedDC, test.expectDC)
+		}
+	}
+	inc = 0
 }

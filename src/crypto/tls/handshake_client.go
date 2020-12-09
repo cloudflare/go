@@ -9,6 +9,7 @@ import (
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/ed25519"
+	"crypto/kem"
 	"crypto/rsa"
 	"crypto/subtle"
 	"crypto/x509"
@@ -33,7 +34,10 @@ type clientHandshakeState struct {
 	session      *ClientSessionState
 }
 
-func (c *Conn) makeClientHello(minVersion uint16) (*clientHelloMsg, ecdheParameters, error) {
+// defines the private part to the handshake keyshares
+type clientKeySharePrivate interface{}
+
+func (c *Conn) makeClientHello(minVersion uint16) (*clientHelloMsg, []clientKeySharePrivate, error) {
 	config := c.config
 	if len(config.ServerName) == 0 && !config.InsecureSkipVerify {
 		return nil, nil, errors.New("tls: either ServerName or InsecureSkipVerify must be specified in the tls.Config")
@@ -118,24 +122,51 @@ func (c *Conn) makeClientHello(minVersion uint16) (*clientHelloMsg, ecdheParamet
 	}
 
 	var params ecdheParameters
+	var haveECDHE, haveKEM bool
+	var keyShares []keyShare
+	var keySharePrivates []clientKeySharePrivate
 	if hello.supportedVersions[0] == VersionTLS13 {
 		hello.cipherSuites = append(hello.cipherSuites, defaultCipherSuitesTLS13()...)
 
-		curveID := config.curvePreferences()[0]
-		if _, ok := curveForCurveID(curveID); curveID != X25519 && !ok {
-			return nil, nil, errors.New("tls: CurvePreferences includes unsupported curve")
+		// loop over supported curves until there is both a KEM and a ECDHE curve
+		for _, curveID := range config.curvePreferences() {
+			if _, ok := curveForCurveID(curveID); curveID != X25519 && !curveID.isKEM() && !ok {
+				return nil, nil, errors.New("tls: CurvePreferences includes unsupported curve")
+			}
+
+			if !curveID.isKEM() && !haveECDHE {
+				params, err = generateECDHEParameters(config.rand(), curveID)
+				if err != nil {
+					return nil, nil, err
+				}
+				keyShares = append(keyShares, keyShare{group: curveID, data: params.PublicKey()})
+				keySharePrivates = append(keySharePrivates, params)
+				haveECDHE = true
+			} else if curveID.isKEM() && !haveKEM {
+				kemID := kem.ID(curveID)
+				pk, sk, err := kem.GenerateKey(config.rand(), kemID)
+				if err != nil {
+					return nil, nil, err
+				}
+
+				keyShares = append(keyShares, keyShare{group: curveID, data: pk.PublicKey})
+				keySharePrivates = append(keySharePrivates, sk)
+				haveKEM = true
+			}
+
+			if haveECDHE && haveKEM {
+				break
+			}
 		}
-		params, err = generateECDHEParameters(config.rand(), curveID)
-		if err != nil {
-			return nil, nil, err
-		}
-		hello.keyShares = []keyShare{{group: curveID, data: params.PublicKey()}}
+
+		hello.keyShares = keyShares
+
 		// only for TLS 1.3
 		hello.delegatedCredentialSupported = config.SupportDelegatedCredential
 		hello.supportedSignatureAlgorithmsDC = supportedSignatureAlgorithmsDC
 	}
 
-	return hello, params, nil
+	return hello, keySharePrivates, nil
 }
 
 func (c *Conn) clientHandshake() (err error) {
@@ -157,7 +188,7 @@ func (c *Conn) clientHandshake() (err error) {
 		minVersion = VersionTLS13
 	}
 
-	helloBase, ecdheParams, err := c.makeClientHello(minVersion)
+	helloBase, keysharePrivates, err := c.makeClientHello(minVersion)
 	if err != nil {
 		return err
 	}
@@ -227,7 +258,7 @@ func (c *Conn) clientHandshake() (err error) {
 			hello:            hello,
 			helloInner:       helloInner,
 			helloBase:        helloBase,
-			ecdheParams:      ecdheParams,
+			keyShare:         keysharePrivates,
 			session:          session,
 			earlySecret:      earlySecret,
 			binderKey:        binderKey,
@@ -885,7 +916,7 @@ func (c *Conn) verifyServerCertificate(certificates [][]byte) error {
 	}
 
 	switch certs[0].PublicKey.(type) {
-	case *rsa.PublicKey, *ecdsa.PublicKey, ed25519.PublicKey, circlSign.PublicKey:
+	case *rsa.PublicKey, *ecdsa.PublicKey, ed25519.PublicKey, circlSign.PublicKey, *kem.PublicKey:
 		break
 	default:
 		c.sendAlert(alertUnsupportedCertificate)

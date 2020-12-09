@@ -13,6 +13,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/ed25519"
 	"crypto/elliptic"
+	"crypto/kem"
 	"crypto/rsa"
 	"errors"
 	"fmt"
@@ -118,6 +119,8 @@ func typeAndHashFromSignatureScheme(signatureAlgorithm SignatureScheme) (sigType
 		sigType = signatureECDSA
 	case Ed25519:
 		sigType = signatureEd25519
+	case KEMTLSWithSIKEp434, KEMTLSWithKyber512:
+		sigType = authKEMTLS
 	default:
 		scheme := circlPki.SchemeByTLSID(uint(signatureAlgorithm))
 		if scheme == nil {
@@ -140,6 +143,8 @@ func typeAndHashFromSignatureScheme(signatureAlgorithm SignatureScheme) (sigType
 		hash = crypto.SHA512
 	case Ed25519:
 		hash = directSigning
+	case KEMTLSWithSIKEp434, KEMTLSWithKyber512:
+		hash = directSigning // TODO: check
 	default:
 		scheme := circlPki.SchemeByTLSID(uint(signatureAlgorithm))
 		if scheme == nil {
@@ -199,54 +204,67 @@ var rsaSignatureSchemes = []struct {
 // Note: for the PQ KEM exp or using delegated credentials, it must be kept in
 // sync with supportedSignatureAlgorithmsDC.
 func signatureSchemesForCertificate(version uint16, cert *Certificate) []SignatureScheme {
-	priv, ok := cert.PrivateKey.(crypto.Signer)
-	if !ok {
-		return nil
-	}
-
 	var sigAlgs []SignatureScheme
-	switch pub := priv.Public().(type) {
-	case *ecdsa.PublicKey:
-		if version != VersionTLS13 {
-			// In TLS 1.2 and earlier, ECDSA algorithms are not
-			// constrained to a single curve.
-			sigAlgs = []SignatureScheme{
-				ECDSAWithP256AndSHA256,
-				ECDSAWithP384AndSHA384,
-				ECDSAWithP521AndSHA512,
-				ECDSAWithSHA1,
-			}
-			break
-		}
-		switch pub.Curve {
-		case elliptic.P256():
-			sigAlgs = []SignatureScheme{ECDSAWithP256AndSHA256}
-		case elliptic.P384():
-			sigAlgs = []SignatureScheme{ECDSAWithP384AndSHA384}
-		case elliptic.P521():
-			sigAlgs = []SignatureScheme{ECDSAWithP521AndSHA512}
-		default:
+	var priv crypto.Signer
+
+	kemPriv, ok := cert.PrivateKey.(*kem.PrivateKey)
+	if ok {
+		if kemPriv.KEMId == kem.SIKEp434 {
+			sigAlgs = []SignatureScheme{KEMTLSWithSIKEp434}
+		} else if kemPriv.KEMId == kem.Kyber512 {
+			sigAlgs = []SignatureScheme{KEMTLSWithKyber512}
+		} else {
 			return nil
 		}
-	case *rsa.PublicKey:
-		size := pub.Size()
-		sigAlgs = make([]SignatureScheme, 0, len(rsaSignatureSchemes))
-		for _, candidate := range rsaSignatureSchemes {
-			if size >= candidate.minModulusBytes && version <= candidate.maxVersion {
-				sigAlgs = append(sigAlgs, candidate.scheme)
-			}
-		}
-	case ed25519.PublicKey:
-		sigAlgs = []SignatureScheme{Ed25519}
-	case circlSign.PublicKey:
-		scheme := pub.Scheme()
-		tlsScheme, ok := scheme.(circlPki.TLSScheme)
+	} else {
+		priv, ok = cert.PrivateKey.(crypto.Signer)
 		if !ok {
 			return nil
 		}
-		sigAlgs = []SignatureScheme{SignatureScheme(tlsScheme.TLSIdentifier())}
-	default:
-		return nil
+
+		switch pub := priv.Public().(type) {
+		case *ecdsa.PublicKey:
+			if version != VersionTLS13 {
+				// In TLS 1.2 and earlier, ECDSA algorithms are not
+				// constrained to a single curve.
+				sigAlgs = []SignatureScheme{
+					ECDSAWithP256AndSHA256,
+					ECDSAWithP384AndSHA384,
+					ECDSAWithP521AndSHA512,
+					ECDSAWithSHA1,
+				}
+				break
+			}
+			switch pub.Curve {
+			case elliptic.P256():
+				sigAlgs = []SignatureScheme{ECDSAWithP256AndSHA256}
+			case elliptic.P384():
+				sigAlgs = []SignatureScheme{ECDSAWithP384AndSHA384}
+			case elliptic.P521():
+				sigAlgs = []SignatureScheme{ECDSAWithP521AndSHA512}
+			default:
+				return nil
+			}
+		case *rsa.PublicKey:
+			size := pub.Size()
+			sigAlgs = make([]SignatureScheme, 0, len(rsaSignatureSchemes))
+			for _, candidate := range rsaSignatureSchemes {
+				if size >= candidate.minModulusBytes && version <= candidate.maxVersion {
+					sigAlgs = append(sigAlgs, candidate.scheme)
+				}
+			}
+		case ed25519.PublicKey:
+			sigAlgs = []SignatureScheme{Ed25519}
+		case circlSign.PublicKey:
+			scheme := pub.Scheme()
+			tlsScheme, ok := scheme.(circlPki.TLSScheme)
+			if !ok {
+				return nil
+			}
+			sigAlgs = []SignatureScheme{SignatureScheme(tlsScheme.TLSIdentifier())}
+		default:
+			return nil
+		}
 	}
 
 	if cert.SupportedSignatureAlgorithms != nil {
