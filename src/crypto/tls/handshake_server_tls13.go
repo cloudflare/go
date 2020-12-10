@@ -40,6 +40,8 @@ type serverHandshakeStateTLS13 struct {
 	trafficSecret   []byte // client_application_traffic_secret_0
 	transcript      hash.Hash
 	clientFinished  []byte
+
+	hsTimings CFEventTLS13ServerHandshakeTimingInfo
 }
 
 func (hs *serverHandshakeStateTLS13) handshake() error {
@@ -82,6 +84,7 @@ func (hs *serverHandshakeStateTLS13) handshake() error {
 		return err
 	}
 
+	c.handleCFEvent(hs.hsTimings)
 	c.isHandshakeComplete.Store(true)
 
 	return nil
@@ -261,6 +264,9 @@ GroupSelection:
 	}
 
 	c.serverName = hs.clientHello.serverName
+
+	hs.hsTimings.ProcessClientHello = hs.hsTimings.elapsedTime()
+
 	return nil
 }
 
@@ -604,6 +610,8 @@ func (hs *serverHandshakeStateTLS13) sendServerParameters() error {
 		return err
 	}
 
+	hs.hsTimings.WriteServerHello = hs.hsTimings.elapsedTime()
+
 	if err := hs.sendDummyChangeCipherSpec(); err != nil {
 		return err
 	}
@@ -657,6 +665,8 @@ func (hs *serverHandshakeStateTLS13) sendServerParameters() error {
 		return err
 	}
 
+	hs.hsTimings.WriteEncryptedExtensions = hs.hsTimings.elapsedTime()
+
 	return nil
 }
 
@@ -697,6 +707,8 @@ func (hs *serverHandshakeStateTLS13) sendServerCertificate() error {
 		return err
 	}
 
+	hs.hsTimings.WriteCertificate = hs.hsTimings.elapsedTime()
+
 	certVerifyMsg := new(certificateVerifyMsg)
 	certVerifyMsg.hasSignatureAlgorithm = true
 	certVerifyMsg.signatureAlgorithm = hs.sigAlg
@@ -728,6 +740,8 @@ func (hs *serverHandshakeStateTLS13) sendServerCertificate() error {
 		return err
 	}
 
+	hs.hsTimings.WriteCertificateVerify = hs.hsTimings.elapsedTime()
+
 	return nil
 }
 
@@ -741,6 +755,8 @@ func (hs *serverHandshakeStateTLS13) sendServerFinished() error {
 	if _, err := hs.c.writeHandshakeRecord(finished, hs.transcript); err != nil {
 		return err
 	}
+
+	hs.hsTimings.WriteServerFinished = hs.hsTimings.elapsedTime()
 
 	// Derive secrets that take context through the server Finished.
 
@@ -923,6 +939,8 @@ func (hs *serverHandshakeStateTLS13) readClientCertificate() error {
 		}
 	}
 
+	hs.hsTimings.ReadCertificate = hs.hsTimings.elapsedTime()
+
 	if len(certMsg.certificate.Certificate) != 0 {
 		// certificateVerifyMsg is included in the transcript, but not until
 		// after we verify the handshake signature, since the state before
@@ -963,6 +981,8 @@ func (hs *serverHandshakeStateTLS13) readClientCertificate() error {
 		}
 	}
 
+	hs.hsTimings.ReadCertificateVerify = hs.hsTimings.elapsedTime()
+
 	// If we waited until the client certificates to send session tickets, we
 	// are ready to do it now.
 	if err := hs.sendSessionTickets(); err != nil {
@@ -991,6 +1011,8 @@ func (hs *serverHandshakeStateTLS13) readClientFinished() error {
 		c.sendAlert(alertDecryptError)
 		return errors.New("tls: invalid client finished hash")
 	}
+
+	hs.hsTimings.ReadClientFinished = hs.hsTimings.elapsedTime()
 
 	c.in.setTrafficSecret(hs.suite, QUICEncryptionLevelApplication, hs.trafficSecret)
 
