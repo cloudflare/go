@@ -727,6 +727,14 @@ type Config struct {
 	// used for debugging.
 	KeyLogWriter io.Writer
 
+	// CFEventHandler, if set, is called by the client and server at various
+	// points during the handshake to handle specific events. This is used
+	// primarily for collecting metrics.
+	//
+	// NOTE: This feature is used to implement Cloudflare-internal features.
+	// This feature is unstable and applications MUST NOT depend on it.
+	CFEventHandler func(event CFEvent)
+
 	// CFControl is used to pass additional TLS configuration information to
 	// HTTP requests via ConnectionState.
 	//
@@ -824,6 +832,7 @@ func (c *Config) Clone() *Config {
 		DynamicRecordSizingDisabled: c.DynamicRecordSizingDisabled,
 		Renegotiation:               c.Renegotiation,
 		KeyLogWriter:                c.KeyLogWriter,
+		CFEventHandler:              c.CFEventHandler,
 		CFControl:                   c.CFControl,
 		sessionTicketKeys:           c.sessionTicketKeys,
 		autoSessionTicketKeys:       c.autoSessionTicketKeys,
