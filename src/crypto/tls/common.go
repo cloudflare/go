@@ -277,6 +277,13 @@ type ConnectionState struct {
 	// RFC 7627, and https://mitls.org/pages/attacks/3SHAKE#channelbindings.
 	TLSUnique []byte
 
+	// CFControl is used to pass additional TLS configuration information to
+	// HTTP requests.
+	//
+	// NOTE: This feature is used to implement Cloudflare-internal features.
+	// This feature is unstable and applications MUST NOT depend on it.
+	CFControl interface{}
+
 	// ekm is a closure exposed via ExportKeyingMaterial.
 	ekm func(label string, context []byte, length int) ([]byte, error)
 }
@@ -689,6 +696,21 @@ type Config struct {
 	// used for debugging.
 	KeyLogWriter io.Writer
 
+	// CFEventHandler, if set, is called by the client and server at various
+	// points during the handshake to handle specific events. This is used
+	// primarily for collecting metrics.
+	//
+	// NOTE: This feature is used to implement Cloudflare-internal features.
+	// This feature is unstable and applications MUST NOT depend on it.
+	CFEventHandler func(event CFEvent)
+
+	// CFControl is used to pass additional TLS configuration information to
+	// HTTP requests via ConnectionState.
+	//
+	// NOTE: This feature is used to implement Cloudflare-internal features.
+	// This feature is unstable and applications MUST NOT depend on it.
+	CFControl interface{}
+
 	// mutex protects sessionTicketKeys and autoSessionTicketKeys.
 	mutex sync.RWMutex
 	// sessionTicketKeys contains zero or more ticket keys. If set, it means the
@@ -778,6 +800,8 @@ func (c *Config) Clone() *Config {
 		DynamicRecordSizingDisabled: c.DynamicRecordSizingDisabled,
 		Renegotiation:               c.Renegotiation,
 		KeyLogWriter:                c.KeyLogWriter,
+		CFEventHandler:              c.CFEventHandler,
+		CFControl:                   c.CFControl,
 		sessionTicketKeys:           c.sessionTicketKeys,
 		autoSessionTicketKeys:       c.autoSessionTicketKeys,
 	}
