@@ -119,6 +119,10 @@ type Conn struct {
 	activeCall atomic.Int32
 
 	tmp [16]byte
+
+	// cfEventHandler is called at several points during the handshake if
+	// set. See also CFEventHandlerContextKey.
+	cfEventHandler func(event CFEvent)
 }
 
 // Access to net.Conn methods.
@@ -1546,6 +1550,10 @@ func (c *Conn) handshakeContext(ctx context.Context) (ret error) {
 		return nil
 	}
 
+	if handler, ok := handshakeCtx.Value(CFEventHandlerContextKey{}).(func(event CFEvent)); ok {
+		c.cfEventHandler = handler
+	}
+
 	c.in.Lock()
 	defer c.in.Unlock()
 
@@ -1652,4 +1660,22 @@ func (c *Conn) VerifyHostname(host string) error {
 		return errors.New("tls: handshake did not verify certificate chain")
 	}
 	return c.peerCertificates[0].VerifyHostname(host)
+}
+
+// CFEventHandlerContextKey is a context key. It can be set on a TLS client or
+// server before the handshake has started. The associated value must be of type
+// func(event tls.CFEvent). This function will be called at various points
+// during the handshake for collecting metrics.
+//
+// NOTE: it can also be called at the end of the connection for certain ECH
+// metrics. This might be removed in the future.
+//
+// NOTE: This feature is used to implement Cloudflare-internal features.
+// This feature is unstable and applications MUST NOT depend on it.
+type CFEventHandlerContextKey struct{}
+
+func (c *Conn) handleCFEvent(event CFEvent) {
+	if c.cfEventHandler != nil {
+		c.cfEventHandler(event)
+	}
 }
