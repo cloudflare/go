@@ -22,6 +22,51 @@ import (
 // messages cause too much work in session ticket decryption attempts.
 const maxClientPSKIdentities = 5
 
+// EXP_EventTLS13ServerHandshakeTimingInfo carries intra-stack time durations
+// for TLS 1.3 state machine changes. It can be used for tracking metrics during a
+// connection. Some durations may be sensitive, such as the amount of time to
+// process a particular handshake message, so this event should only be used
+// for experimental purposes.
+//
+// NOTE: This API is EXPERIMENTAL and subject to change.
+type EXP_EventTLS13ServerHandshakeTimingInfo struct {
+	timer                    func() time.Time
+	start                    time.Time
+	ProcessClientHello       time.Duration
+	WriteServerHello         time.Duration
+	WriteEncryptedExtensions time.Duration
+	WriteCertificate         time.Duration
+	WriteCertificateVerify   time.Duration
+	WriteServerFinished      time.Duration
+	ReadCertificate          time.Duration
+	ReadCertificateVerify    time.Duration
+	ReadClientFinished       time.Duration
+}
+
+// Name is required by the EXP_Event interface.
+func (e EXP_EventTLS13ServerHandshakeTimingInfo) Name() string {
+	return "TLS13ServerHandshakeTimingInfo"
+}
+
+func (e EXP_EventTLS13ServerHandshakeTimingInfo) elapsedTime() time.Duration {
+	if e.timer == nil {
+		return 0
+	}
+	return e.timer().Sub(e.start)
+}
+
+func createTLS13ServerHandshakeTimingInfo(timerFunc func() time.Time) EXP_EventTLS13ServerHandshakeTimingInfo {
+	timer := time.Now
+	if timerFunc != nil {
+		timer = timerFunc
+	}
+
+	return EXP_EventTLS13ServerHandshakeTimingInfo{
+		timer: timer,
+		start: timer(),
+	}
+}
+
 type serverHandshakeStateTLS13 struct {
 	c               *Conn
 	clientHello     *clientHelloMsg
@@ -38,6 +83,8 @@ type serverHandshakeStateTLS13 struct {
 	trafficSecret   []byte // client_application_traffic_secret_0
 	transcript      hash.Hash
 	clientFinished  []byte
+
+	handshakeTimings EXP_EventTLS13ServerHandshakeTimingInfo
 }
 
 func (hs *serverHandshakeStateTLS13) handshake() error {
@@ -76,6 +123,7 @@ func (hs *serverHandshakeStateTLS13) handshake() error {
 		return err
 	}
 
+	c.handleEvent(hs.handshakeTimings)
 	atomic.StoreUint32(&c.handshakeStatus, 1)
 
 	return nil
@@ -261,6 +309,9 @@ GroupSelection:
 	}
 
 	c.serverName = hs.clientHello.serverName
+
+	hs.handshakeTimings.ProcessClientHello = hs.handshakeTimings.elapsedTime()
+
 	return nil
 }
 
@@ -577,6 +628,8 @@ func (hs *serverHandshakeStateTLS13) sendServerParameters() error {
 		return err
 	}
 
+	hs.handshakeTimings.WriteServerHello = hs.handshakeTimings.elapsedTime()
+
 	if err := hs.sendDummyChangeCipherSpec(); err != nil {
 		return err
 	}
@@ -624,6 +677,8 @@ func (hs *serverHandshakeStateTLS13) sendServerParameters() error {
 		return err
 	}
 
+	hs.handshakeTimings.WriteEncryptedExtensions = hs.handshakeTimings.elapsedTime()
+
 	return nil
 }
 
@@ -666,6 +721,8 @@ func (hs *serverHandshakeStateTLS13) sendServerCertificate() error {
 		return err
 	}
 
+	hs.handshakeTimings.WriteCertificate = hs.handshakeTimings.elapsedTime()
+
 	certVerifyMsg := new(certificateVerifyMsg)
 	certVerifyMsg.hasSignatureAlgorithm = true
 	certVerifyMsg.signatureAlgorithm = hs.sigAlg
@@ -698,6 +755,8 @@ func (hs *serverHandshakeStateTLS13) sendServerCertificate() error {
 		return err
 	}
 
+	hs.handshakeTimings.WriteCertificateVerify = hs.handshakeTimings.elapsedTime()
+
 	return nil
 }
 
@@ -712,6 +771,8 @@ func (hs *serverHandshakeStateTLS13) sendServerFinished() error {
 	if _, err := c.writeRecord(recordTypeHandshake, finished.marshal()); err != nil {
 		return err
 	}
+
+	hs.handshakeTimings.WriteServerFinished = hs.handshakeTimings.elapsedTime()
 
 	// Derive secrets that take context through the server Finished.
 
@@ -850,6 +911,8 @@ func (hs *serverHandshakeStateTLS13) readClientCertificate() error {
 		}
 	}
 
+	hs.handshakeTimings.ReadCertificate = hs.handshakeTimings.elapsedTime()
+
 	if len(certMsg.certificate.Certificate) != 0 {
 		msg, err = c.readHandshake()
 		if err != nil {
@@ -885,6 +948,8 @@ func (hs *serverHandshakeStateTLS13) readClientCertificate() error {
 		hs.transcript.Write(certVerify.marshal())
 	}
 
+	hs.handshakeTimings.ReadCertificateVerify = hs.handshakeTimings.elapsedTime()
+
 	// If we waited until the client certificates to send session tickets, we
 	// are ready to do it now.
 	if err := hs.sendSessionTickets(); err != nil {
@@ -912,6 +977,8 @@ func (hs *serverHandshakeStateTLS13) readClientFinished() error {
 		c.sendAlert(alertDecryptError)
 		return errors.New("tls: invalid client finished hash")
 	}
+
+	hs.handshakeTimings.ReadClientFinished = hs.handshakeTimings.elapsedTime()
 
 	c.in.setTrafficSecret(hs.suite, hs.trafficSecret)
 

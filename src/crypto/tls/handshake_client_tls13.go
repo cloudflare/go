@@ -16,6 +16,51 @@ import (
 	"time"
 )
 
+// EXP_EventTLS13ClientHandshakeTimingInfo carries intra-stack time durations
+// for TLS 1.3 state machine changes. It can be used for tracking metrics during a
+// connection. Some durations may be sensitive, such as the amount of time to
+// process a particular handshake message, so this event should only be used
+// for experimental purposes.
+//
+// NOTE: This API is EXPERIMENTAL and subject to change.
+type EXP_EventTLS13ClientHandshakeTimingInfo struct {
+	timer                   func() time.Time
+	start                   time.Time
+	WriteClientHello        time.Duration
+	ProcessServerHello      time.Duration
+	ReadEncryptedExtensions time.Duration
+	ReadCertificate         time.Duration
+	ReadCertificateVerify   time.Duration
+	ReadServerFinished      time.Duration
+	WriteCertificate        time.Duration
+	WriteCertificateVerify  time.Duration
+	WriteClientFinished     time.Duration
+}
+
+// Name is required by the EXP_Event interface.
+func (e EXP_EventTLS13ClientHandshakeTimingInfo) Name() string {
+	return "TLS13ClientHandshakeTimingInfo"
+}
+
+func (e EXP_EventTLS13ClientHandshakeTimingInfo) elapsedTime() time.Duration {
+	if e.timer == nil {
+		return 0
+	}
+	return time.Now().Sub(e.start)
+}
+
+func createTLS13ClientHandshakeTimingInfo(timerFunc func() time.Time) EXP_EventTLS13ClientHandshakeTimingInfo {
+	timer := time.Now
+	if timerFunc != nil {
+		timer = timerFunc
+	}
+
+	return EXP_EventTLS13ClientHandshakeTimingInfo{
+		timer: timer,
+		start: timer(),
+	}
+}
+
 type clientHandshakeStateTLS13 struct {
 	c           *Conn
 	serverHello *serverHelloMsg
@@ -36,6 +81,8 @@ type clientHandshakeStateTLS13 struct {
 	transcriptInner hash.Hash
 	masterSecret    []byte
 	trafficSecret   []byte // client_application_traffic_secret_0
+
+	handshakeTimings EXP_EventTLS13ClientHandshakeTimingInfo
 }
 
 // handshake requires hs.c, hs.hello, hs.serverHello, hs.ecdheParams, and,
@@ -132,6 +179,7 @@ func (hs *clientHandshakeStateTLS13) handshake() error {
 		return err
 	}
 
+	c.handleEvent(hs.handshakeTimings)
 	atomic.StoreUint32(&c.handshakeStatus, 1)
 
 	return nil
@@ -343,6 +391,10 @@ func (hs *clientHandshakeStateTLS13) processHelloRetryRequest() error {
 func (hs *clientHandshakeStateTLS13) processServerHello() error {
 	c := hs.c
 
+	defer func() {
+		hs.handshakeTimings.ProcessServerHello = hs.handshakeTimings.elapsedTime()
+	}()
+
 	if bytes.Equal(hs.serverHello.random, helloRetryRequestRandom) {
 		c.sendAlert(alertUnexpectedMessage)
 		return errors.New("tls: server sent two HelloRetryRequest messages")
@@ -475,6 +527,8 @@ func (hs *clientHandshakeStateTLS13) readServerParameters() error {
 		}
 	}
 
+	hs.handshakeTimings.ReadEncryptedExtensions = hs.handshakeTimings.elapsedTime()
+
 	return nil
 }
 
@@ -524,6 +578,8 @@ func (hs *clientHandshakeStateTLS13) readServerCertificate() error {
 	}
 	hs.transcript.Write(certMsg.marshal())
 
+	hs.handshakeTimings.ReadCertificate = hs.handshakeTimings.elapsedTime()
+
 	c.scts = certMsg.certificate.SignedCertificateTimestamps
 	c.ocspResponse = certMsg.certificate.OCSPStaple
 
@@ -564,6 +620,8 @@ func (hs *clientHandshakeStateTLS13) readServerCertificate() error {
 
 	hs.transcript.Write(certVerify.marshal())
 
+	hs.handshakeTimings.ReadCertificateVerify = hs.handshakeTimings.elapsedTime()
+
 	return nil
 }
 
@@ -580,6 +638,8 @@ func (hs *clientHandshakeStateTLS13) readServerFinished() error {
 		c.sendAlert(alertUnexpectedMessage)
 		return unexpectedMessageError(finished, msg)
 	}
+
+	hs.handshakeTimings.ReadServerFinished = hs.handshakeTimings.elapsedTime()
 
 	expectedMAC := hs.suite.finishedHash(c.in.trafficSecret, hs.transcript)
 	if !hmac.Equal(expectedMAC, finished.verifyData) {
@@ -640,6 +700,8 @@ func (hs *clientHandshakeStateTLS13) sendClientCertificate() error {
 		return err
 	}
 
+	hs.handshakeTimings.WriteCertificate = hs.handshakeTimings.elapsedTime()
+
 	// If we sent an empty certificate message, skip the CertificateVerify.
 	if len(cert.Certificate) == 0 {
 		return nil
@@ -678,6 +740,8 @@ func (hs *clientHandshakeStateTLS13) sendClientCertificate() error {
 		return err
 	}
 
+	hs.handshakeTimings.WriteCertificateVerify = hs.handshakeTimings.elapsedTime()
+
 	return nil
 }
 
@@ -692,6 +756,8 @@ func (hs *clientHandshakeStateTLS13) sendClientFinished() error {
 	if _, err := c.writeRecord(recordTypeHandshake, finished.marshal()); err != nil {
 		return err
 	}
+
+	hs.handshakeTimings.WriteClientFinished = hs.handshakeTimings.elapsedTime()
 
 	c.out.setTrafficSecret(hs.suite, hs.trafficSecret)
 
