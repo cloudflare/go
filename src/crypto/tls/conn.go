@@ -1335,6 +1335,7 @@ func (c *Conn) Close() error {
 	if err := c.conn.Close(); err != nil {
 		return err
 	}
+
 	return alertErr
 }
 
@@ -1424,6 +1425,7 @@ func (c *Conn) connectionStateLocked() ConnectionState {
 	state.VerifiedChains = c.verifiedChains
 	state.SignedCertificateTimestamps = c.scts
 	state.OCSPResponse = c.ocspResponse
+	state.CFControl = c.config.CFControl
 	if !c.didResume && c.vers != VersionTLS13 {
 		if c.clientFinishedIsFirst {
 			state.TLSUnique = c.clientFinished[:]
@@ -1468,4 +1470,10 @@ func (c *Conn) VerifyHostname(host string) error {
 
 func (c *Conn) handshakeComplete() bool {
 	return atomic.LoadUint32(&c.handshakeStatus) == 1
+}
+
+func (c *Conn) handleCFEvent(event CFEvent) {
+	if c.config.CFEventHandler != nil {
+		c.config.CFEventHandler(event)
+	}
 }
