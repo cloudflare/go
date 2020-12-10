@@ -147,6 +147,8 @@ func (c *Conn) clientHandshake(ctx context.Context) (err error) {
 		c.config = defaultConfig()
 	}
 
+	handshakeTimings := createTLS13ClientHandshakeTimingInfo(c.config.Time)
+
 	// This may be a renegotiation handshake, in which case some fields
 	// need to be reset.
 	c.didResume = false
@@ -175,6 +177,8 @@ func (c *Conn) clientHandshake(ctx context.Context) (err error) {
 	if _, err := c.writeRecord(recordTypeHandshake, hello.marshal()); err != nil {
 		return err
 	}
+
+	handshakeTimings.WriteClientHello = handshakeTimings.elapsedTime()
 
 	msg, err := c.readHandshake()
 	if err != nil {
@@ -205,14 +209,15 @@ func (c *Conn) clientHandshake(ctx context.Context) (err error) {
 
 	if c.vers == VersionTLS13 {
 		hs := &clientHandshakeStateTLS13{
-			c:           c,
-			ctx:         ctx,
-			serverHello: serverHello,
-			hello:       hello,
-			ecdheParams: ecdheParams,
-			session:     session,
-			earlySecret: earlySecret,
-			binderKey:   binderKey,
+			c:                c,
+			ctx:              ctx,
+			serverHello:      serverHello,
+			hello:            hello,
+			ecdheParams:      ecdheParams,
+			session:          session,
+			earlySecret:      earlySecret,
+			binderKey:        binderKey,
+			handshakeTimings: handshakeTimings,
 		}
 
 		// In TLS 1.3, session tickets are delivered after the handshake.
