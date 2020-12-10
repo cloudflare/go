@@ -152,6 +152,8 @@ func (c *Conn) clientHandshake(ctx context.Context) (err error) {
 		c.config = defaultConfig()
 	}
 
+	hsTimings := createTLS13ClientHandshakeTimingInfo(c.config.Time)
+
 	// This may be a renegotiation handshake, in which case some fields
 	// need to be reset.
 	c.didResume = false
@@ -183,6 +185,8 @@ func (c *Conn) clientHandshake(ctx context.Context) (err error) {
 	if _, err := c.writeHandshakeRecord(hello, nil); err != nil {
 		return err
 	}
+
+	hsTimings.WriteClientHello = hsTimings.elapsedTime()
 
 	// serverHelloMsg is not included in the transcript
 	msg, err := c.readHandshake(nil)
@@ -222,6 +226,7 @@ func (c *Conn) clientHandshake(ctx context.Context) (err error) {
 			session:     session,
 			earlySecret: earlySecret,
 			binderKey:   binderKey,
+			hsTimings:   hsTimings,
 		}
 
 		// In TLS 1.3, session tickets are delivered after the handshake.
