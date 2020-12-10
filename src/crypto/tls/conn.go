@@ -1542,3 +1542,9 @@ func (c *Conn) VerifyHostname(host string) error {
 func (c *Conn) handshakeComplete() bool {
 	return atomic.LoadUint32(&c.handshakeStatus) == 1
 }
+
+func (c *Conn) handleCFEvent(event CFEvent) {
+	if c.config.CFEventHandler != nil {
+		c.config.CFEventHandler(event)
+	}
+}
