@@ -22,9 +22,11 @@ import (
 // messages cause too much work in session ticket decryption attempts.
 const maxClientPSKIdentities = 5
 
-// EXP_EventTLS13ServerHandshakeTimingInfo carries intra-stack durations for
-// state machine changes. It can be used for tracking metrics during a
-// connection.
+// EXP_EventTLS13ServerHandshakeTimingInfo carries intra-stack time durations
+// for state machine changes. It can be used for tracking metrics during a
+// connection. Some durations may be sensitive, such as the amount of time to
+// process a particular handshake message, so this event should only be used
+// for experimental purposes.
 //
 // NOTE: This API is EXPERIMENTAL and subject to change.
 type EXP_EventTLS13ServerHandshakeTimingInfo struct {
