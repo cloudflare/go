@@ -418,8 +418,6 @@ var depsRules = `
 	< crypto/x509/internal/macos
 	< crypto/x509/pkix
 	< crypto/x509
-	< crypto/tls/internal/syntax # TOOD(cjpatton): Remove this dependency once HPKE is implemented in CIRCL
-	< crypto/tls/internal/hpke   # TODO(cjpatton): Remove this dependency once HPKE is implemented in CIRCL
 	< crypto/tls;
 
 	# crypto-aware packages
