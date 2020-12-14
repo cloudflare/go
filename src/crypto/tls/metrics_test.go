@@ -19,7 +19,7 @@ type testTimingInfo struct {
 
 func (t testTimingInfo) isMonotonicallyIncreasing() bool {
 	serverIsMonotonicallyIncreasing :=
-		t.serverTimingInfo.ReadClientHello < t.serverTimingInfo.WriteServerHello &&
+		t.serverTimingInfo.ProcessClientHello < t.serverTimingInfo.WriteServerHello &&
 			t.serverTimingInfo.WriteServerHello < t.serverTimingInfo.WriteEncryptedExtensions &&
 			t.serverTimingInfo.WriteEncryptedExtensions < t.serverTimingInfo.WriteCertificate &&
 			t.serverTimingInfo.WriteCertificate < t.serverTimingInfo.WriteCertificateVerify &&
@@ -29,8 +29,8 @@ func (t testTimingInfo) isMonotonicallyIncreasing() bool {
 			t.serverTimingInfo.ReadCertificateVerify < t.serverTimingInfo.ReadClientFinished
 
 	clientIsMonotonicallyIncreasing :=
-		t.clientTimingInfo.WriteClientHello < t.clientTimingInfo.ReadServerHello &&
-			t.clientTimingInfo.ReadServerHello < t.clientTimingInfo.ReadEncryptedExtensions &&
+		t.clientTimingInfo.WriteClientHello < t.clientTimingInfo.ProcessServerHello &&
+			t.clientTimingInfo.ProcessServerHello < t.clientTimingInfo.ReadEncryptedExtensions &&
 			t.clientTimingInfo.ReadEncryptedExtensions < t.clientTimingInfo.ReadCertificate &&
 			t.clientTimingInfo.ReadCertificate < t.clientTimingInfo.ReadCertificateVerify &&
 			t.clientTimingInfo.ReadCertificateVerify < t.clientTimingInfo.ReadServerFinished &&

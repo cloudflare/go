@@ -17,7 +17,7 @@ import (
 )
 
 // EXP_EventTLS13ClientHandshakeTimingInfo carries intra-stack time durations
-// for state machine changes. It can be used for tracking metrics during a
+// for TLS 1.3 state machine changes. It can be used for tracking metrics during a
 // connection. Some durations may be sensitive, such as the amount of time to
 // process a particular handshake message, so this event should only be used
 // for experimental purposes.
@@ -27,7 +27,7 @@ type EXP_EventTLS13ClientHandshakeTimingInfo struct {
 	timer                   func() time.Time
 	start                   time.Time
 	WriteClientHello        time.Duration
-	ReadServerHello         time.Duration
+	ProcessServerHello      time.Duration
 	ReadEncryptedExtensions time.Duration
 	ReadCertificate         time.Duration
 	ReadCertificateVerify   time.Duration
@@ -389,7 +389,7 @@ func (hs *clientHandshakeStateTLS13) processServerHello() error {
 	c := hs.c
 
 	defer func() {
-		hs.handshakeTimings.ReadServerHello = hs.handshakeTimings.elapsedTime()
+		hs.handshakeTimings.ProcessServerHello = hs.handshakeTimings.elapsedTime()
 	}()
 
 	if bytes.Equal(hs.serverHello.random, helloRetryRequestRandom) {
