@@ -23,7 +23,7 @@ import (
 const maxClientPSKIdentities = 5
 
 // EXP_EventTLS13ServerHandshakeTimingInfo carries intra-stack time durations
-// for state machine changes. It can be used for tracking metrics during a
+// for TLS 1.3 state machine changes. It can be used for tracking metrics during a
 // connection. Some durations may be sensitive, such as the amount of time to
 // process a particular handshake message, so this event should only be used
 // for experimental purposes.
@@ -32,7 +32,7 @@ const maxClientPSKIdentities = 5
 type EXP_EventTLS13ServerHandshakeTimingInfo struct {
 	timer                    func() time.Time
 	start                    time.Time
-	ReadClientHello          time.Duration
+	ProcessClientHello       time.Duration
 	WriteServerHello         time.Duration
 	WriteEncryptedExtensions time.Duration
 	WriteCertificate         time.Duration
@@ -307,7 +307,7 @@ GroupSelection:
 
 	c.serverName = hs.clientHello.serverName
 
-	hs.handshakeTimings.ReadClientHello = hs.handshakeTimings.elapsedTime()
+	hs.handshakeTimings.ProcessClientHello = hs.handshakeTimings.elapsedTime()
 
 	return nil
 }
