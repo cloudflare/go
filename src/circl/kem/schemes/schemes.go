@@ -1,10 +1,22 @@
 // Package schemes contains a register of KEM schemes.
+//
+// Schemes Implemented
+//
+// Based on standard elliptic curves:
+//  HPKE_KEM_P256_HKDF_SHA256, HPKE_KEM_P384_HKDF_SHA384, HPKE_KEM_P521_HKDF_SHA512
+// Based on standard Diffie-Hellman functions:
+//  HPKE_KEM_X25519_HKDF_SHA256, HPKE_KEM_X448_HKDF_SHA512
+// Post-quantum kems:
+//  Kyber512, Kyber768, Kyber1024
+//  SIKEp434, SIKEp503, SIKEp751
 package schemes
 
 import (
 	"strings"
 
+	"circl/hpke"
 	"circl/kem"
+	"circl/kem/hybrid"
 	"circl/kem/kyber/kyber1024"
 	"circl/kem/kyber/kyber512"
 	"circl/kem/kyber/kyber768"
@@ -14,12 +26,18 @@ import (
 )
 
 var allSchemes = [...]kem.Scheme{
+	hpke.KEM_P256_HKDF_SHA256.Scheme(),
+	hpke.KEM_P384_HKDF_SHA384.Scheme(),
+	hpke.KEM_P521_HKDF_SHA512.Scheme(),
+	hpke.KEM_X25519_HKDF_SHA256.Scheme(),
+	hpke.KEM_X448_HKDF_SHA512.Scheme(),
 	kyber512.Scheme(),
 	kyber768.Scheme(),
 	kyber1024.Scheme(),
 	sikep434.Scheme(),
 	sikep503.Scheme(),
 	sikep751.Scheme(),
+	hybrid.KyberSike(), // XXX temporary for testing
 }
 
 var allSchemeNames map[string]kem.Scheme
