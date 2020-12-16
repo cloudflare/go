@@ -223,17 +223,20 @@ func (hs *serverHandshakeStateTLS13) processClientHello() error {
 		// intentionally, we compute the set of ECDHE groups supported by both
 		// the client and server but for which the client did not offer a key
 		// share.
-		supportedCurves = make([]CurveID, 0)
+		m := make(map[CurveID]bool)
 		for _, serverGroup := range c.config.curvePreferences() {
 			for _, clientGroup := range hs.clientHello.supportedCurves {
-				if serverGroup == clientGroup {
-					for _, ks := range hs.clientHello.keyShares {
-						if serverGroup != ks.group {
-							supportedCurves = append(supportedCurves, serverGroup)
-						}
-					}
+				if clientGroup == serverGroup {
+					m[clientGroup] = true
 				}
 			}
+		}
+		for _, ks := range hs.clientHello.keyShares {
+			delete(m, ks.group)
+		}
+		supportedCurves = nil
+		for group := range m {
+			supportedCurves = append(supportedCurves, group)
 		}
 		if len(supportedCurves) == 0 {
 			// This occurs if the client offered a key share for each mutually
