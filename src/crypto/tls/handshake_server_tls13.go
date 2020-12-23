@@ -177,6 +177,13 @@ func (hs *serverHandshakeStateTLS13) processClientHello() error {
 		return err
 	}
 
+	if hs.clientHello.echIsInner {
+		// If confirming ECH acceptance, then clear the last 8 bytes of the
+		// ServerHello.random in preparation for computing the confirmation
+		// hint.
+		copy(hs.hello.random[24:], []byte{0, 0, 0, 0, 0, 0, 0, 0})
+	}
+
 	if len(hs.clientHello.secureRenegotiation) != 0 {
 		c.sendAlert(alertHandshakeFailure)
 		return errors.New("tls: initial handshake had non-empty renegotiation extension")
@@ -531,7 +538,7 @@ func (hs *serverHandshakeStateTLS13) doHelloRetryRequest(selectedGroup CurveID) 
 		return unexpectedMessageError(clientHello, msg)
 	}
 
-	clientHello, err = c.echAcceptOrBypass(clientHello)
+	clientHello, err = c.echAcceptOrReject(clientHello)
 	if err != nil {
 		return fmt.Errorf("tls: %s", err) // Alert sent
 	}
@@ -616,13 +623,26 @@ func illegalClientHelloChange(ch, ch1 *clientHelloMsg) bool {
 func (hs *serverHandshakeStateTLS13) sendServerParameters() error {
 	c := hs.c
 
+	earlySecret := hs.earlySecret
+	if earlySecret == nil {
+		earlySecret = hs.suite.extract(nil, nil)
+	}
+	hs.handshakeSecret = hs.suite.extract(hs.sharedKey,
+		hs.suite.deriveSecret(earlySecret, "derived", nil))
+
 	// Confirm ECH acceptance.
-	if hs.clientHello.encryptedClientHelloOffered &&
-		len(hs.clientHello.encryptedClientHello) == 0 {
-		secret := hs.suite.extract(hs.clientHello.random, nil)
-		context := hs.hello.random[:24]
-		acceptConfirmation := hs.suite.expandLabel(secret, echTls13LabelAcceptConfirm, context, 8)
-		copy(hs.hello.random[24:], acceptConfirmation)
+	if hs.clientHello.echIsInner {
+		confTranscript := cloneHash(hs.transcript, hs.suite.hash)
+		if confTranscript == nil {
+			c.sendAlert(alertInternalError)
+			return errors.New("tls: internal error: failed to clone hash")
+		}
+		confTranscript.Write(hs.clientHello.marshal())
+		confTranscript.Write(hs.hello.marshal())
+		conf := hs.suite.deriveSecret(hs.handshakeSecret,
+			echAcceptConfirmationLabel, confTranscript)
+		copy(hs.hello.random[24:], conf[:8])
+		hs.hello.raw = nil
 	}
 
 	hs.transcript.Write(hs.clientHello.marshal())
@@ -636,13 +656,6 @@ func (hs *serverHandshakeStateTLS13) sendServerParameters() error {
 	if err := hs.sendDummyChangeCipherSpec(); err != nil {
 		return err
 	}
-
-	earlySecret := hs.earlySecret
-	if earlySecret == nil {
-		earlySecret = hs.suite.extract(nil, nil)
-	}
-	hs.handshakeSecret = hs.suite.extract(hs.sharedKey,
-		hs.suite.deriveSecret(earlySecret, "derived", nil))
 
 	clientSecret := hs.suite.deriveSecret(hs.handshakeSecret,
 		clientHandshakeTrafficLabel, hs.transcript)
@@ -671,8 +684,8 @@ func (hs *serverHandshakeStateTLS13) sendServerParameters() error {
 		}
 	}
 
-	if len(c.ech.retryConfigs) > 0 {
-		encryptedExtensions.encryptedClientHello = c.ech.retryConfigs
+	if !c.ech.accepted && len(c.ech.retryConfigs) > 0 {
+		encryptedExtensions.ech = c.ech.retryConfigs
 	}
 
 	hs.transcript.Write(encryptedExtensions.marshal())
