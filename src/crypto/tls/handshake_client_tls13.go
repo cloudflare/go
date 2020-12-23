@@ -126,27 +126,6 @@ func (hs *clientHandshakeStateTLS13) handshake() error {
 		}
 	}
 
-	// Determine if ECH was accepted.
-	if hs.c.ech.offered {
-		secret := hs.suite.extract(hs.helloInner.random, nil)
-		context := hs.serverHello.random[:24]
-		acceptConfirmation := hs.suite.expandLabel(secret, echTls13LabelAcceptConfirm, context, 8)
-		if bytes.Equal(hs.serverHello.random[24:], acceptConfirmation) {
-			c.ech.accepted = true
-			hs.hello = hs.helloInner
-			hs.transcript = hs.transcriptInner
-		}
-	}
-
-	// Resolve the server name now that ECH acceptance has been determined.
-	//
-	// NOTE(cjpatton): Currently the client sends the same ALPN extension in the
-	// ClientHelloInner and ClientHelloOuter. If that changes, then we'll need
-	// to resolve ALPN here as well.
-	c.serverName = hs.hello.serverName
-
-	hs.transcript.Write(hs.serverHello.marshal())
-
 	c.buffering = true
 	if err := hs.processServerHello(); err != nil {
 		return err
@@ -356,9 +335,17 @@ func (hs *clientHandshakeStateTLS13) processHelloRetryRequest() error {
 	}
 
 	if testingECHIllegalHandleAfterHRR {
-		// Triggers a server abort, since this changes the cipher suite offered
-		// by the client.
-		hs.hello.encryptedClientHello[0] ^= 0xff
+		// Triggers a server abort, since the "config_id" and "enc" fields are
+		// expected to be empty after HRR.
+		ech, err := echUnmarshalClient(hs.hello.ech)
+		if err != nil {
+			return err
+		}
+		ech.raw = nil
+		ech.handle.raw = nil
+		ech.handle.configId = []byte{1, 2, 3, 4}
+		ech.handle.enc = []byte{1, 2, 3, 4}
+		hs.hello.ech = ech.marshal()
 	}
 
 	if _, err := c.writeRecord(recordTypeHandshake, hs.hello.marshal()); err != nil {
@@ -465,6 +452,37 @@ func (hs *clientHandshakeStateTLS13) establishHandshakeKeys() error {
 	handshakeSecret := hs.suite.extract(sharedKey,
 		hs.suite.deriveSecret(earlySecret, "derived", nil))
 
+	// If ECH was offered, then determine if it was accepted.
+	if c.ech.offered {
+		confTranscript := cloneHash(hs.transcriptInner, hs.suite.hash)
+		if confTranscript == nil {
+			c.sendAlert(alertInternalError)
+			return errors.New("tls: internal error: failed to clone hash")
+		}
+		serverHelloConf := echEncodeServerHelloConf(hs.serverHello.marshal())
+		if serverHelloConf == nil {
+			c.sendAlert(alertInternalError)
+			return errors.New("tls: internal error: failed to encode ServerHelloConf")
+		}
+		confTranscript.Write(serverHelloConf)
+		conf := hs.suite.deriveSecret(handshakeSecret,
+			echAcceptConfirmationLabel, confTranscript)
+		if bytes.Equal(hs.serverHello.random[24:], conf[:8]) {
+			c.ech.accepted = true
+			hs.hello = hs.helloInner
+			hs.transcript = hs.transcriptInner
+		}
+	}
+
+	hs.transcript.Write(hs.serverHello.marshal())
+
+	// Resolve the server name now that ECH acceptance has been determined.
+	//
+	// NOTE(cjpatton): Currently the client sends the same ALPN extension in the
+	// ClientHelloInner and ClientHelloOuter. If that changes, then we'll need
+	// to resolve ALPN here as well.
+	c.serverName = hs.hello.serverName
+
 	clientSecret := hs.suite.deriveSecret(handshakeSecret,
 		clientHandshakeTrafficLabel, hs.transcript)
 	c.out.setTrafficSecret(hs.suite, clientSecret)
@@ -519,8 +537,8 @@ func (hs *clientHandshakeStateTLS13) readServerParameters() error {
 	// If the server rejects ECH, then it may send retry configurations. If
 	// present, we must check them for syntactic correctness and abort if they
 	// are not correct.
-	if c.ech.offered && len(encryptedExtensions.encryptedClientHello) > 0 {
-		c.ech.retryConfigs = encryptedExtensions.encryptedClientHello
+	if c.ech.offered && len(encryptedExtensions.ech) > 0 {
+		c.ech.retryConfigs = encryptedExtensions.ech
 		if _, err = UnmarshalECHConfigs(c.ech.retryConfigs); err != nil {
 			c.sendAlert(alertIllegalParameter)
 			return fmt.Errorf("tls: ech: failed to parse retry configs: %s", err)
