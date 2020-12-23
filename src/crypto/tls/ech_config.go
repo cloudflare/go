@@ -4,7 +4,8 @@
 package tls
 
 import (
-	"crypto/tls/internal/hpke"
+	"circl/hpke"
+	"circl/kem"
 	"errors"
 	"fmt"
 	"io"
@@ -12,13 +13,9 @@ import (
 	"golang.org/x/crypto/cryptobyte"
 )
 
-var (
-	echUnrecognizedVersionError = errors.New("unrecognized version")
-)
-
 // ECHConfig represents an ECH configuration.
 type ECHConfig struct {
-	pk  hpke.KEMPublicKey
+	pk  kem.PublicKey
 	raw []byte
 
 	// Parsed from raw
@@ -33,15 +30,18 @@ type ECHConfig struct {
 
 // UnmarshalECHConfigs parses a sequence of ECH configurations.
 func UnmarshalECHConfigs(raw []byte) ([]ECHConfig, error) {
-	var err error
-	var config ECHConfig
+	var (
+		err         error
+		config      ECHConfig
+		t, contents cryptobyte.String
+	)
 	configs := make([]ECHConfig, 0)
 	s := cryptobyte.String(raw)
-	var t, contents cryptobyte.String
 	if !s.ReadUint16LengthPrefixed(&t) || !s.Empty() {
 		return configs, errors.New("error parsing configs")
 	}
 	raw = raw[2:]
+ConfigsLoop:
 	for !t.Empty() {
 		l := len(t)
 		if !t.ReadUint16(&config.version) ||
@@ -49,44 +49,40 @@ func UnmarshalECHConfigs(raw []byte) ([]ECHConfig, error) {
 			return nil, errors.New("error parsing config")
 		}
 		n := l - len(t)
-		if config.version == extensionECH {
-			if !readConfigContents(&contents, &config) {
-				return nil, errors.New("error parsing config contents")
-			}
-			config.pk, err = echUnmarshalHpkePublicKey(config.rawPublicKey, config.kemId)
-			if err != nil {
-				return nil, err
-			}
-			config.raw = raw[:n]
-			configs = append(configs, config)
-		}
+		config.raw = raw[:n]
 		raw = raw[n:]
+
+		if config.version != extensionECH {
+			continue ConfigsLoop
+		}
+		if !readConfigContents(&contents, &config) {
+			return nil, errors.New("error parsing config contents")
+		}
+
+		kem := hpke.KEM(config.kemId)
+		if !kem.IsValid() {
+			continue ConfigsLoop
+		}
+		config.pk, err = kem.Scheme().UnmarshalBinaryPublicKey(config.rawPublicKey)
+		if err != nil {
+			return nil, fmt.Errorf("error parsing public key: %s", err)
+		}
+		configs = append(configs, config)
 	}
 	return configs, nil
 }
 
-func echUnmarshalConfig(raw []byte) (*ECHConfig, error) {
-	var err error
-	config := new(ECHConfig)
-	s := cryptobyte.String(raw)
-	var contents cryptobyte.String
-	if !s.ReadUint16(&config.version) ||
-		!s.ReadUint16LengthPrefixed(&contents) ||
-		!s.Empty() {
-		return nil, errors.New("error parsing config")
-	}
-	if config.version != extensionECH {
-		return nil, echUnrecognizedVersionError
-	}
-	if !readConfigContents(&contents, config) || !s.Empty() {
-		return nil, errors.New("error parsing config contents")
-	}
-	config.pk, err = echUnmarshalHpkePublicKey(config.rawPublicKey, config.kemId)
-	if err != nil {
-		return nil, err
-	}
-	config.raw = raw
-	return config, nil
+func echMarshalConfigs(configs []ECHConfig) ([]byte, error) {
+	var b cryptobyte.Builder
+	b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
+		for _, config := range configs {
+			if config.raw == nil {
+				panic("config.raw not set")
+			}
+			b.AddBytes(config.raw)
+		}
+	})
+	return b.Bytes()
 }
 
 func readConfigContents(contents *cryptobyte.String, config *ECHConfig) bool {
@@ -101,6 +97,7 @@ func readConfigContents(contents *cryptobyte.String, config *ECHConfig) bool {
 		return false
 	}
 
+	config.suites = nil
 	for !t.Empty() {
 		var kdfId, aeadId uint16
 		if !t.ReadUint16(&kdfId) || !t.ReadUint16(&aeadId) {
@@ -119,45 +116,22 @@ func readConfigContents(contents *cryptobyte.String, config *ECHConfig) bool {
 	return true
 }
 
-// setupClientContext generates the client's HPKE context for use with the ECH
-// extension. Returns the context and corresponding encapsulated key. If hrrPsK
-// is set, then "SetupPSKS()" is used to generate the context. Otherwise,
-// "SetupBaseS()" is used. (See irtf-cfrg-hpke-05 for details.)
-func (config *ECHConfig) setupClientContext(hrrPsk []byte, rand io.Reader) (ctx *echContext, enc []byte, err error) {
-	suite, err := config.selectCipherSuite()
+// setupSealer generates the client's HPKE context for use with the ECH
+// extension. It returns the context and corresponding encapsulated key.
+func (config *ECHConfig) setupSealer(rand io.Reader) (enc []byte, sealer hpke.Sealer, err error) {
+	if config.raw == nil {
+		panic("config.raw not set")
+	}
+	hpkeSuite, err := config.selectSuite()
 	if err != nil {
 		return nil, nil, err
 	}
-
-	hpkeSuite, err := hpkeAssembleCipherSuite(config.kemId, suite.kdfId, suite.aeadId)
-	if err != nil {
-		return nil, nil, err
-	}
-
 	info := append(append([]byte(echHpkeInfoSetup), 0), config.raw...)
-	var encryptedContext *hpke.EncryptContext
-	if hrrPsk != nil {
-		enc, encryptedContext, err = hpke.SetupPSKS(hpkeSuite, rand, config.pk, hrrPsk, []byte(echHpkeHrrKeyId), info)
-		if err != nil {
-			return nil, nil, err
-		}
-	} else {
-		enc, encryptedContext, err = hpke.SetupBaseS(hpkeSuite, rand, config.pk, info)
-		if err != nil {
-			return nil, nil, err
-		}
+	sender, err := hpkeSuite.NewSender(config.pk, info)
+	if err != nil {
+		return nil, nil, err
 	}
-	return &echContext{encryptedContext, nil, true, hpkeSuite}, enc, nil
-}
-
-// isSupported returns true if the caller supports the KEM and at least one ECH
-// ciphersuite indicated by this configuration.
-func (config *ECHConfig) isSupported() bool {
-	_, err := config.selectCipherSuite()
-	if err != nil || !echIsKemSupported(config.kemId) {
-		return false
-	}
-	return true
+	return sender.Setup(rand)
 }
 
 // isPeerCipherSuiteSupported returns true if this configuration indicates
@@ -171,13 +145,31 @@ func (config *ECHConfig) isPeerCipherSuiteSupported(suite echCipherSuite) bool {
 	return false
 }
 
-// selectCipherSuite returns the first ciphersuite indicated by this
+// selectSuite returns the first ciphersuite indicated by this
 // configuration that is supported by the caller.
-func (config *ECHConfig) selectCipherSuite() (echCipherSuite, error) {
-	for i := range config.suites {
-		if echIsCipherSuiteSupported(config.suites[i]) {
-			return config.suites[i], nil
+func (config *ECHConfig) selectSuite() (hpke.Suite, error) {
+	for _, suite := range config.suites {
+		hpkeSuite, err := hpkeAssembleSuite(
+			config.kemId,
+			suite.kdfId,
+			suite.aeadId,
+		)
+		if err == nil {
+			return hpkeSuite, nil
 		}
 	}
-	return echCipherSuite{}, fmt.Errorf("could not negotiate a ciphersuite")
+	return hpke.Suite{}, errors.New("could not negotiate a ciphersuite")
+}
+
+// id returns the configuration identifier for the given KDF.
+func (config *ECHConfig) id(kdf hpke.KDF) ([]byte, error) {
+	if config.raw == nil {
+		panic("config.raw not set")
+	}
+	if !kdf.IsValid() {
+		return nil, errors.New("KDF algorithm not supported")
+	}
+	id := kdf.Expand(kdf.Extract(config.raw, nil),
+		[]byte(echHpkeInfoConfigId), 8)
+	return id, nil
 }

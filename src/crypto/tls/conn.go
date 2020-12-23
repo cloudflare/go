@@ -8,6 +8,7 @@ package tls
 
 import (
 	"bytes"
+	"circl/hpke"
 	"crypto/cipher"
 	"crypto/subtle"
 	"crypto/x509"
@@ -115,18 +116,22 @@ type Conn struct {
 
 	tmp [16]byte
 
+	// State used for the ECH extension.
 	ech struct {
-		offered      bool
-		greased      bool
-		accepted     bool
+		sealer hpke.Sealer // The client's HPKE context
+		opener hpke.Opener // The server's HPKE context
+
+		// The state shared by the client and server.
+		offered      bool   // Client offered ECH
+		greased      bool   // Client greased ECH
+		accepted     bool   // Server accepted ECH
 		retryConfigs []byte // The retry configurations
-		hrrPsk       []byte // The HRR pre-shared key, used in case of HRR.
 
-		// When offering ECH, the ClientHelloInner.random sent prior to HRR.
-		hrrInnerRandom []byte
-
-		// When sending dummy ECH, the config_id sent prior to HRR.
-		hrrConfigId []byte
+		// The client's state, used in case of HRR.
+		innerRandom []byte         // ClientHelloInner.random
+		publicName  string         // ECHConfig.contents.public_name
+		suite       echCipherSuite // ClientECH.cipher_suite
+		dummy       []byte         // serialized ClientECH when greasing ECH
 	}
 
 	// Set by the client and server when an HRR message was sent in this

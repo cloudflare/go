@@ -102,8 +102,9 @@ const (
 	extensionSignatureAlgorithmsCert uint16 = 50
 	extensionKeyShare                uint16 = 51
 	extensionRenegotiationInfo       uint16 = 0xff01
-	extensionECH                     uint16 = 0xfe08 // draft-ietf-tls-esni-08
-	extensionECHOuterExtensions      uint16 = 0xfd00 // draft-ietf-tls-esni-08
+	extensionECH                     uint16 = 0xfe09 // draft-ietf-tls-esni-09
+	extensionECHIsInner              uint16 = 0xda09 // draft-ietf-tls-esni-09
+	extensionECHOuterExtensions      uint16 = 0xfd00 // draft-ietf-tls-esni-09
 )
 
 // TLS signaling cipher suite values
@@ -250,6 +251,14 @@ var testingECHOuterExtNone bool
 // "outer_extension" extension in the wrong order when offering the ECH
 // extension.
 var testingECHOuterExtIncorrectOrder bool
+
+// testingECHOuterIsInner causes the client to send the "ech_is_inner" extension
+// in the ClientHelloOuter.
+var testingECHOuterIsInner bool
+
+// testingECHOuterExtIllegal causes the client to send in its
+// "outer_extension" extension the codepoint for the ECH extension.
+var testingECHOuterExtIllegal bool
 
 // ConnectionState records basic TLS details about the connection.
 type ConnectionState struct {
@@ -744,7 +753,7 @@ type Config struct {
 	// ServerECHProvider is the ECH provider used by the client-facing server
 	// for the ECH extension. If the client offers ECH and TLS 1.3 is
 	// negotiated, then the provider is used to compute the HPKE context
-	// (draft-irtf-cfrg-hpke-05), which in turn is used to decrypt the extension
+	// (draft-irtf-cfrg-hpke-07), which in turn is used to decrypt the extension
 	// payload.
 	ServerECHProvider ECHProvider
 

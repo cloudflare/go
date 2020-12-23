@@ -4,23 +4,19 @@
 package tls
 
 import (
+	"bytes"
 	"crypto/rand"
-	"crypto/tls/internal/hpke"
 	"crypto/x509"
 	"encoding/pem"
 	"errors"
 	"fmt"
 	"testing"
 	"time"
-
-	"golang.org/x/crypto/cryptobyte"
 )
 
 const (
 	echTestBackendServerName      = "example.com"
 	echTestClientFacingServerName = "cloudflare-esni.com"
-
-	maxConfigIdLen = 255
 )
 
 // The client's root CA certificate.
@@ -92,229 +88,37 @@ AwEHoUQDQgAElq+qE01Z87KIPHWdEAk0cWssHkRnS4aQCDfstoxDIWQ4rMwHvrWG
 Fy/vytRwyjhHuX9ntc5ArCpwbAmY+oW/4w==
 -----END PRIVATE KEY-----`
 
-// The sequence of ECH configurations used by the client.
+// The ECH keys used by the client-facing server.
+const echTestKeys = `-----BEGIN ECH KEYS-----
+ACA/SG/gkFYqQ0vvrgz8CRtn8QBhUdmJIHrpLRa4MHbjpgBT/gkATwATY2xvdWRm
+bGFyZS1lc25pLmNvbQAgRcve568ZJiCCyZJvwrIx0FIoSCQihzse5EJM36v98BcA
+IAAQAAEAAQABAAMAAgABAAIAAwAAAAAAIOpdZ5c3Q1EIq5eztNrW+7GcUiPKPDhm
+6JqulMAt5NLmAHT+CQBwABNjbG91ZGZsYXJlLWVzbmkuY29tAEEEpVCefVOCJ4vL
+Ae6XXPx/d6w/yu4qP2asEfG/aYceggNFRS13f2FhfmTsFsctRsrfi0KR4fPlE469
+PxZnNLJ8wAAQABAAAQABAAEAAwACAAEAAgADAAAAAA==
+-----END ECH KEYS-----`
+
+// A sequence of ECH keys with unsupported versions.
+const echTestInvalidVersionKeys = `-----BEGIN ECH KEYS-----
+ACChoR9Zm0Y7YJLxh4NHlF9cDWOYVdtbpsXNsLbEejCw4gBTvu8ATwATY2xvdWRm
+bGFyZS1lc25pLmNvbQAg3on70PKtaF9Mp5WQghrykTszqKlaX02Pi+WYpbCza1gA
+IAAQAAEAAQABAAMAAgABAAIAAwAAAAA=
+-----END ECH KEYS-----`
+
+// The sequence of ECH configurations corresponding to echTestKeys.
 const echTestConfigs = `-----BEGIN ECH CONFIGS-----
-AMf+CABPABNjbG91ZGZsYXJlLWVzbmkuY29tACD683Skz2S4bDVHT+GAv5KAUyyl
-3r5cLeq4qvMBI9ibPAAgABAAAQABAAEAAwACAAEAAgADAAAAAP4IAHAAE2Nsb3Vk
-ZmxhcmUtZXNuaS5jb20AQQSZfpA6fzxJ6D8QM/skU24lfUPjdeVWBNqPFLLRjT8m
-jDldpNzqsIwgmnNrD2uY3nhSdLVnLJho07qFju+2VmjYABAAEAABAAEAAQADAAIA
+AMf+CQBPABNjbG91ZGZsYXJlLWVzbmkuY29tACBFy97nrxkmIILJkm/CsjHQUihI
+JCKHOx7kQkzfq/3wFwAgABAAAQABAAEAAwACAAEAAgADAAAAAP4JAHAAE2Nsb3Vk
+ZmxhcmUtZXNuaS5jb20AQQSlUJ59U4Ini8sB7pdc/H93rD/K7io/ZqwR8b9phx6C
+A0VFLXd/YWF+ZOwWxy1Gyt+LQpHh8+UTjr0/Fmc0snzAABAAEAABAAEAAQADAAIA
 AQACAAMAAAAA
 -----END ECH CONFIGS-----`
 
 // An invalid sequence of ECH configurations.
-const echTestInvalidConfigs = `-----BEGIN ECH CONFIGS-----
-AFP+CABPABNjbG91ZGZsYXJlLWVzbmkuY29tACBcOATtuDyCM0u6yNprD7YeSJH9
-gQYYei3M1ZzJe2JbTAAgABAAAQABAAEAAwACAAEAAgADAAAAAA==
+const echTestStaleConfigs = `-----BEGIN ECH CONFIGS-----
+AFP+CQBPABNjbG91ZGZsYXJlLWVzbmkuY29tACDA9Z4YbY7f6HMlsUUhSHdioVr9
+s6vH9g5PPTkgR83MIwAgABAAAQABAAEAAwACAAEAAgADAAAAAA==
 -----END ECH CONFIGS-----`
-
-// The ECH keys corresponding to echTestConfigs, used by the client-facing
-// server.
-const echTestKeys = `-----BEGIN ECH KEYS-----
-ACATTNkMz0kX/6CSrh/KlO82oKyy/JIwBwqb61sKbzKrigBT/ggATwATY2xvdWRm
-bGFyZS1lc25pLmNvbQAg+vN0pM9kuGw1R0/hgL+SgFMspd6+XC3quKrzASPYmzwA
-IAAQAAEAAQABAAMAAgABAAIAAwAAAAAAIBhXMi4tyQeKOjmFeDYWmebWgVUj+IQd
-Ir/qaiw2V5bIAHT+CABwABNjbG91ZGZsYXJlLWVzbmkuY29tAEEEmX6QOn88Seg/
-EDP7JFNuJX1D43XlVgTajxSy0Y0/Jow5XaTc6rCMIJpzaw9rmN54UnS1ZyyYaNO6
-hY7vtlZo2AAQABAAAQABAAEAAwACAAEAAgADAAAAAA==
------END ECH KEYS-----`
-
-// echKeySet implements the ECHProvider interface for a sequence of ECH keys.
-type echKeySet struct {
-	// The serialized ECHConfigs, in order of the server's preference.
-	configs []byte
-
-	// Maps a configuration identifier to its secret key.
-	sk map[[maxConfigIdLen + 1]byte]echKey
-}
-
-// echNewKeySet constructs an echKeySet.
-func echNewKeySet(keys []echKey) (*echKeySet, error) {
-	keySet := new(echKeySet)
-	keySet.sk = make(map[[maxConfigIdLen + 1]byte]echKey)
-	configs := make([]byte, 0)
-	for _, key := range keys {
-		// Compute the set of KDF algorithms supported by this configuration.
-		kdfIds := make(map[uint16]bool)
-		for _, suite := range key.config.suites {
-			kdfIds[suite.kdfId] = true
-		}
-
-		// Compute the configuration identifier for each KDF.
-		for kdfId, _ := range kdfIds {
-			kdf, err := echCreateHpkeKdf(kdfId)
-			if err != nil {
-				return nil, err
-			}
-			configId := kdf.Expand(kdf.Extract(nil, key.config.raw), []byte(echHpkeInfoConfigId), kdf.OutputSize())
-			var b cryptobyte.Builder
-			b.AddUint8LengthPrefixed(func(b *cryptobyte.Builder) {
-				b.AddBytes(configId)
-			})
-			var id [maxConfigIdLen + 1]byte // Initialized to zero
-			copy(id[:], b.BytesOrPanic())
-			keySet.sk[id] = key
-		}
-
-		configs = append(configs, key.config.raw...)
-	}
-
-	var b cryptobyte.Builder
-	b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
-		b.AddBytes(configs)
-	})
-	keySet.configs = b.BytesOrPanic()
-
-	return keySet, nil
-}
-
-// GetContext is required by the ECHProvider interface.
-func (keySet *echKeySet) GetContext(rawHandle, hrrPsk []byte, version uint16) (res ECHProviderResult) {
-	// Ensure we know how to proceed. Currently only draft-ietf-tls-esni-08 is
-	// supported.
-	if version != extensionECH {
-		res.Status = ECHProviderAbort
-		res.Alert = uint8(alertInternalError)
-		res.Error = errors.New("version not supported")
-		return // Abort
-	}
-
-	// Parse the handle.
-	s := cryptobyte.String(rawHandle)
-	handle := new(echContextHandle)
-	if !echReadContextHandle(&s, handle) || !s.Empty() {
-		res.Status = ECHProviderAbort
-		res.Alert = uint8(alertIllegalParameter)
-		res.Error = errors.New("error parsing context handle")
-		return // Abort
-	}
-	handle.raw = rawHandle
-
-	// Look up the secret key for the configuration indicated by the client.
-	var id [maxConfigIdLen + 1]byte // Initialized to zero
-	var b cryptobyte.Builder
-	b.AddUint8LengthPrefixed(func(b *cryptobyte.Builder) {
-		b.AddBytes(handle.configId)
-	})
-	copy(id[:], b.BytesOrPanic())
-	key, ok := keySet.sk[id]
-	if !ok {
-		res.Status = ECHProviderReject
-		res.RetryConfigs = keySet.configs
-		return // Reject
-	}
-
-	// Ensure that support for the selected ciphersuite is indicated by the
-	// configuration.
-	suite := handle.suite
-	if !key.config.isPeerCipherSuiteSupported(suite) {
-		res.Status = ECHProviderAbort
-		res.Alert = uint8(alertIllegalParameter)
-		res.Error = errors.New("peer cipher suite is not supported")
-		return // Abort
-	}
-
-	// Ensure the version indicated by the client matches the version supported
-	// by the configuration.
-	if version != key.config.version {
-		res.Status = ECHProviderAbort
-		res.Alert = uint8(alertIllegalParameter)
-		res.Error = errors.New("peer version not supported")
-		return // Abort
-	}
-
-	// Compute the decryption context.
-	context, err := key.setupServerContext(handle.enc, hrrPsk, suite)
-	if err != nil {
-		res.Status = ECHProviderAbort
-		res.Alert = uint8(alertInternalError)
-		res.Error = err
-		return // Abort
-	}
-
-	// Serialize the decryption context.
-	res.Context, err = context.marshalServer()
-	if err != nil {
-		res.Status = ECHProviderAbort
-		res.Alert = uint8(alertInternalError)
-		res.Error = err
-		return // Abort
-	}
-
-	res.Status = ECHProviderSuccess
-	// Send retry configs just in case the caller needs to reject.
-	res.RetryConfigs = keySet.configs
-	return // May accept
-}
-
-// echKey represents an ECH key and its corresponding configuration. The
-// encoding of an ECH Key has following structure (in TLS syntax):
-//
-// struct {
-//     opaque private_key<0..2^16-1>
-//     uint16 length<0..2^16-1> // length of config
-//     ECHConfig config;        // as defined in draft-ietf-tls-esni-08
-// } ECHKey;
-//
-// NOTE(cjpatton): This format is not specified in the ECH draft.
-type echKey struct {
-	config ECHConfig
-	sk     hpke.KEMPrivateKey
-}
-
-// echUnmarshalKeys parses a sequence of ECH keys.
-func echUnmarshalKeys(raw []byte) ([]echKey, error) {
-	s := cryptobyte.String(raw)
-	keys := make([]echKey, 0)
-	var key echKey
-	for !s.Empty() {
-		var rawSecretKey, rawConfig cryptobyte.String
-		if !s.ReadUint16LengthPrefixed(&rawSecretKey) ||
-			!s.ReadUint16LengthPrefixed(&rawConfig) {
-			return nil, fmt.Errorf("error parsing key")
-		}
-		config, err := echUnmarshalConfig(rawConfig)
-		if err != nil {
-			if err == echUnrecognizedVersionError {
-				// Skip config with unrecognized version.
-				continue
-			}
-			return nil, err
-		}
-		key.config = *config
-		key.sk, err = echUnmarshalHpkeSecretKey(rawSecretKey, key.config.kemId)
-		if err != nil {
-			return nil, err
-		}
-		keys = append(keys, key)
-	}
-	return keys, nil
-}
-
-// setupServerContext computes the HPKE context used by the server in the ECH
-// extension. If hrrPsk is set, then "SetupPSKR()" is used to generate the
-// context. Otherwise, "SetupBaseR()" is used. (See irtf-cfrg-hpke-05 for
-// details.)
-func (key *echKey) setupServerContext(enc, hrrPsk []byte, suite echCipherSuite) (*echContext, error) {
-	hpkeSuite, err := hpkeAssembleCipherSuite(key.config.kemId, suite.kdfId, suite.aeadId)
-	if err != nil {
-		return nil, err
-	}
-
-	info := append(append([]byte(echHpkeInfoSetup), 0), key.config.raw...)
-	var decryptechContext *hpke.DecryptContext
-	if hrrPsk != nil {
-		decryptechContext, err = hpke.SetupPSKR(hpkeSuite, key.sk, enc, hrrPsk, []byte(echHpkeHrrKeyId), info)
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		decryptechContext, err = hpke.SetupBaseR(hpkeSuite, key.sk, enc, info)
-		if err != nil {
-			return nil, err
-		}
-	}
-	return &echContext{nil, decryptechContext, false, hpkeSuite}, nil
-}
 
 // echTestProviderAlwaysAbort mocks an ECHProvider that, in response to any
 // request, sets an alert and returns an error. The client-facing server must
@@ -322,7 +126,7 @@ func (key *echKey) setupServerContext(enc, hrrPsk []byte, suite echCipherSuite) 
 type echTestProviderAlwaysAbort struct{}
 
 // Required by the ECHProvider interface.
-func (p echTestProviderAlwaysAbort) GetContext(_, _ []byte, _ uint16) (res ECHProviderResult) {
+func (p echTestProviderAlwaysAbort) GetDecryptionContext(_ []byte, _ uint16) (res ECHProviderResult) {
 	res.Status = ECHProviderAbort
 	res.Alert = uint8(alertInternalError)
 	res.Error = errors.New("provider failed")
@@ -334,30 +138,9 @@ func (p echTestProviderAlwaysAbort) GetContext(_, _ []byte, _ uint16) (res ECHPr
 type echTestProviderAlwaysReject struct{}
 
 // Required by the ECHProvider interface.
-func (p echTestProviderAlwaysReject) GetContext(_, _ []byte, _ uint16) (res ECHProviderResult) {
+func (p echTestProviderAlwaysReject) GetDecryptionContext(_ []byte, _ uint16) (res ECHProviderResult) {
 	res.Status = ECHProviderReject
 	return // Reject without retry configs
-}
-
-// echTestProviderRejectAfterHRR accepts the client ECH configuration on the
-// first call, but fails on further invocations. This simulates a scenario where
-// the server performs key rotation while a HRR was triggered. Even if the
-// client uses the same ECHConfig after a HRR, the server will be unable to
-// process it.
-type echTestProviderRejectAfterHRR struct {
-	keySet      *echKeySet // Used on the first call
-	invocations int
-}
-
-// Required by the ECHProvider interface.
-func (p *echTestProviderRejectAfterHRR) GetContext(handle, hrrPsk []byte, version uint16) (res ECHProviderResult) {
-	p.invocations++
-	if p.invocations > 1 {
-		res.Status = ECHProviderReject
-		res.RetryConfigs = []byte("invalid config")
-		return // Reject
-	}
-	return p.keySet.GetContext(handle, hrrPsk, version)
 }
 
 func echTestLoadConfigs(pemData string) []ECHConfig {
@@ -374,18 +157,18 @@ func echTestLoadConfigs(pemData string) []ECHConfig {
 	return configs
 }
 
-func echTestLoadKeySet() *echKeySet {
-	block, rest := pem.Decode([]byte(echTestKeys))
+func echTestLoadKeySet(pemData string) *EXP_ECHKeySet {
+	block, rest := pem.Decode([]byte(pemData))
 	if block == nil || block.Type != "ECH KEYS" || len(rest) > 0 {
 		panic("pem decoding fails")
 	}
 
-	keys, err := echUnmarshalKeys(block.Bytes)
+	keys, err := EXP_UnmarshalECHKeys(block.Bytes)
 	if err != nil {
 		panic(err)
 	}
 
-	keySet, err := echNewKeySet(keys)
+	keySet, err := EXP_NewECHKeySet(keys)
 	if err != nil {
 		panic(err)
 	}
@@ -408,17 +191,17 @@ type echTestCase struct {
 	expectBackendServerName bool // client verified backend server name
 
 	// client config
-	clientEnabled        bool // client enables ECH
-	clientInvalidConfigs bool // client offers ECH with invalid config
-	clientNoConfigs      bool // client sends dummy ECH if ECH enabled
-	clientInvalidVersion bool // client does not offer 1.3
+	clientEnabled           bool // client enables ECH
+	clientStaleConfigs      bool // client offers ECH with invalid config
+	clientNoConfigs         bool // client sends dummy ECH if ECH enabled
+	clientInvalidTLSVersion bool // client does not offer 1.3
 
 	// server config
 	serverEnabled                bool // server enables ECH
 	serverProviderAlwaysAbort    bool // ECH provider always aborts
 	serverProviderAlwaysReject   bool // ECH provider always rejects
-	serverProviderRejectAfterHRR bool // ECH provider rejects after HRR
-	serverInvalidVersion         bool // server does not offer 1.3
+	serverProviderInvalidVersion bool // ECH provider uses configs with unsupported version
+	serverInvalidTLSVersion      bool // server does not offer 1.3
 
 	// code path triggers
 	triggerHRR                    bool // server triggers HRR
@@ -427,7 +210,9 @@ type echTestCase struct {
 	triggerIllegalHandleAfterHRR  bool // client sends illegal ECH extension after HRR
 	triggerOuterExtMany           bool // client sends many (not just one) outer extensions
 	triggerOuterExtIncorrectOrder bool // client sends malformed outer extensions
+	triggerOuterExtIllegal        bool // client sends malformed outer extensions
 	triggerOuterExtNone           bool // client does not incorporate outer extensions
+	triggerOuterIsInner           bool // client sends "ech_is_inner" in ClientHelloOuter
 	triggerPayloadDecryptError    bool // client sends inauthentic ciphertext
 }
 
@@ -472,7 +257,7 @@ var echTestCases = []echTestCase{
 		name:                    "success / bypassed: client invalid version",
 		expectGrease:            true,
 		expectBackendServerName: true,
-		clientInvalidVersion:    true,
+		clientInvalidTLSVersion: true,
 		clientEnabled:           true,
 		serverEnabled:           true,
 	},
@@ -480,14 +265,14 @@ var echTestCases = []echTestCase{
 		// The client offers ECH with an invalid (e.g., stale) config. The
 		// server sends retry configs. The client signals rejection by sending
 		// an "ech_required" alert.
-		name:                 "success / rejected: invalid config",
-		expectOffered:        true,
-		expectRejected:       true,
-		expectClientAbort:    true,
-		expectServerAbort:    true,
-		clientInvalidConfigs: true,
-		clientEnabled:        true,
-		serverEnabled:        true,
+		name:               "success / rejected: invalid config",
+		expectOffered:      true,
+		expectRejected:     true,
+		expectClientAbort:  true,
+		expectServerAbort:  true,
+		clientStaleConfigs: true,
+		clientEnabled:      true,
+		serverEnabled:      true,
 	},
 	{
 		// The client offers ECH, but the payload is mangled in transit. The
@@ -527,14 +312,27 @@ var echTestCases = []echTestCase{
 		serverProviderAlwaysReject: true,
 	},
 	{
+		// The client offers ECH. The server ECH rejects without sending retry
+		// configurations because the ECH provider returns configurations with
+		// unsupported versions only.
+		name:                         "success / rejected: provider invalid version",
+		expectServerAbort:            true,
+		expectOffered:                true,
+		expectServerBypassed:         true,
+		expectClientAbort:            true,
+		clientEnabled:                true,
+		serverEnabled:                true,
+		serverProviderInvalidVersion: true,
+	},
+	{
 		// The client offers ECH. The server does not support TLS 1.3, so it
 		// ignores the extension and continues as usual. The client does not
 		// signal rejection because TLS 1.2 has been negotiated.
-		name:                 "success / bypassed: client-facing invalid version",
-		expectServerBypassed: true,
-		clientEnabled:        true,
-		serverEnabled:        true,
-		serverInvalidVersion: true,
+		name:                    "success / bypassed: client-facing invalid version",
+		expectServerBypassed:    true,
+		clientEnabled:           true,
+		serverEnabled:           true,
+		serverInvalidTLSVersion: true,
 	},
 	{
 		// The client offers ECH. The ECH provider encounters an unrecoverable
@@ -545,6 +343,16 @@ var echTestCases = []echTestCase{
 		clientEnabled:             true,
 		serverEnabled:             true,
 		serverProviderAlwaysAbort: true,
+	},
+	{
+		// The client offers ECH, but sends the "ech_is_inner" extension in the
+		// ClientHelloOuter, causing the server to abort.
+		name:                "server abort: hello marked as inner and outer",
+		expectServerAbort:   true,
+		expectClientAbort:   true,
+		clientEnabled:       true,
+		serverEnabled:       true,
+		triggerOuterIsInner: true,
 	},
 	{
 		// The client offers ECH and it is accepted by the server. The HRR code
@@ -574,15 +382,15 @@ var echTestCases = []echTestCase{
 		// The client offers ECH with an invalid (e.g., stale) config. The
 		// server sends retry configs. The client signals rejection. The HRR
 		// code path is triggered.
-		name:                 "hrr / rejected: invalid config",
-		expectOffered:        true,
-		expectRejected:       true,
-		expectClientAbort:    true,
-		expectServerAbort:    true,
-		clientEnabled:        true,
-		clientInvalidConfigs: true,
-		serverEnabled:        true,
-		triggerHRR:           true,
+		name:               "hrr / rejected: invalid config",
+		expectOffered:      true,
+		expectRejected:     true,
+		expectClientAbort:  true,
+		expectServerAbort:  true,
+		clientEnabled:      true,
+		clientStaleConfigs: true,
+		serverEnabled:      true,
+		triggerHRR:         true,
 	},
 	{
 		// The HRR code path is triggered. The client offered ECH in the second
@@ -609,24 +417,9 @@ var echTestCases = []echTestCase{
 		triggerECHBypassAfterHRR: true,
 	},
 	{
-		// The HRR code path is triggered. The client offers ECH. The server
-		// accepts for the first CH but must reject it for the second, causing
-		// the server to abort. This simulates what happens if the ECH provider
-		// falls over after the HRR is sent but before the second CH is
-		// consumed.
-		name:                         "hrr / server abort: reject after accept",
-		expectOffered:                true,
-		expectAccepted:               true,
-		expectServerAbort:            true,
-		expectClientAbort:            true,
-		clientEnabled:                true,
-		serverEnabled:                true,
-		serverProviderRejectAfterHRR: true,
-		triggerHRR:                   true,
-	},
-	{
 		// The HRR code path is triggered. In the second CH, the value of the
-		// context handle changes illegally.
+		// context handle changes illegally. Specifically, the client sends a
+		// non-empty "config_id" and "enc".
 		name:                         "hrr / server abort: illegal handle",
 		expectOffered:                true,
 		expectAccepted:               true,
@@ -662,7 +455,8 @@ var echTestCases = []echTestCase{
 	},
 	{
 		// The client offers ECH but does not implement the "outer_extension"
-		// mechanism correctly,
+		// mechanism correctly. Specifically, it sends them in the wrong order,
+		// causing the client and server to compute different transcripts.
 		name:                          "outer extensions, incorrect order / server abort: incorrect transcript",
 		expectOffered:                 true,
 		expectAccepted:                true,
@@ -671,6 +465,17 @@ var echTestCases = []echTestCase{
 		clientEnabled:                 true,
 		serverEnabled:                 true,
 		triggerOuterExtIncorrectOrder: true,
+	},
+	{
+		// The client offers ECH but does not implement the "outer_extension"
+		// mechanism correctly. Specifically, the "outer extensions" contains
+		// the codepoint for the ECH extension itself.
+		name:                   "outer extensions, illegal: illegal parameter",
+		expectServerAbort:      true,
+		expectClientAbort:      true,
+		clientEnabled:          true,
+		serverEnabled:          true,
+		triggerOuterExtIllegal: true,
 	},
 }
 
@@ -819,12 +624,15 @@ func TestECHHandshake(t *testing.T) {
 		testingECHOuterExtMany = false
 		testingECHOuterExtNone = false
 		testingECHOuterExtIncorrectOrder = false
+		testingECHOuterExtIllegal = false
+		testingECHOuterIsInner = false
 		testingECHTriggerPayloadDecryptError = false
 	}()
 
-	invalidConfigs := echTestLoadConfigs(echTestInvalidConfigs)
+	staleConfigs := echTestLoadConfigs(echTestStaleConfigs)
 	configs := echTestLoadConfigs(echTestConfigs)
-	keySet := echTestLoadKeySet()
+	keySet := echTestLoadKeySet(echTestKeys)
+	invalidVersionKeySet := echTestLoadKeySet(echTestInvalidVersionKeys)
 
 	clientConfig, serverConfig := echSetupConnTest()
 	for i, test := range echTestCases {
@@ -835,8 +643,8 @@ func TestECHHandshake(t *testing.T) {
 				clientConfig.ClientECHConfigs = nil
 				n++
 			}
-			if test.clientInvalidConfigs {
-				clientConfig.ClientECHConfigs = invalidConfigs
+			if test.clientStaleConfigs {
+				clientConfig.ClientECHConfigs = staleConfigs
 				n++
 			}
 			if n == 0 {
@@ -851,7 +659,7 @@ func TestECHHandshake(t *testing.T) {
 				clientConfig.ECHEnabled = false
 			}
 
-			if test.clientInvalidVersion {
+			if test.clientInvalidTLSVersion {
 				clientConfig.MinVersion = VersionTLS10
 				clientConfig.MaxVersion = VersionTLS12
 			} else {
@@ -875,10 +683,8 @@ func TestECHHandshake(t *testing.T) {
 				serverConfig.ServerECHProvider = &echTestProviderAlwaysReject{}
 				n++
 			}
-			if test.serverProviderRejectAfterHRR {
-				serverConfig.ServerECHProvider = &echTestProviderRejectAfterHRR{
-					keySet: keySet,
-				}
+			if test.serverProviderInvalidVersion {
+				serverConfig.ServerECHProvider = invalidVersionKeySet
 				n++
 			}
 			if n == 0 {
@@ -887,7 +693,7 @@ func TestECHHandshake(t *testing.T) {
 				panic("invalid test configuration")
 			}
 
-			if test.serverInvalidVersion {
+			if test.serverInvalidTLSVersion {
 				serverConfig.MinVersion = VersionTLS10
 				serverConfig.MaxVersion = VersionTLS12
 			} else {
@@ -929,6 +735,16 @@ func TestECHHandshake(t *testing.T) {
 			testingECHOuterExtIncorrectOrder = false
 			if test.triggerOuterExtIncorrectOrder {
 				testingECHOuterExtIncorrectOrder = true
+				n++
+			}
+			testingECHOuterExtIllegal = false
+			if test.triggerOuterExtIllegal {
+				testingECHOuterExtIllegal = true
+				n++
+			}
+			testingECHOuterIsInner = false
+			if test.triggerOuterIsInner {
+				testingECHOuterIsInner = true
 				n++
 			}
 			testingECHIllegalHandleAfterHRR = false
@@ -1015,4 +831,114 @@ func TestECHHandshake(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestUnmarshalConfigs(t *testing.T) {
+	block, rest := pem.Decode([]byte(echTestConfigs))
+	if block == nil || block.Type != "ECH CONFIGS" || len(rest) > 0 {
+		t.Fatal("pem decoding fails")
+	}
+
+	configs, err := UnmarshalECHConfigs(block.Bytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, config := range configs {
+		if len(config.raw) == 0 {
+			t.Error("raw config not set")
+		}
+	}
+}
+
+func TestUnmarshalKeys(t *testing.T) {
+	block, rest := pem.Decode([]byte(echTestKeys))
+	if block == nil || block.Type != "ECH KEYS" || len(rest) > 0 {
+		t.Fatal("pem decoding fails")
+	}
+
+	keys, err := EXP_UnmarshalECHKeys(block.Bytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, key := range keys {
+		if len(key.config.raw) == 0 {
+			t.Error("raw config not set")
+		}
+	}
+}
+
+func testECHProvider(t *testing.T, p ECHProvider, handle []byte, version uint16, want ECHProviderResult) {
+	got := p.GetDecryptionContext(handle, version)
+	if got.Status != want.Status {
+		t.Errorf("incorrect status: got %+v; want %+v", got.Status, want.Status)
+	}
+	if got.Alert != want.Alert {
+		t.Errorf("incorrect alert: got %+v; want %+v", got.Alert, want.Alert)
+	}
+	if got.Error != want.Error {
+		t.Errorf("incorrect error: got %+v; want %+v", got.Error, want.Error)
+	}
+	if !bytes.Equal(got.RetryConfigs, want.RetryConfigs) {
+		t.Errorf("incorrect retry configs: got %+v; want %+v", got.RetryConfigs, want.RetryConfigs)
+	}
+	if !bytes.Equal(got.Context, want.Context) {
+		t.Errorf("incorrect context: got %+v; want %+v", got.Context, want.Context)
+	}
+}
+
+func TestECHProvider(t *testing.T) {
+	p := echTestLoadKeySet(echTestKeys)
+	t.Run("ok", func(t *testing.T) {
+		handle := []byte{
+			0, 1, 0, 1, 8, 202, 62, 220, 1, 243, 58, 247, 102, 0, 32, 40, 52,
+			167, 167, 21, 125, 151, 32, 250, 255, 1, 125, 206, 103, 62, 96, 189,
+			112, 126, 48, 221, 41, 198, 146, 100, 149, 29, 133, 103, 87, 87, 78,
+		}
+		context := []byte{
+			1, 0, 32, 0, 1, 0, 1, 32, 236, 67, 192, 226, 245, 110, 78, 204, 212,
+			236, 85, 28, 234, 9, 249, 154, 158, 25, 69, 140, 83, 156, 41, 237,
+			146, 108, 142, 83, 130, 231, 162, 53, 16, 80, 114, 44, 28, 184, 124,
+			105, 82, 228, 226, 156, 178, 245, 44, 171, 175, 12, 97, 213, 61,
+			253, 64, 224, 125, 59, 223, 107, 24, 119, 12, 0, 0, 0, 0, 0, 0, 0,
+			0, 0, 0, 0, 0,
+		}
+		testECHProvider(t, p, handle, extensionECH, ECHProviderResult{
+			Status:       ECHProviderSuccess,
+			RetryConfigs: p.configs,
+			Context:      context,
+		})
+	})
+	t.Run("invalid config id", func(t *testing.T) {
+		handle := []byte{
+			0, 1, 0, 1, 6, 202, 62, 220, 1, 243, 58, 0, 32, 40, 52, 167, 167,
+			21, 125, 151, 32, 250, 255, 1, 125, 206, 103, 62, 96, 189, 112, 126,
+			48, 221, 41, 198, 146, 100, 149, 29, 133, 103, 87, 87, 78,
+		}
+		testECHProvider(t, p, handle, extensionECH, ECHProviderResult{
+			Status:       ECHProviderReject,
+			RetryConfigs: p.configs,
+		})
+	})
+	t.Run("invalid cipher suite", func(t *testing.T) {
+		handle := []byte{
+			99, 99, 0, 1, 8, 202, 62, 220, 1, 243, 58, 247, 102, 0, 32, 40, 52,
+			167, 167, 21, 125, 151, 32, 250, 255, 1, 125, 206, 103, 62, 96, 189,
+			112, 126, 48, 221, 41, 198, 146, 100, 149, 29, 133, 103, 87, 87, 78,
+		}
+		testECHProvider(t, p, handle, extensionECH, ECHProviderResult{
+			Status:       ECHProviderReject,
+			RetryConfigs: p.configs,
+		})
+	})
+	t.Run("malformed", func(t *testing.T) {
+		handle := []byte{
+			0, 1, 0, 1, 8, 202, 62, 220, 1,
+		}
+		testECHProvider(t, p, handle, extensionECH, ECHProviderResult{
+			Status:       ECHProviderReject,
+			RetryConfigs: p.configs,
+		})
+	})
 }

@@ -92,8 +92,9 @@ type clientHelloMsg struct {
 	pskModes                         []uint8
 	pskIdentities                    []pskIdentity
 	pskBinders                       [][]byte
-	encryptedClientHelloOffered      bool
-	encryptedClientHello             []byte
+	ech                              []byte
+	echIsInner                       bool
+	echIsOuter                       bool
 }
 
 func (m *clientHelloMsg) marshal() []byte {
@@ -123,14 +124,17 @@ func (m *clientHelloMsg) marshal() []byte {
 		bWithoutExtensions := *b
 
 		b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
-			if m.encryptedClientHelloOffered {
-				// draft-ietf-tls-esni-08, "encrypted_client_hello"
+			if m.echIsOuter {
+				// draft-ietf-tls-esni-09, "encrypted_client_hello"
 				b.AddUint16(extensionECH)
 				b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
-					// If this is ClientHelloInner, then the value is empty.
-					// Otherwise, the value is the ClientECH structure.
-					b.AddBytes(m.encryptedClientHello)
+					b.AddBytes(m.ech)
 				})
+			}
+			if m.echIsInner {
+				// draft-ietf-tls-esni-09, "ech_is_inner"
+				b.AddUint16(extensionECHIsInner)
+				b.AddUint16(0)
 			}
 			if len(m.serverName) > 0 {
 				// RFC 6066, Section 3
@@ -406,11 +410,17 @@ func (m *clientHelloMsg) unmarshal(data []byte) bool {
 
 		switch extension {
 		case extensionECH:
-			// draft-ietf-tls-esni-08, "encrypted_client_hello"
-			m.encryptedClientHelloOffered = true
-			if !extData.ReadBytes(&m.encryptedClientHello, len(extData)) {
+			// draft-ietf-tls-esni-09, "encrypted_client_hello"
+			if !extData.ReadBytes(&m.ech, len(extData)) {
 				return false
 			}
+			m.echIsOuter = true
+		case extensionECHIsInner:
+			// draft-ietf-tls-esni-09, "ech_is_inner"
+			if !extData.ReadBytes(&m.ech, len(extData)) {
+				return false
+			}
+			m.echIsInner = true
 		case extensionServerName:
 			// RFC 6066, Section 3
 			var nameList cryptobyte.String
@@ -857,9 +867,9 @@ func (m *serverHelloMsg) unmarshal(data []byte) bool {
 }
 
 type encryptedExtensionsMsg struct {
-	raw                  []byte
-	alpnProtocol         string
-	encryptedClientHello []byte
+	raw          []byte
+	alpnProtocol string
+	ech          []byte
 }
 
 func (m *encryptedExtensionsMsg) marshal() []byte {
@@ -881,13 +891,13 @@ func (m *encryptedExtensionsMsg) marshal() []byte {
 					})
 				})
 			}
-			if len(m.encryptedClientHello) > 0 {
-				// draft-ietf-tls-esni-08, "encrypted_client_hello"
+			if len(m.ech) > 0 {
+				// draft-ietf-tls-esni-09, "encrypted_client_hello"
 				b.AddUint16(extensionECH)
 				b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
 					// If the client-facing server rejects ECH, then it may
 					// sends retry configurations here.
-					b.AddBytes(m.encryptedClientHello)
+					b.AddBytes(m.ech)
 				})
 			}
 		})
@@ -928,8 +938,8 @@ func (m *encryptedExtensionsMsg) unmarshal(data []byte) bool {
 			}
 			m.alpnProtocol = string(proto)
 		case extensionECH:
-			// draft-ietf-tls-esni-08
-			if !extData.ReadBytes(&m.encryptedClientHello, len(extData)) {
+			// draft-ietf-tls-esni-09
+			if !extData.ReadBytes(&m.ech, len(extData)) {
 				return false
 			}
 		default:
