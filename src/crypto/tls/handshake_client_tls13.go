@@ -345,7 +345,6 @@ func (hs *clientHandshakeStateTLS13) processHelloRetryRequest() error {
 			}
 		}
 
-		// TODO: refactor
 		if curveID.isKEM() {
 			kemID := kem.ID(curveID)
 			pk, sk, err := kem.GenerateKey(c.config.rand(), kemID)

@@ -144,7 +144,7 @@ func typeAndHashFromSignatureScheme(signatureAlgorithm SignatureScheme) (sigType
 	case Ed25519:
 		hash = directSigning
 	case KEMTLSWithSIKEp434, KEMTLSWithKyber512:
-		hash = directSigning // TODO: check
+		hash = directSigning
 	default:
 		scheme := circlPki.SchemeByTLSID(uint(signatureAlgorithm))
 		if scheme == nil {
