@@ -860,6 +860,62 @@ func echEncodeClientHelloOuterAAD(outerData, handleData []byte) []byte {
 	return outerAadData
 }
 
+// echEncodeServerHelloConf interprets data as a ServerHello message and encodes
+// it as a ServerHelloConf. Returns nil if parsing data fails.
+func echEncodeServerHelloConf(data []byte) []byte {
+	var (
+		msgType                 uint8
+		legacyVersion           uint16
+		random                  []byte
+		legacySessionId         cryptobyte.String
+		cipherSuite             uint16
+		legacyCompressionMethod uint8
+		extensions              cryptobyte.String
+		s                       cryptobyte.String
+		b                       cryptobyte.Builder
+	)
+
+	u := cryptobyte.String(data)
+	if !u.ReadUint8(&msgType) ||
+		!u.ReadUint24LengthPrefixed(&s) || !u.Empty() {
+		return nil
+	}
+
+	if !s.ReadUint16(&legacyVersion) ||
+		!s.ReadBytes(&random, 32) ||
+		!s.ReadUint8LengthPrefixed(&legacySessionId) ||
+		!s.ReadUint16(&cipherSuite) ||
+		!s.ReadUint8(&legacyCompressionMethod) {
+		return nil
+	}
+
+	if s.Empty() {
+		// Extensions field must be present in TLS 1.3.
+		return nil
+	}
+
+	if !s.ReadUint16LengthPrefixed(&extensions) || !s.Empty() {
+		return nil
+	}
+
+	b.AddUint8(msgType)
+	b.AddUint24LengthPrefixed(func(b *cryptobyte.Builder) {
+		b.AddUint16(legacyVersion)
+		b.AddBytes(random[:24])
+		b.AddBytes([]byte{0, 0, 0, 0, 0, 0, 0, 0})
+		b.AddUint8LengthPrefixed(func(b *cryptobyte.Builder) {
+			b.AddBytes(legacySessionId)
+		})
+		b.AddUint16(cipherSuite)
+		b.AddUint8(legacyCompressionMethod)
+		b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
+			b.AddBytes(extensions)
+		})
+	})
+
+	return b.BytesOrPanic()
+}
+
 // processClientHelloExtensions interprets data as a ClientHello and applies a
 // function proc to each extension. Returns a bool indicating whether parsing
 // succeeded.
