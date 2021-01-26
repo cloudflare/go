@@ -456,12 +456,12 @@ func (hs *clientHandshakeStateTLS13) establishHandshakeKeys() error {
 			c.sendAlert(alertInternalError)
 			return errors.New("tls: internal error: failed to clone hash")
 		}
-		var random [32]byte // initialized to zero
-		copy(random[:24], hs.serverHello.random[:24])
-		serverHelloConf := *hs.serverHello
-		serverHelloConf.raw = nil
-		serverHelloConf.random = random[:]
-		confTranscript.Write(serverHelloConf.marshal())
+		serverHelloConf := echEncodeServerHelloConf(hs.serverHello.marshal())
+		if serverHelloConf == nil {
+			c.sendAlert(alertInternalError)
+			return errors.New("tls: internal error: failed to encode ServerHelloConf")
+		}
+		confTranscript.Write(serverHelloConf)
 		conf := hs.suite.deriveSecret(handshakeSecret,
 			echAcceptConfirmationLabel, confTranscript)
 		if bytes.Equal(hs.serverHello.random[24:], conf[:8]) {
