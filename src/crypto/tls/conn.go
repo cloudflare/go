@@ -1367,23 +1367,23 @@ func (c *Conn) Close() error {
 
 	// Resolve ECH status.
 	if !c.isClient && c.config.MaxVersion < VersionTLS13 {
-		c.handleEvent(EXP_EventECHServerStatus(echStatusBypassed))
+		c.handleCFEvent(CFEventECHServerStatus(echStatusBypassed))
 	} else if !c.ech.offered {
 		if !c.ech.greased {
-			c.handleEvent(EXP_EventECHClientStatus(echStatusBypassed))
+			c.handleCFEvent(CFEventECHClientStatus(echStatusBypassed))
 		} else {
-			c.handleEvent(EXP_EventECHClientStatus(echStatusOuter))
+			c.handleCFEvent(CFEventECHClientStatus(echStatusOuter))
 		}
 	} else {
-		c.handleEvent(EXP_EventECHClientStatus(echStatusInner))
+		c.handleCFEvent(CFEventECHClientStatus(echStatusInner))
 		if !c.ech.accepted {
 			if len(c.ech.retryConfigs) > 0 {
-				c.handleEvent(EXP_EventECHServerStatus(echStatusOuter))
+				c.handleCFEvent(CFEventECHServerStatus(echStatusOuter))
 			} else {
-				c.handleEvent(EXP_EventECHServerStatus(echStatusBypassed))
+				c.handleCFEvent(CFEventECHServerStatus(echStatusBypassed))
 			}
 		} else {
-			c.handleEvent(EXP_EventECHServerStatus(echStatusInner))
+			c.handleCFEvent(CFEventECHServerStatus(echStatusInner))
 		}
 	}
 
@@ -1477,6 +1477,7 @@ func (c *Conn) connectionStateLocked() ConnectionState {
 	state.SignedCertificateTimestamps = c.scts
 	state.OCSPResponse = c.ocspResponse
 	state.ECHAccepted = c.ech.accepted
+	state.CFControl = c.config.CFControl
 	if !c.didResume && c.vers != VersionTLS13 {
 		if c.clientFinishedIsFirst {
 			state.TLSUnique = c.clientFinished[:]
@@ -1523,8 +1524,8 @@ func (c *Conn) handshakeComplete() bool {
 	return atomic.LoadUint32(&c.handshakeStatus) == 1
 }
 
-func (c *Conn) handleEvent(event EXP_Event) {
-	if c.config.EXP_EventHandler != nil {
-		c.config.EXP_EventHandler(event)
+func (c *Conn) handleCFEvent(event CFEvent) {
+	if c.config.CFEventHandler != nil {
+		c.config.CFEventHandler(event)
 	}
 }

@@ -22,51 +22,6 @@ import (
 // messages cause too much work in session ticket decryption attempts.
 const maxClientPSKIdentities = 5
 
-// EXP_EventTLS13ServerHandshakeTimingInfo carries intra-stack time durations
-// for TLS 1.3 state machine changes. It can be used for tracking metrics during a
-// connection. Some durations may be sensitive, such as the amount of time to
-// process a particular handshake message, so this event should only be used
-// for experimental purposes.
-//
-// NOTE: This API is EXPERIMENTAL and subject to change.
-type EXP_EventTLS13ServerHandshakeTimingInfo struct {
-	timer                    func() time.Time
-	start                    time.Time
-	ProcessClientHello       time.Duration
-	WriteServerHello         time.Duration
-	WriteEncryptedExtensions time.Duration
-	WriteCertificate         time.Duration
-	WriteCertificateVerify   time.Duration
-	WriteServerFinished      time.Duration
-	ReadCertificate          time.Duration
-	ReadCertificateVerify    time.Duration
-	ReadClientFinished       time.Duration
-}
-
-// Name is required by the EXP_Event interface.
-func (e EXP_EventTLS13ServerHandshakeTimingInfo) Name() string {
-	return "TLS13ServerHandshakeTimingInfo"
-}
-
-func (e EXP_EventTLS13ServerHandshakeTimingInfo) elapsedTime() time.Duration {
-	if e.timer == nil {
-		return 0
-	}
-	return e.timer().Sub(e.start)
-}
-
-func createTLS13ServerHandshakeTimingInfo(timerFunc func() time.Time) EXP_EventTLS13ServerHandshakeTimingInfo {
-	timer := time.Now
-	if timerFunc != nil {
-		timer = timerFunc
-	}
-
-	return EXP_EventTLS13ServerHandshakeTimingInfo{
-		timer: timer,
-		start: timer(),
-	}
-}
-
 type serverHandshakeStateTLS13 struct {
 	c               *Conn
 	clientHello     *clientHelloMsg
@@ -84,7 +39,7 @@ type serverHandshakeStateTLS13 struct {
 	transcript      hash.Hash
 	clientFinished  []byte
 
-	handshakeTimings EXP_EventTLS13ServerHandshakeTimingInfo
+	handshakeTimings CFEventTLS13ServerHandshakeTimingInfo
 }
 
 func (hs *serverHandshakeStateTLS13) handshake() error {
@@ -123,7 +78,7 @@ func (hs *serverHandshakeStateTLS13) handshake() error {
 		return err
 	}
 
-	c.handleEvent(hs.handshakeTimings)
+	c.handleCFEvent(hs.handshakeTimings)
 	atomic.StoreUint32(&c.handshakeStatus, 1)
 
 	return nil

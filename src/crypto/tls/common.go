@@ -327,6 +327,13 @@ type ConnectionState struct {
 	// accepted by the server.
 	ECHAccepted bool
 
+	// CFControl is used to pass additional TLS configuration information to
+	// HTTP requests.
+	//
+	// NOTE: This feature is used to implement Cloudflare-internal features.
+	// This feature is unstable and applications MUST NOT depend on it.
+	CFControl interface{}
+
 	// ekm is a closure exposed via ExportKeyingMaterial.
 	ekm func(label string, context []byte, length int) ([]byte, error)
 }
@@ -757,12 +764,20 @@ type Config struct {
 	// payload.
 	ServerECHProvider ECHProvider
 
-	// EXP_EventHandler, if set, is called by the client and server at various
-	// points during the handshake to handle specific events. For example, this
-	// callback can be used to record metrics.
+	// CFEventHandler, if set, is called by the client and server at various
+	// points during the handshake to handle specific events. This is used
+	// primarily for collecting metrics.
 	//
-	// NOTE: This API is EXPERIMENTAL and subject to change.
-	EXP_EventHandler func(event EXP_Event)
+	// NOTE: This feature is used to implement Cloudflare-internal features.
+	// This feature is unstable and applications MUST NOT depend on it.
+	CFEventHandler func(event CFEvent)
+
+	// CFControl is used to pass additional TLS configuration information to
+	// HTTP requests via ConnectionState.
+	//
+	// NOTE: This feature is used to implement Cloudflare-internal features.
+	// This feature is unstable and applications MUST NOT depend on it.
+	CFControl interface{}
 
 	// mutex protects sessionTicketKeys and autoSessionTicketKeys.
 	mutex sync.RWMutex
@@ -856,7 +871,8 @@ func (c *Config) Clone() *Config {
 		ECHEnabled:                  c.ECHEnabled,
 		ClientECHConfigs:            c.ClientECHConfigs,
 		ServerECHProvider:           c.ServerECHProvider,
-		EXP_EventHandler:            c.EXP_EventHandler,
+		CFEventHandler:              c.CFEventHandler,
+		CFControl:                   c.CFControl,
 		sessionTicketKeys:           c.sessionTicketKeys,
 		autoSessionTicketKeys:       c.autoSessionTicketKeys,
 	}
