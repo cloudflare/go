@@ -19,76 +19,7 @@ const (
 	// Constants for HPKE operations
 	echHpkeInfoConfigId = "tls ech config id"
 	echHpkeInfoSetup    = "tls ech"
-
-	// Constants for ECH status events
-	echStatusBypassed = 1 + iota
-	echStatusInner
-	echStatusOuter
 )
-
-// EXP_EventECHClientStatus is emitted once it is known whether the client
-// bypassed, offered, or greased ECH.
-//
-// NOTE: This API is EXPERIMENTAL and subject to change.
-type EXP_EventECHClientStatus int
-
-// Bypassed returns true if the client bypassed ECH.
-func (e EXP_EventECHClientStatus) Bypassed() bool {
-	return e == echStatusBypassed
-}
-
-// Offered returns true if the client offered ECH.
-func (e EXP_EventECHClientStatus) Offered() bool {
-	return e == echStatusInner
-}
-
-// Greased returns true if the client greased ECH.
-func (e EXP_EventECHClientStatus) Greased() bool {
-	return e == echStatusOuter
-}
-
-// Name is required by the EXP_Event interface.
-func (e EXP_EventECHClientStatus) Name() string {
-	return "ech client status"
-}
-
-// EXP_EventECHServerStatus is emitted once it is known whether the client
-// bypassed, offered, or greased ECH.
-//
-// NOTE: This API is EXPERIMENTAL and subject to change.
-type EXP_EventECHServerStatus int
-
-// Bypassed returns true if the client bypassed ECH.
-func (e EXP_EventECHServerStatus) Bypassed() bool {
-	return e == echStatusBypassed
-}
-
-// Accepted returns true if the client offered ECH.
-func (e EXP_EventECHServerStatus) Accepted() bool {
-	return e == echStatusInner
-}
-
-// Rejected returns true if the client greased ECH.
-func (e EXP_EventECHServerStatus) Rejected() bool {
-	return e == echStatusOuter
-}
-
-// Name is required by the EXP_Event interface.
-func (e EXP_EventECHServerStatus) Name() string {
-	return "ech server status"
-}
-
-// EXP_EventECHPublicNameMismatch is emitted if the outer SNI does not match
-// match the public name of the ECH configuration. Note that we do not record
-// the outer SNI in order to avoid collecting this potentially sensitive data.
-//
-// NOTE: This API is EXPERIMENTAL and subject to change.
-type EXP_EventECHPublicNameMismatch struct{}
-
-// Name is required by the EXP_Event interface.
-func (e EXP_EventECHPublicNameMismatch) Name() string {
-	return "ech public name does not match outer sni"
-}
 
 // TODO(cjpatton): "[When offering ECH, the client] MUST NOT offer to resume any
 // session for TLS 1.2 and below [in ClientHelloInner]."
@@ -332,7 +263,7 @@ func (c *Conn) echAcceptOrReject(hello *clientHelloMsg) (*clientHelloMsg, error)
 				}
 			}
 			if !pubNameMatches {
-				c.handleEvent(EXP_EventECHPublicNameMismatch{})
+				c.handleCFEvent(CFEventECHPublicNameMismatch{})
 			}
 		}
 

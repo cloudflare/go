@@ -16,51 +16,6 @@ import (
 	"time"
 )
 
-// EXP_EventTLS13ClientHandshakeTimingInfo carries intra-stack time durations
-// for TLS 1.3 state machine changes. It can be used for tracking metrics during a
-// connection. Some durations may be sensitive, such as the amount of time to
-// process a particular handshake message, so this event should only be used
-// for experimental purposes.
-//
-// NOTE: This API is EXPERIMENTAL and subject to change.
-type EXP_EventTLS13ClientHandshakeTimingInfo struct {
-	timer                   func() time.Time
-	start                   time.Time
-	WriteClientHello        time.Duration
-	ProcessServerHello      time.Duration
-	ReadEncryptedExtensions time.Duration
-	ReadCertificate         time.Duration
-	ReadCertificateVerify   time.Duration
-	ReadServerFinished      time.Duration
-	WriteCertificate        time.Duration
-	WriteCertificateVerify  time.Duration
-	WriteClientFinished     time.Duration
-}
-
-// Name is required by the EXP_Event interface.
-func (e EXP_EventTLS13ClientHandshakeTimingInfo) Name() string {
-	return "TLS13ClientHandshakeTimingInfo"
-}
-
-func (e EXP_EventTLS13ClientHandshakeTimingInfo) elapsedTime() time.Duration {
-	if e.timer == nil {
-		return 0
-	}
-	return time.Now().Sub(e.start)
-}
-
-func createTLS13ClientHandshakeTimingInfo(timerFunc func() time.Time) EXP_EventTLS13ClientHandshakeTimingInfo {
-	timer := time.Now
-	if timerFunc != nil {
-		timer = timerFunc
-	}
-
-	return EXP_EventTLS13ClientHandshakeTimingInfo{
-		timer: timer,
-		start: timer(),
-	}
-}
-
 type clientHandshakeStateTLS13 struct {
 	c           *Conn
 	serverHello *serverHelloMsg
@@ -82,7 +37,7 @@ type clientHandshakeStateTLS13 struct {
 	masterSecret    []byte
 	trafficSecret   []byte // client_application_traffic_secret_0
 
-	handshakeTimings EXP_EventTLS13ClientHandshakeTimingInfo
+	handshakeTimings CFEventTLS13ClientHandshakeTimingInfo
 }
 
 // handshake requires hs.c, hs.hello, hs.serverHello, hs.ecdheParams, and,
@@ -158,7 +113,7 @@ func (hs *clientHandshakeStateTLS13) handshake() error {
 		return err
 	}
 
-	c.handleEvent(hs.handshakeTimings)
+	c.handleCFEvent(hs.handshakeTimings)
 	atomic.StoreUint32(&c.handshakeStatus, 1)
 
 	return nil

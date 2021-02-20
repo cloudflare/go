@@ -1,3 +1,6 @@
+// Copyright 2021 Cloudflare, Inc. All rights reserved. Use of this source code
+// is governed by a BSD-style license that can be found in the LICENSE file.
+
 package tls
 
 import (
@@ -5,6 +8,14 @@ import (
 	circlSign "circl/sign"
 
 	"circl/sign/eddilithium3"
+	"time"
+)
+
+const (
+	// Constants for ECH status events.
+	echStatusBypassed = 1 + iota
+	echStatusInner
+	echStatusOuter
 )
 
 // To add a signature scheme from Circl
@@ -46,10 +57,152 @@ func init() {
 	}
 }
 
-// EXP_Event is a value emitted at various points in the handshake that is
-// handled by the callback Config.EventHandler.
-//
-// NOTE: This API is EXPERIMENTAL and subject to change.
-type EXP_Event interface {
+// CFEvent is a value emitted at various points in the handshake that is
+// handled by the callback Config.CFEventHandler.
+type CFEvent interface {
 	Name() string
+}
+
+// CFEventTLS13ClientHandshakeTimingInfo carries intra-stack time durations for
+// TLS 1.3 client-state machine changes. It can be used for tracking metrics
+// during a connection. Some durations may be sensitive, such as the amount of
+// time to process a particular handshake message, so this event should only be
+// used for experimental purposes.
+type CFEventTLS13ClientHandshakeTimingInfo struct {
+	timer                   func() time.Time
+	start                   time.Time
+	WriteClientHello        time.Duration
+	ProcessServerHello      time.Duration
+	ReadEncryptedExtensions time.Duration
+	ReadCertificate         time.Duration
+	ReadCertificateVerify   time.Duration
+	ReadServerFinished      time.Duration
+	WriteCertificate        time.Duration
+	WriteCertificateVerify  time.Duration
+	WriteClientFinished     time.Duration
+}
+
+// Name is required by the CFEvent interface.
+func (e CFEventTLS13ClientHandshakeTimingInfo) Name() string {
+	return "TLS13ClientHandshakeTimingInfo"
+}
+
+func (e CFEventTLS13ClientHandshakeTimingInfo) elapsedTime() time.Duration {
+	if e.timer == nil {
+		return 0
+	}
+	return e.timer().Sub(e.start)
+}
+
+func createTLS13ClientHandshakeTimingInfo(timerFunc func() time.Time) CFEventTLS13ClientHandshakeTimingInfo {
+	timer := time.Now
+	if timerFunc != nil {
+		timer = timerFunc
+	}
+
+	return CFEventTLS13ClientHandshakeTimingInfo{
+		timer: timer,
+		start: timer(),
+	}
+}
+
+// CFEventTLS13ServerHandshakeTimingInfo carries intra-stack time durations
+// for TLS 1.3 state machine changes. It can be used for tracking metrics during a
+// connection. Some durations may be sensitive, such as the amount of time to
+// process a particular handshake message, so this event should only be used
+// for experimental purposes.
+type CFEventTLS13ServerHandshakeTimingInfo struct {
+	timer                    func() time.Time
+	start                    time.Time
+	ProcessClientHello       time.Duration
+	WriteServerHello         time.Duration
+	WriteEncryptedExtensions time.Duration
+	WriteCertificate         time.Duration
+	WriteCertificateVerify   time.Duration
+	WriteServerFinished      time.Duration
+	ReadCertificate          time.Duration
+	ReadCertificateVerify    time.Duration
+	ReadClientFinished       time.Duration
+}
+
+// Name is required by the CFEvent interface.
+func (e CFEventTLS13ServerHandshakeTimingInfo) Name() string {
+	return "TLS13ServerHandshakeTimingInfo"
+}
+
+func (e CFEventTLS13ServerHandshakeTimingInfo) elapsedTime() time.Duration {
+	if e.timer == nil {
+		return 0
+	}
+	return e.timer().Sub(e.start)
+}
+
+func createTLS13ServerHandshakeTimingInfo(timerFunc func() time.Time) CFEventTLS13ServerHandshakeTimingInfo {
+	timer := time.Now
+	if timerFunc != nil {
+		timer = timerFunc
+	}
+
+	return CFEventTLS13ServerHandshakeTimingInfo{
+		timer: timer,
+		start: timer(),
+	}
+}
+
+// CFEventECHClientStatus is emitted once it is known whether the client
+// bypassed, offered, or greased ECH.
+type CFEventECHClientStatus int
+
+// Bypassed returns true if the client bypassed ECH.
+func (e CFEventECHClientStatus) Bypassed() bool {
+	return e == echStatusBypassed
+}
+
+// Offered returns true if the client offered ECH.
+func (e CFEventECHClientStatus) Offered() bool {
+	return e == echStatusInner
+}
+
+// Greased returns true if the client greased ECH.
+func (e CFEventECHClientStatus) Greased() bool {
+	return e == echStatusOuter
+}
+
+// Name is required by the CFEvent interface.
+func (e CFEventECHClientStatus) Name() string {
+	return "ech client status"
+}
+
+// CFEventECHServerStatus is emitted once it is known whether the client
+// bypassed, offered, or greased ECH.
+type CFEventECHServerStatus int
+
+// Bypassed returns true if the client bypassed ECH.
+func (e CFEventECHServerStatus) Bypassed() bool {
+	return e == echStatusBypassed
+}
+
+// Accepted returns true if the client offered ECH.
+func (e CFEventECHServerStatus) Accepted() bool {
+	return e == echStatusInner
+}
+
+// Rejected returns true if the client greased ECH.
+func (e CFEventECHServerStatus) Rejected() bool {
+	return e == echStatusOuter
+}
+
+// Name is required by the CFEvent interface.
+func (e CFEventECHServerStatus) Name() string {
+	return "ech server status"
+}
+
+// CFEventECHPublicNameMismatch is emitted if the outer SNI does not match
+// match the public name of the ECH configuration. Note that we do not record
+// the outer SNI in order to avoid collecting this potentially sensitive data.
+type CFEventECHPublicNameMismatch struct{}
+
+// Name is required by the CFEvent interface.
+func (e CFEventECHPublicNameMismatch) Name() string {
+	return "ech public name does not match outer sni"
 }
