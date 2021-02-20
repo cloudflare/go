@@ -830,6 +830,8 @@ func TestCloneNonFuncFields(t *testing.T) {
 			f.Set(reflect.ValueOf([]ECHConfig{ECHConfig{}}))
 		case "ECHEnabled":
 			f.Set(reflect.ValueOf(true))
+		case "CFControl":
+			f.Set(reflect.ValueOf(&testCFControl{23}))
 		default:
 			t.Errorf("all fields must be accounted for, but saw unknown field %q", fn)
 		}

@@ -327,6 +327,13 @@ type ConnectionState struct {
 	// accepted by the server.
 	ECHAccepted bool
 
+	// CFControl is used to pass additional TLS configuration information to
+	// HTTP requests.
+	//
+	// NOTE: This feature is used to implement Cloudflare-internal features.
+	// This feature is unstable and applications MUST NOT depend on it.
+	CFControl interface{}
+
 	// ekm is a closure exposed via ExportKeyingMaterial.
 	ekm func(label string, context []byte, length int) ([]byte, error)
 }
@@ -758,9 +765,19 @@ type Config struct {
 	ServerECHProvider ECHProvider
 
 	// CFEventHandler, if set, is called by the client and server at various
-	// points during the handshake to handle specific events. For example, this
-	// callback can be used to record metrics.
+	// points during the handshake to handle specific events. This is used
+	// primarily for collecting metrics.
+	//
+	// NOTE: This feature is used to implement Cloudflare-internal features.
+	// This feature is unstable and applications MUST NOT depend on it.
 	CFEventHandler func(event CFEvent)
+
+	// CFControl is used to pass additional TLS configuration information to
+	// HTTP requests via ConnectionState.
+	//
+	// NOTE: This feature is used to implement Cloudflare-internal features.
+	// This feature is unstable and applications MUST NOT depend on it.
+	CFControl interface{}
 
 	// mutex protects sessionTicketKeys and autoSessionTicketKeys.
 	mutex sync.RWMutex
@@ -855,6 +872,7 @@ func (c *Config) Clone() *Config {
 		ClientECHConfigs:            c.ClientECHConfigs,
 		ServerECHProvider:           c.ServerECHProvider,
 		CFEventHandler:              c.CFEventHandler,
+		CFControl:                   c.CFControl,
 		sessionTicketKeys:           c.sessionTicketKeys,
 		autoSessionTicketKeys:       c.autoSessionTicketKeys,
 	}
