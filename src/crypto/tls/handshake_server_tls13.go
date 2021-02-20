@@ -22,48 +22,6 @@ import (
 // messages cause too much work in session ticket decryption attempts.
 const maxClientPSKIdentities = 5
 
-// CFEventTLS13ServerHandshakeTimingInfo carries intra-stack time durations
-// for TLS 1.3 state machine changes. It can be used for tracking metrics during a
-// connection. Some durations may be sensitive, such as the amount of time to
-// process a particular handshake message, so this event should only be used
-// for experimental purposes.
-//
-// NOTE: This API is EXPERIMENTAL and subject to change.
-type CFEventTLS13ServerHandshakeTimingInfo struct {
-	timer                    func() time.Time
-	start                    time.Time
-	ProcessClientHello       time.Duration
-	WriteServerHello         time.Duration
-	WriteEncryptedExtensions time.Duration
-	WriteCertificate         time.Duration
-	WriteCertificateVerify   time.Duration
-	WriteServerFinished      time.Duration
-	ReadCertificate          time.Duration
-	ReadCertificateVerify    time.Duration
-	ReadClientFinished       time.Duration
-}
-
-// Name is required by the CFEvent interface.
-func (e CFEventTLS13ServerHandshakeTimingInfo) Name() string {
-	return "TLS13ServerHandshakeTimingInfo"
-}
-
-func (e CFEventTLS13ServerHandshakeTimingInfo) elapsedTime() time.Duration {
-	return e.timer().Sub(e.start)
-}
-
-func createTLS13ServerHandshakeTimingInfo(timerFunc func() time.Time) CFEventTLS13ServerHandshakeTimingInfo {
-	timer := time.Now
-	if timerFunc != nil {
-		timer = timerFunc
-	}
-
-	return CFEventTLS13ServerHandshakeTimingInfo{
-		timer: timer,
-		start: timer(),
-	}
-}
-
 type serverHandshakeStateTLS13 struct {
 	c               *Conn
 	clientHello     *clientHelloMsg
