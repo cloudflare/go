@@ -26,67 +26,67 @@ const (
 	echStatusOuter
 )
 
-// EXP_EventECHClientStatus is emitted once it is known whether the client
+// CFEventECHClientStatus is emitted once it is known whether the client
 // bypassed, offered, or greased ECH.
 //
 // NOTE: This API is EXPERIMENTAL and subject to change.
-type EXP_EventECHClientStatus int
+type CFEventECHClientStatus int
 
 // Bypassed returns true if the client bypassed ECH.
-func (e EXP_EventECHClientStatus) Bypassed() bool {
+func (e CFEventECHClientStatus) Bypassed() bool {
 	return e == echStatusBypassed
 }
 
 // Offered returns true if the client offered ECH.
-func (e EXP_EventECHClientStatus) Offered() bool {
+func (e CFEventECHClientStatus) Offered() bool {
 	return e == echStatusInner
 }
 
 // Greased returns true if the client greased ECH.
-func (e EXP_EventECHClientStatus) Greased() bool {
+func (e CFEventECHClientStatus) Greased() bool {
 	return e == echStatusOuter
 }
 
-// Name is required by the EXP_Event interface.
-func (e EXP_EventECHClientStatus) Name() string {
+// Name is required by the CFEvent interface.
+func (e CFEventECHClientStatus) Name() string {
 	return "ech client status"
 }
 
-// EXP_EventECHServerStatus is emitted once it is known whether the client
+// CFEventECHServerStatus is emitted once it is known whether the client
 // bypassed, offered, or greased ECH.
 //
 // NOTE: This API is EXPERIMENTAL and subject to change.
-type EXP_EventECHServerStatus int
+type CFEventECHServerStatus int
 
 // Bypassed returns true if the client bypassed ECH.
-func (e EXP_EventECHServerStatus) Bypassed() bool {
+func (e CFEventECHServerStatus) Bypassed() bool {
 	return e == echStatusBypassed
 }
 
 // Accepted returns true if the client offered ECH.
-func (e EXP_EventECHServerStatus) Accepted() bool {
+func (e CFEventECHServerStatus) Accepted() bool {
 	return e == echStatusInner
 }
 
 // Rejected returns true if the client greased ECH.
-func (e EXP_EventECHServerStatus) Rejected() bool {
+func (e CFEventECHServerStatus) Rejected() bool {
 	return e == echStatusOuter
 }
 
-// Name is required by the EXP_Event interface.
-func (e EXP_EventECHServerStatus) Name() string {
+// Name is required by the CFEvent interface.
+func (e CFEventECHServerStatus) Name() string {
 	return "ech server status"
 }
 
-// EXP_EventECHPublicNameMismatch is emitted if the outer SNI does not match
+// CFEventECHPublicNameMismatch is emitted if the outer SNI does not match
 // match the public name of the ECH configuration. Note that we do not record
 // the outer SNI in order to avoid collecting this potentially sensitive data.
 //
 // NOTE: This API is EXPERIMENTAL and subject to change.
-type EXP_EventECHPublicNameMismatch struct{}
+type CFEventECHPublicNameMismatch struct{}
 
-// Name is required by the EXP_Event interface.
-func (e EXP_EventECHPublicNameMismatch) Name() string {
+// Name is required by the CFEvent interface.
+func (e CFEventECHPublicNameMismatch) Name() string {
 	return "ech public name does not match outer sni"
 }
 
@@ -332,7 +332,7 @@ func (c *Conn) echAcceptOrReject(hello *clientHelloMsg) (*clientHelloMsg, error)
 				}
 			}
 			if !pubNameMatches {
-				c.handleEvent(EXP_EventECHPublicNameMismatch{})
+				c.handleCFEvent(CFEventECHPublicNameMismatch{})
 			}
 		}
 

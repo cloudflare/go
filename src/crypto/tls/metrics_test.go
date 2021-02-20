@@ -13,8 +13,8 @@ import (
 )
 
 type testTimingInfo struct {
-	serverTimingInfo EXP_EventTLS13ServerHandshakeTimingInfo
-	clientTimingInfo EXP_EventTLS13ClientHandshakeTimingInfo
+	serverTimingInfo CFEventTLS13ServerHandshakeTimingInfo
+	clientTimingInfo CFEventTLS13ClientHandshakeTimingInfo
 }
 
 func (t testTimingInfo) isMonotonicallyIncreasing() bool {
@@ -41,11 +41,11 @@ func (t testTimingInfo) isMonotonicallyIncreasing() bool {
 	return (serverIsMonotonicallyIncreasing && clientIsMonotonicallyIncreasing)
 }
 
-func (r *testTimingInfo) eventHandler(event EXP_Event) {
+func (r *testTimingInfo) eventHandler(event CFEvent) {
 	switch e := event.(type) {
-	case EXP_EventTLS13ServerHandshakeTimingInfo:
+	case CFEventTLS13ServerHandshakeTimingInfo:
 		r.serverTimingInfo = e
-	case EXP_EventTLS13ClientHandshakeTimingInfo:
+	case CFEventTLS13ClientHandshakeTimingInfo:
 		r.clientTimingInfo = e
 	}
 }
@@ -55,8 +55,8 @@ func runHandshake(t *testing.T, clientConfig, serverConfig *Config) (timingState
 	c, s := localPipe(t)
 	errChan := make(chan error)
 
-	clientConfig.EXP_EventHandler = timingState.eventHandler
-	serverConfig.EXP_EventHandler = timingState.eventHandler
+	clientConfig.CFEventHandler = timingState.eventHandler
+	serverConfig.CFEventHandler = timingState.eventHandler
 
 	go func() {
 		cli := Client(c, clientConfig)
