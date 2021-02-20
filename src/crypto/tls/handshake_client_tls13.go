@@ -16,51 +16,6 @@ import (
 	"time"
 )
 
-// CFEventTLS13ClientHandshakeTimingInfo carries intra-stack time durations
-// for TLS 1.3 state machine changes. It can be used for tracking metrics during a
-// connection. Some durations may be sensitive, such as the amount of time to
-// process a particular handshake message, so this event should only be used
-// for experimental purposes.
-//
-// NOTE: This API is EXPERIMENTAL and subject to change.
-type CFEventTLS13ClientHandshakeTimingInfo struct {
-	timer                   func() time.Time
-	start                   time.Time
-	WriteClientHello        time.Duration
-	ProcessServerHello      time.Duration
-	ReadEncryptedExtensions time.Duration
-	ReadCertificate         time.Duration
-	ReadCertificateVerify   time.Duration
-	ReadServerFinished      time.Duration
-	WriteCertificate        time.Duration
-	WriteCertificateVerify  time.Duration
-	WriteClientFinished     time.Duration
-}
-
-// Name is required by the CFEvent interface.
-func (e CFEventTLS13ClientHandshakeTimingInfo) Name() string {
-	return "TLS13ClientHandshakeTimingInfo"
-}
-
-func (e CFEventTLS13ClientHandshakeTimingInfo) elapsedTime() time.Duration {
-	if e.timer == nil {
-		return 0
-	}
-	return e.timer().Sub(e.start)
-}
-
-func createTLS13ClientHandshakeTimingInfo(timerFunc func() time.Time) CFEventTLS13ClientHandshakeTimingInfo {
-	timer := time.Now
-	if timerFunc != nil {
-		timer = timerFunc
-	}
-
-	return CFEventTLS13ClientHandshakeTimingInfo{
-		timer: timer,
-		start: timer(),
-	}
-}
-
 type clientHandshakeStateTLS13 struct {
 	c           *Conn
 	serverHello *serverHelloMsg

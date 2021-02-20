@@ -760,8 +760,6 @@ type Config struct {
 	// CFEventHandler, if set, is called by the client and server at various
 	// points during the handshake to handle specific events. For example, this
 	// callback can be used to record metrics.
-	//
-	// NOTE: This API is EXPERIMENTAL and subject to change.
 	CFEventHandler func(event CFEvent)
 
 	// mutex protects sessionTicketKeys and autoSessionTicketKeys.
