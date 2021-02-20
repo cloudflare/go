@@ -533,21 +533,21 @@ type echTestResult struct {
 	// Operational parameters
 	clientDone, serverDone bool
 	// Results
-	clientStatus EXP_EventECHClientStatus
-	serverStatus EXP_EventECHServerStatus
+	clientStatus CFEventECHClientStatus
+	serverStatus CFEventECHServerStatus
 	connState    ConnectionState
 	err          error
 }
 
-func (r *echTestResult) eventHandler(event EXP_Event) {
+func (r *echTestResult) eventHandler(event CFEvent) {
 	switch e := event.(type) {
-	case EXP_EventECHClientStatus:
+	case CFEventECHClientStatus:
 		if r.clientDone {
 			panic("expected at most one client ECH status event")
 		}
 		r.clientStatus = e
 		r.clientDone = true
-	case EXP_EventECHServerStatus:
+	case CFEventECHServerStatus:
 		if r.serverDone {
 			panic("expected at most one server ECH status event")
 		}
@@ -567,7 +567,7 @@ func echTestConn(t *testing.T, clientConfig, serverConfig *Config) (clientRes, s
 	serverCh := make(chan echTestResult, 1)
 	go func() {
 		var res echTestResult
-		serverConfig.EXP_EventHandler = res.eventHandler
+		serverConfig.CFEventHandler = res.eventHandler
 		serverConn, err := ln.Accept()
 		if err != nil {
 			res.err = err
@@ -593,7 +593,7 @@ func echTestConn(t *testing.T, clientConfig, serverConfig *Config) (clientRes, s
 		res.connState = server.ConnectionState()
 	}()
 
-	clientConfig.EXP_EventHandler = clientRes.eventHandler
+	clientConfig.CFEventHandler = clientRes.eventHandler
 	client, err := Dial("tcp", ln.Addr().String(), clientConfig)
 	if err != nil {
 		serverRes = <-serverCh

@@ -46,10 +46,10 @@ func init() {
 	}
 }
 
-// EXP_Event is a value emitted at various points in the handshake that is
-// handled by the callback Config.EventHandler.
+// CFEvent is a value emitted at various points in the handshake that is
+// handled by the callback Config.CFEventHandler.
 //
 // NOTE: This API is EXPERIMENTAL and subject to change.
-type EXP_Event interface {
+type CFEvent interface {
 	Name() string
 }

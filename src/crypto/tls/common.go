@@ -742,12 +742,12 @@ type Config struct {
 	// payload.
 	ServerECHProvider ECHProvider
 
-	// EXP_EventHandler, if set, is called by the client and server at various
+	// CFEventHandler, if set, is called by the client and server at various
 	// points during the handshake to handle specific events. For example, this
 	// callback can be used to record metrics.
 	//
 	// NOTE: This API is EXPERIMENTAL and subject to change.
-	EXP_EventHandler func(event EXP_Event)
+	CFEventHandler func(event CFEvent)
 
 	// mutex protects sessionTicketKeys and autoSessionTicketKeys.
 	mutex sync.RWMutex
@@ -838,7 +838,7 @@ func (c *Config) Clone() *Config {
 		ECHEnabled:                  c.ECHEnabled,
 		ClientECHConfigs:            c.ClientECHConfigs,
 		ServerECHProvider:           c.ServerECHProvider,
-		EXP_EventHandler:            c.EXP_EventHandler,
+		CFEventHandler:              c.CFEventHandler,
 		sessionTicketKeys:           c.sessionTicketKeys,
 		autoSessionTicketKeys:       c.autoSessionTicketKeys,
 	}
