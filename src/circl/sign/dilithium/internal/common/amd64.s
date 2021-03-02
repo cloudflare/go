@@ -9154,20 +9154,20 @@ TEXT ·decomposeAVX2(SB), NOSPLIT, $0-24
 
 // func makeHintAVX2(p *[256]uint32, p0 *[256]uint32, p1 *[256]uint32) uint32
 // Requires: AVX, AVX2, POPCNT
-TEXT ·makeHintAVX2(SB), NOSPLIT, $0-28
+TEXT ·makeHintAVX2(SB), NOSPLIT, $8-28
 	MOVQ         p+0(FP), AX
 	MOVQ         p0+8(FP), CX
 	MOVQ         p1+16(FP), DX
 	XORL         BX, BX
 	VPXOR        Y2, Y2, Y2
-	MOVL         $0x0003ff01, BP
-	VMOVD        BP, X0
+	MOVL         $0x0003ff01, R8
+	VMOVD        R8, X0
 	VPBROADCASTD X0, Y0
-	MOVL         $0x007be101, BP
-	VMOVD        BP, X1
+	MOVL         $0x007be101, R8
+	VMOVD        R8, X1
 	VPBROADCASTD X1, Y1
-	MOVL         $0x80000000, BP
-	VMOVD        BP, X3
+	MOVL         $0x80000000, R8
+	VMOVD        R8, X3
 	VPBROADCASTD X3, Y3
 	VMOVDQU      (CX), Y4
 	VMOVDQU      32(CX), Y7
