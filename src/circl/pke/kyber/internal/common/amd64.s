@@ -1440,16 +1440,16 @@ TEXT ·invNttAVX2(SB), NOSPLIT, $0-8
 
 // func mulHatAVX2(p *[256]int16, a *[256]int16, b *[256]int16)
 // Requires: AVX, AVX2
-TEXT ·mulHatAVX2(SB), NOSPLIT, $0-24
+TEXT ·mulHatAVX2(SB), NOSPLIT, $8-24
 	MOVQ         p+0(FP), AX
 	MOVQ         a+8(FP), CX
 	MOVQ         b+16(FP), DX
 	LEAQ         ·ZetasAVX2+0(SB), BX
-	MOVL         $0xfffff301, BP
-	VMOVD        BP, X0
+	MOVL         $0xfffff301, R8
+	VMOVD        R8, X0
 	VPBROADCASTW X0, Y14
-	MOVL         $0x00000d01, BP
-	VMOVD        BP, X0
+	MOVL         $0x00000d01, R8
+	VMOVD        R8, X0
 	VPBROADCASTW X0, Y15
 	VMOVDQU      (CX), Y0
 	VMOVDQU      32(CX), Y1
