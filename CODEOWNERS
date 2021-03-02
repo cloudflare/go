@@ -1,0 +1,6 @@
+* @armfazh @cjpatton @claucece @Lekensteyn @wbl
+src/circl @armfazh
+src/crypto/tls @claucece @Lekensteyn
+src/crypto/x509 @wbl @cjpatton
+src/internal/cpu @armfazh
+src/net @Lekensteyn @cjpatton
