@@ -25,12 +25,13 @@ import (
 )
 
 const (
-	version        = "VOPRF06-"
-	seedDST        = "Seed-"
-	challengeDST   = "Challenge-"
-	finalizeDST    = "Finalize-"
-	compositeDST   = "Composite-"
-	hashToGroupDST = "HashToGroup-"
+	version         = "VOPRF06-"
+	seedDST         = "Seed-"
+	challengeDST    = "Challenge-"
+	finalizeDST     = "Finalize-"
+	compositeDST    = "Composite-"
+	hashToGroupDST  = "HashToGroup-"
+	hashToScalarDST = "HashToScalar-"
 )
 
 // SuiteID identifies supported suites.
@@ -107,13 +108,18 @@ func (s *suite) generateKey() *PrivateKey {
 	return &PrivateKey{s.SuiteID, privateKey}
 }
 
+func (s *suite) deriveKey(seed []byte) *PrivateKey {
+	privateKey := s.Group.HashToScalar(seed, nil)
+	return &PrivateKey{s.SuiteID, privateKey}
+}
+
 func (s *suite) scalarMult(e group.Element, k group.Scalar) ([]byte, error) {
 	t := s.Group.NewElement()
 	t.Mul(e, k)
 	return t.MarshalBinaryCompress()
 }
 
-func (s *suite) finalizeHash(input, element, info []byte) []byte {
+func (s *suite) finalizeHash(input, element []byte) []byte {
 	h := s.New()
 
 	lenBuf := []byte{0, 0}
@@ -125,10 +131,6 @@ func (s *suite) finalizeHash(input, element, info []byte) []byte {
 	binary.BigEndian.PutUint16(lenBuf, uint16(len(element)))
 	mustWrite(h, lenBuf)
 	mustWrite(h, element)
-
-	binary.BigEndian.PutUint16(lenBuf, uint16(len(info)))
-	mustWrite(h, lenBuf)
-	mustWrite(h, info)
 
 	dst := s.getDST(finalizeDST)
 	binary.BigEndian.PutUint16(lenBuf, uint16(len(dst)))
@@ -173,7 +175,7 @@ func (s *suite) computeComposites(
 	Z := s.Group.Identity()
 	Mi := s.Group.NewElement()
 	Zi := s.Group.NewElement()
-	h2gDST := s.getDST(hashToGroupDST)
+	h2sDST := s.getDST(hashToScalarDST)
 	for i := range b {
 		h2Input := []byte{}
 
@@ -193,7 +195,7 @@ func (s *suite) computeComposites(
 		binary.BigEndian.PutUint16(lenBuf, uint16(len(dst)))
 		h2Input = append(append(h2Input, lenBuf...), dst...)
 
-		di := s.Group.HashToScalar(h2Input, h2gDST)
+		di := s.Group.HashToScalar(h2Input, h2sDST)
 		err := Mi.UnmarshalBinary(b[i])
 		if err != nil {
 			return nil, nil, err
@@ -215,11 +217,11 @@ func (s *suite) computeComposites(
 		Z.Mul(M, skS)
 	}
 
-	serM, err := M.MarshalBinary()
+	serM, err := M.MarshalBinaryCompress()
 	if err != nil {
 		return nil, nil, err
 	}
-	serZ, err := Z.MarshalBinary()
+	serZ, err := Z.MarshalBinaryCompress()
 	if err != nil {
 		return nil, nil, err
 	}
@@ -240,5 +242,5 @@ func (s *suite) doChallenge(a [5][]byte) group.Scalar {
 	binary.BigEndian.PutUint16(lenBuf, uint16(len(dst)))
 	h2Input = append(append(h2Input, lenBuf...), dst...)
 
-	return s.Group.HashToScalar(h2Input, s.getDST(hashToGroupDST))
+	return s.Group.HashToScalar(h2Input, s.getDST(hashToScalarDST))
 }
