@@ -4,6 +4,8 @@ import (
 	"crypto/rand"
 	"crypto/subtle"
 	"errors"
+
+	"circl/group"
 )
 
 // Server is a representation of a OPRF server during protocol execution.
@@ -42,6 +44,13 @@ func (s *Server) GetPublicKey() *PublicKey { return s.privateKey.Public() }
 
 // Evaluate evaluates a set of blinded inputs from the client.
 func (s *Server) Evaluate(blindedElements []Blinded) (*Evaluation, error) {
+	rr := s.suite.Group.RandomScalar(rand.Reader)
+	return s.evaluateWithProofScalar(blindedElements, rr)
+}
+
+// Evaluate evaluates a set of blinded inputs from the client using a fixed
+// random scalar for proof generation
+func (s *Server) evaluateWithProofScalar(blindedElements []Blinded, proofScalar group.Scalar) (*Evaluation, error) {
 	l := len(blindedElements)
 	if l == 0 {
 		return nil, errors.New("no elements to evaluate")
@@ -64,7 +73,7 @@ func (s *Server) Evaluate(blindedElements []Blinded) (*Evaluation, error) {
 
 	var proof *Proof
 	if s.Mode == VerifiableMode {
-		proof, err = s.generateProof(blindedElements, eval)
+		proof, err = s.generateProofWithRandomScalar(blindedElements, eval, proofScalar)
 		if err != nil {
 			return nil, err
 		}
@@ -74,7 +83,7 @@ func (s *Server) Evaluate(blindedElements []Blinded) (*Evaluation, error) {
 }
 
 // FullEvaluate performs a full OPRF protocol at server-side.
-func (s *Server) FullEvaluate(input, info []byte) ([]byte, error) {
+func (s *Server) FullEvaluate(input []byte) ([]byte, error) {
 	p := s.Group.HashToElement(input, s.getDST(hashToGroupDST))
 
 	ser, err := s.scalarMult(p, s.privateKey.k)
@@ -82,20 +91,20 @@ func (s *Server) FullEvaluate(input, info []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	return s.finalizeHash(input, ser, info), nil
+	return s.finalizeHash(input, ser), nil
 }
 
 // VerifyFinalize performs a full OPRF protocol and returns true if the output
 // matches the expected output.
-func (s *Server) VerifyFinalize(input, info, expectedOutput []byte) bool {
-	gotOutput, err := s.FullEvaluate(input, info)
+func (s *Server) VerifyFinalize(input, expectedOutput []byte) bool {
+	gotOutput, err := s.FullEvaluate(input)
 	if err != nil {
 		return false
 	}
 	return subtle.ConstantTimeCompare(gotOutput, expectedOutput) == 1
 }
 
-func (s *Server) generateProof(b []Blinded, eval []SerializedElement) (*Proof, error) {
+func (s *Server) generateProofWithRandomScalar(b []Blinded, eval []SerializedElement, rr group.Scalar) (*Proof, error) {
 	pkS := s.privateKey.Public()
 	pkSm, err := pkS.Serialize()
 	if err != nil {
@@ -106,23 +115,23 @@ func (s *Server) generateProof(b []Blinded, eval []SerializedElement) (*Proof, e
 	if err != nil {
 		return nil, err
 	}
+
 	M := s.Group.NewElement()
 	err = M.UnmarshalBinary(a0)
 	if err != nil {
 		return nil, err
 	}
-	rr := s.suite.Group.RandomScalar(rand.Reader)
 
 	a2e := s.Group.NewElement()
 	a2e.MulGen(rr)
-	a2, err := a2e.MarshalBinary()
+	a2, err := a2e.MarshalBinaryCompress()
 	if err != nil {
 		return nil, err
 	}
 
 	a3e := s.Group.NewElement()
 	a3e.Mul(M, rr)
-	a3, err := a3e.MarshalBinary()
+	a3, err := a3e.MarshalBinaryCompress()
 	if err != nil {
 		return nil, err
 	}
