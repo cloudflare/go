@@ -113,16 +113,24 @@ func testOrder(t *testing.T, testTimes int, g group.Group) {
 	}
 }
 
+func isZero(b []byte) bool {
+	for i := 0; i < len(b); i++ {
+		if b[i] != 0x00 {
+			return false
+		}
+	}
+	return true
+}
+
 func testMarshal(t *testing.T, testTimes int, g group.Group) {
 	I := g.Identity()
 	got, _ := I.MarshalBinary()
-	want := []byte{0}
-	if !bytes.Equal(got, want) {
-		test.ReportError(t, got, want)
+	if !isZero(got) {
+		test.ReportError(t, got, "Non-zero identity")
 	}
 	got, _ = I.MarshalBinaryCompress()
-	if !bytes.Equal(got, want) {
-		test.ReportError(t, got, want)
+	if !isZero(got) {
+		test.ReportError(t, got, "Non-zero identity")
 	}
 	II := g.NewElement()
 	err := II.UnmarshalBinary(got)

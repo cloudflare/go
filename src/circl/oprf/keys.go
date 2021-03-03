@@ -14,7 +14,7 @@ type PublicKey struct {
 }
 
 func (k *PrivateKey) Serialize() ([]byte, error) { return k.k.MarshalBinary() }
-func (k *PublicKey) Serialize() ([]byte, error)  { return k.e.MarshalBinary() }
+func (k *PublicKey) Serialize() ([]byte, error)  { return k.e.MarshalBinaryCompress() }
 
 func (k *PrivateKey) Deserialize(id SuiteID, data []byte) error {
 	suite, err := suiteFromID(id, BaseMode)
@@ -50,4 +50,13 @@ func GenerateKey(id SuiteID) (*PrivateKey, error) {
 		return nil, err
 	}
 	return suite.generateKey(), nil
+}
+
+// DeriveKey derives a pair of keys given a seed and in accordance with the suite.
+func DeriveKey(id SuiteID, seed []byte) (*PrivateKey, error) {
+	suite, err := suiteFromID(id, BaseMode)
+	if err != nil {
+		return nil, err
+	}
+	return suite.deriveKey(seed), nil
 }
