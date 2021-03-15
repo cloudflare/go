@@ -12,10 +12,6 @@ import (
 	"golang.org/x/crypto/cryptobyte"
 )
 
-const (
-	maxConfigIdLen = 255
-)
-
 // ECHProvider specifies the interface of an ECH service provider that decrypts
 // the ECH payload on behalf of the client-facing server. It also defines the
 // set of acceptable ECH configurations.
@@ -26,7 +22,7 @@ type ECHProvider interface {
 	//
 	// handle encodes the parameters of the client's "encrypted_client_hello"
 	// extension that are needed to construct the context. In
-	// draft-ietf-tls-esni-09, these are the ECH cipher suite, the identity of
+	// draft-ietf-tls-esni-10, these are the ECH cipher suite, the identity of
 	// the ECH configuration, and the encapsulated key.
 	//
 	// version is the version of ECH indicated by the client.
@@ -94,37 +90,24 @@ type EXP_ECHKeySet struct {
 	configs []byte
 
 	// Maps a configuration identifier to its secret key.
-	sk map[[maxConfigIdLen + 1]byte]EXP_ECHKey
+	sk map[uint8]EXP_ECHKey
 }
 
 // EXP_NewECHKeySet constructs an EXP_ECHKeySet.
 func EXP_NewECHKeySet(keys []EXP_ECHKey) (*EXP_ECHKeySet, error) {
+	if len(keys) > 255 {
+		return nil, fmt.Errorf("tls: ech provider: unable to support more than 255 ECH configurations at once")
+	}
+
 	keySet := new(EXP_ECHKeySet)
-	keySet.sk = make(map[[maxConfigIdLen + 1]byte]EXP_ECHKey)
+	keySet.sk = make(map[uint8]EXP_ECHKey)
 	configs := make([]byte, 0)
 	for _, key := range keys {
-		// Compute the set of KDF algorithms supported by this configuration.
-		kdfIds := make(map[uint16]bool)
-		for _, suite := range key.config.suites {
-			kdfIds[suite.kdfId] = true
+		if _, ok := keySet.sk[key.config.configId]; ok {
+			return nil, fmt.Errorf("tls: ech provider: ECH config conflict for configId %d", key.config.configId)
 		}
 
-		// Compute the configuration identifier for each KDF.
-		for kdfId, _ := range kdfIds {
-			configId, err := key.config.id(hpke.KDF(kdfId))
-			if err != nil {
-				return nil, err
-			}
-
-			var b cryptobyte.Builder
-			b.AddUint8LengthPrefixed(func(b *cryptobyte.Builder) {
-				b.AddBytes(configId)
-			})
-			var id [maxConfigIdLen + 1]byte // Initialized to zero
-			copy(id[:], b.BytesOrPanic())
-			keySet.sk[id] = key
-		}
-
+		keySet.sk[key.config.configId] = key
 		configs = append(configs, key.config.raw...)
 	}
 
@@ -144,7 +127,7 @@ func (keySet *EXP_ECHKeySet) GetDecryptionContext(rawHandle []byte, version uint
 	res.RetryConfigs = keySet.configs
 
 	// Ensure we know how to proceed, i.e., the caller has indicated a supported
-	// version of ECH. Currently only draft-ietf-tls-esni-09 is supported.
+	// version of ECH. Currently only draft-ietf-tls-esni-10 is supported.
 	if version != extensionECH {
 		res.Status = ECHProviderAbort
 		res.Alert = uint8(alertInternalError)
@@ -165,13 +148,7 @@ func (keySet *EXP_ECHKeySet) GetDecryptionContext(rawHandle []byte, version uint
 	handle.raw = rawHandle
 
 	// Look up the secret key for the configuration indicated by the client.
-	var id [maxConfigIdLen + 1]byte // Initialized to zero
-	var b cryptobyte.Builder
-	b.AddUint8LengthPrefixed(func(b *cryptobyte.Builder) {
-		b.AddBytes(handle.configId)
-	})
-	copy(id[:], b.BytesOrPanic())
-	key, ok := keySet.sk[id]
+	key, ok := keySet.sk[handle.configId]
 	if !ok {
 		res.Status = ECHProviderReject
 		res.RetryConfigs = keySet.configs
@@ -227,7 +204,7 @@ func (keySet *EXP_ECHKeySet) GetDecryptionContext(rawHandle []byte, version uint
 //
 // struct {
 //     opaque sk<0..2^16-1>;
-//     ECHConfig config<0..2^16>; // draft-ietf-tls-esni-09
+//     ECHConfig config<0..2^16>; // draft-ietf-tls-esni-10
 // } ECHKey;
 type EXP_ECHKey struct {
 	sk     kem.PrivateKey
@@ -291,7 +268,7 @@ KeysLoop:
 
 // setupOpener computes the HPKE context used by the server in the ECH
 // extension.i
-func (key *EXP_ECHKey) setupOpener(enc []byte, suite echCipherSuite) (hpke.Opener, error) {
+func (key *EXP_ECHKey) setupOpener(enc []byte, suite hpkeSymmetricCipherSuite) (hpke.Opener, error) {
 	if key.config.raw == nil {
 		panic("raw config not set")
 	}

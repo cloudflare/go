@@ -20,10 +20,11 @@ type ECHConfig struct {
 
 	// Parsed from raw
 	version           uint16
+	configId          uint8
 	rawPublicName     []byte
 	rawPublicKey      []byte
 	kemId             uint16
-	suites            []echCipherSuite
+	suites            []hpkeSymmetricCipherSuite
 	maxNameLen        uint16
 	ignoredExtensions []byte
 }
@@ -87,11 +88,10 @@ func echMarshalConfigs(configs []ECHConfig) ([]byte, error) {
 
 func readConfigContents(contents *cryptobyte.String, config *ECHConfig) bool {
 	var t cryptobyte.String
-	if !contents.ReadUint16LengthPrefixed(&t) ||
-		!t.ReadBytes(&config.rawPublicName, len(t)) ||
+	if !contents.ReadUint8(&config.configId) ||
+		!contents.ReadUint16(&config.kemId) ||
 		!contents.ReadUint16LengthPrefixed(&t) ||
 		!t.ReadBytes(&config.rawPublicKey, len(t)) ||
-		!contents.ReadUint16(&config.kemId) ||
 		!contents.ReadUint16LengthPrefixed(&t) ||
 		len(t)%4 != 0 {
 		return false
@@ -104,10 +104,12 @@ func readConfigContents(contents *cryptobyte.String, config *ECHConfig) bool {
 			// This indicates an internal bug.
 			panic("internal error while parsing contents.cipher_suites")
 		}
-		config.suites = append(config.suites, echCipherSuite{kdfId, aeadId})
+		config.suites = append(config.suites, hpkeSymmetricCipherSuite{kdfId, aeadId})
 	}
 
 	if !contents.ReadUint16(&config.maxNameLen) ||
+		!contents.ReadUint16LengthPrefixed(&t) ||
+		!t.ReadBytes(&config.rawPublicName, len(t)) ||
 		!contents.ReadUint16LengthPrefixed(&t) ||
 		!t.ReadBytes(&config.ignoredExtensions, len(t)) ||
 		!contents.Empty() {
@@ -136,7 +138,7 @@ func (config *ECHConfig) setupSealer(rand io.Reader) (enc []byte, sealer hpke.Se
 
 // isPeerCipherSuiteSupported returns true if this configuration indicates
 // support for the given ciphersuite.
-func (config *ECHConfig) isPeerCipherSuiteSupported(suite echCipherSuite) bool {
+func (config *ECHConfig) isPeerCipherSuiteSupported(suite hpkeSymmetricCipherSuite) bool {
 	for _, configSuite := range config.suites {
 		if suite == configSuite {
 			return true
@@ -159,17 +161,4 @@ func (config *ECHConfig) selectSuite() (hpke.Suite, error) {
 		}
 	}
 	return hpke.Suite{}, errors.New("could not negotiate a ciphersuite")
-}
-
-// id returns the configuration identifier for the given KDF.
-func (config *ECHConfig) id(kdf hpke.KDF) ([]byte, error) {
-	if config.raw == nil {
-		panic("config.raw not set")
-	}
-	if !kdf.IsValid() {
-		return nil, errors.New("KDF algorithm not supported")
-	}
-	id := kdf.Expand(kdf.Extract(config.raw, nil),
-		[]byte(echHpkeInfoConfigId), 8)
-	return id, nil
 }

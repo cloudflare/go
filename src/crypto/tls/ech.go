@@ -17,8 +17,7 @@ const (
 	echAcceptConfirmationLabel = "ech accept confirmation"
 
 	// Constants for HPKE operations
-	echHpkeInfoConfigId = "tls ech config id"
-	echHpkeInfoSetup    = "tls ech"
+	echHpkeInfoSetup = "tls ech"
 )
 
 // TODO(cjpatton): "[When offering ECH, the client] MUST NOT offer to resume any
@@ -60,7 +59,7 @@ func (c *Conn) echOfferOrGrease(helloBase *clientHelloMsg) (hello, helloInner *c
 	}
 
 	// Compute artifacts that are reused across HRR.
-	var enc, configId []byte
+	var enc []byte
 	if c.ech.sealer == nil {
 		// HPKE context.
 		enc, c.ech.sealer, err = echConfig.setupSealer(config.rand())
@@ -68,15 +67,11 @@ func (c *Conn) echOfferOrGrease(helloBase *clientHelloMsg) (hello, helloInner *c
 			return nil, nil, fmt.Errorf("tls: ech: %s", err)
 		}
 
-		// ClientECH.config_id.
-		_, kdfId, _ := c.ech.sealer.Suite().Params()
-		configId, err = echConfig.id(kdfId)
-		if err != nil {
-			return nil, nil, fmt.Errorf("tls: ech: %s", err)
-		}
-
 		// ECHConfig.contents.public_name.
 		c.ech.publicName = string(echConfig.rawPublicName)
+
+		// ECHConfig.contents.key_config.config_id.
+		c.ech.configId = echConfig.configId
 
 		// ClientHelloInner.random.
 		c.ech.innerRandom = make([]byte, 32)
@@ -148,8 +143,8 @@ func (c *Conn) echOfferOrGrease(helloBase *clientHelloMsg) (hello, helloInner *c
 	_, kdfId, aeadId := c.ech.sealer.Suite().Params()
 	ech.handle.suite.kdfId = uint16(kdfId)
 	ech.handle.suite.aeadId = uint16(aeadId)
-	ech.handle.configId = configId // Empty after HRR
-	ech.handle.enc = enc           // Empty after HRR
+	ech.handle.configId = echConfig.configId
+	ech.handle.enc = enc // Empty after HRR
 	helloOuterAad := echEncodeClientHelloOuterAAD(hello.marshal(), ech.handle.marshal())
 	if helloOuterAad == nil {
 		return nil, nil, errors.New("tls: ech: encoding of ClientHelloOuterAAD failed")
@@ -221,7 +216,7 @@ func (c *Conn) echAcceptOrReject(hello *clientHelloMsg) (*clientHelloMsg, error)
 	}
 	if c.hrrTriggered && c.ech.offered &&
 		(ech.handle.suite != c.ech.suite ||
-			len(ech.handle.configId) > 0 ||
+			ech.handle.configId != c.ech.configId ||
 			len(ech.handle.enc) > 0) {
 		// The context handle shouldn't change across HRR.
 		c.sendAlert(alertIllegalParameter)
@@ -252,7 +247,7 @@ func (c *Conn) echAcceptOrReject(hello *clientHelloMsg) (*clientHelloMsg, error)
 
 			// Check if the outer SNI matches the public name of any ECH config
 			// advertised by the client-facing server. As of
-			// draft-ietf-tls-esni-09, the client is required to use the ECH
+			// draft-ietf-tls-esni-10, the client is required to use the ECH
 			// config's public name as the outer SNI. Although there's no real
 			// reason for the server to enforce this, it worth noting it when it
 			// happens.
@@ -377,14 +372,14 @@ func (ech *echClient) marshal() []byte {
 	return b.BytesOrPanic()
 }
 
-// echContexttHandle represents the prefix of a ClientECH structure used by
+// echContextHandle represents the prefix of a ClientECH structure used by
 // the server to compute the HPKE context.
 type echContextHandle struct {
 	raw []byte
 
 	// Parsed from raw
-	suite    echCipherSuite
-	configId []byte
+	suite    hpkeSymmetricCipherSuite
+	configId uint8
 	enc      []byte
 }
 
@@ -395,9 +390,7 @@ func (handle *echContextHandle) marshal() []byte {
 	var b cryptobyte.Builder
 	b.AddUint16(handle.suite.kdfId)
 	b.AddUint16(handle.suite.aeadId)
-	b.AddUint8LengthPrefixed(func(b *cryptobyte.Builder) {
-		b.AddBytes(handle.configId)
-	})
+	b.AddUint8(handle.configId)
 	b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
 		b.AddBytes(handle.enc)
 	})
@@ -408,8 +401,7 @@ func echReadContextHandle(s *cryptobyte.String, handle *echContextHandle) bool {
 	var t cryptobyte.String
 	if !s.ReadUint16(&handle.suite.kdfId) || // cipher_suite.kdf_id
 		!s.ReadUint16(&handle.suite.aeadId) || // cipher_suite.aead_id
-		!s.ReadUint8LengthPrefixed(&t) || // config_id
-		!t.ReadBytes(&handle.configId, len(t)) ||
+		!s.ReadUint8(&handle.configId) || // config_id
 		!s.ReadUint16LengthPrefixed(&t) || // enc
 		!t.ReadBytes(&handle.enc, len(t)) {
 		return false
@@ -417,10 +409,10 @@ func echReadContextHandle(s *cryptobyte.String, handle *echContextHandle) bool {
 	return true
 }
 
-// echCipherSuite represents an ECH ciphersuite, a KDF/AEAD algorithm pair. This
+// hpkeSymmetricCipherSuite represents an ECH ciphersuite, a KDF/AEAD algorithm pair. This
 // is different from an HPKE ciphersuite, which represents a KEM/KDF/AEAD
 // triple.
-type echCipherSuite struct {
+type hpkeSymmetricCipherSuite struct {
 	kdfId, aeadId uint16
 }
 
@@ -446,11 +438,12 @@ func echGenerateDummyExt(rand io.Reader) ([]byte, error) {
 	var ech echClient
 	ech.handle.suite.kdfId = uint16(kdf)
 	ech.handle.suite.aeadId = uint16(aead)
-	ech.handle.configId = make([]byte, 8)
-	_, err = io.ReadFull(rand, ech.handle.configId)
+	randomByte := make([]byte, 1)
+	_, err = io.ReadFull(rand, randomByte)
 	if err != nil {
 		return nil, fmt.Errorf("tls: grease ech:: %s", err)
 	}
+	ech.handle.configId = randomByte[0]
 	ech.handle.enc, _, err = sender.Setup(rand)
 	if err != nil {
 		return nil, fmt.Errorf("tls: grease ech:: %s", err)
