@@ -103,9 +103,9 @@ const (
 	extensionSignatureAlgorithmsCert uint16 = 50
 	extensionKeyShare                uint16 = 51
 	extensionRenegotiationInfo       uint16 = 0xff01
-	extensionECH                     uint16 = 0xfe09 // draft-ietf-tls-esni-09
-	extensionECHIsInner              uint16 = 0xda09 // draft-ietf-tls-esni-09
-	extensionECHOuterExtensions      uint16 = 0xfd00 // draft-ietf-tls-esni-09
+	extensionECH                     uint16 = 0xfe0a // draft-ietf-tls-esni-10
+	extensionECHIsInner              uint16 = 0xda09 // draft-ietf-tls-esni-10
+	extensionECHOuterExtensions      uint16 = 0xfd00 // draft-ietf-tls-esni-10
 )
 
 // TLS signaling cipher suite values
