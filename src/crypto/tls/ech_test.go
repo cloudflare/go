@@ -90,34 +90,36 @@ Fy/vytRwyjhHuX9ntc5ArCpwbAmY+oW/4w==
 
 // The ECH keys used by the client-facing server.
 const echTestKeys = `-----BEGIN ECH KEYS-----
-ACA/SG/gkFYqQ0vvrgz8CRtn8QBhUdmJIHrpLRa4MHbjpgBT/gkATwATY2xvdWRm
-bGFyZS1lc25pLmNvbQAgRcve568ZJiCCyZJvwrIx0FIoSCQihzse5EJM36v98BcA
-IAAQAAEAAQABAAMAAgABAAIAAwAAAAAAIOpdZ5c3Q1EIq5eztNrW+7GcUiPKPDhm
-6JqulMAt5NLmAHT+CQBwABNjbG91ZGZsYXJlLWVzbmkuY29tAEEEpVCefVOCJ4vL
-Ae6XXPx/d6w/yu4qP2asEfG/aYceggNFRS13f2FhfmTsFsctRsrfi0KR4fPlE469
-PxZnNLJ8wAAQABAAAQABAAEAAwACAAEAAgADAAAAAA==
+ACDhS0q2cTU1Qzi6hPM4BQ/HLnbEUZyWdY2GbmS0DVkumgBI/goARAAAIAAgi1Tu
+jWJ236k1VAMeRnysKbDigxLpDs/AGdEowK8KiBkABAABAAEAAAATY2xvdWRmbGFy
+ZS1lc25pLmNvbQAAACBmNj/zQe6OT/MR/MM39G6kwMJCJEXpdvTAkbdHErlgXwBI
+/goARAEAIAAgZ1Ru1uyGX6N9HYs5/pAE3KwUXRDBHD0Bdna8oP4uVEwABAABAAEA
+AAATY2xvdWRmbGFyZS1lc25pLmNvbQAA
 -----END ECH KEYS-----`
 
 // A sequence of ECH keys with unsupported versions.
 const echTestInvalidVersionKeys = `-----BEGIN ECH KEYS-----
-ACChoR9Zm0Y7YJLxh4NHlF9cDWOYVdtbpsXNsLbEejCw4gBTvu8ATwATY2xvdWRm
-bGFyZS1lc25pLmNvbQAg3on70PKtaF9Mp5WQghrykTszqKlaX02Pi+WYpbCza1gA
-IAAQAAEAAQABAAMAAgABAAIAAwAAAAA=
+ACDhS0q2cTU1Qzi6hPM4BQ/HLnbEUZyWdY2GbmS0DVkumgBIAfUARAAAIAAgi1Tu
+jWJ236k1VAMeRnysKbDigxLpDs/AGdEowK8KiBkABAABAAEAAAATY2xvdWRmbGFy
+ZS1lc25pLmNvbQAAACBmNj/zQe6OT/MR/MM39G6kwMJCJEXpdvTAkbdHErlgXwBI
+AfUARAEAIAAgZ1Ru1uyGX6N9HYs5/pAE3KwUXRDBHD0Bdna8oP4uVEwABAABAAEA
+AAATY2xvdWRmbGFyZS1lc25pLmNvbQAA
 -----END ECH KEYS-----`
 
 // The sequence of ECH configurations corresponding to echTestKeys.
 const echTestConfigs = `-----BEGIN ECH CONFIGS-----
-AMf+CQBPABNjbG91ZGZsYXJlLWVzbmkuY29tACBFy97nrxkmIILJkm/CsjHQUihI
-JCKHOx7kQkzfq/3wFwAgABAAAQABAAEAAwACAAEAAgADAAAAAP4JAHAAE2Nsb3Vk
-ZmxhcmUtZXNuaS5jb20AQQSlUJ59U4Ini8sB7pdc/H93rD/K7io/ZqwR8b9phx6C
-A0VFLXd/YWF+ZOwWxy1Gyt+LQpHh8+UTjr0/Fmc0snzAABAAEAABAAEAAQADAAIA
-AQACAAMAAAAA
+AJD+CgBEAAAgACCLVO6NYnbfqTVUAx5GfKwpsOKDEukOz8AZ0SjArwqIGQAEAAEA
+AQAAABNjbG91ZGZsYXJlLWVzbmkuY29tAAD+CgBEAQAgACBnVG7W7IZfo30dizn+
+kATcrBRdEMEcPQF2dryg/i5UTAAEAAEAAQAAABNjbG91ZGZsYXJlLWVzbmkuY29t
+AAA=
 -----END ECH CONFIGS-----`
 
 // An invalid sequence of ECH configurations.
 const echTestStaleConfigs = `-----BEGIN ECH CONFIGS-----
-AFP+CQBPABNjbG91ZGZsYXJlLWVzbmkuY29tACDA9Z4YbY7f6HMlsUUhSHdioVr9
-s6vH9g5PPTkgR83MIwAgABAAAQABAAEAAwACAAEAAgADAAAAAA==
+AJD+CgBEAAAgACCNkMISpIMFmPZwDgob/CROvHD93NQFcX4h0SURHTJpRwAEAAEA
+AQAAABNjbG91ZGZsYXJlLWVzbmkuY29tAAD+CgBEAQAgACAH4P9K5l9BJ3aG4QUk
+fTjMWUoeLQZVdTxp5Qe0FWvDQwAEAAEAAQAAABNjbG91ZGZsYXJlLWVzbmkuY29t
+AAA=
 -----END ECH CONFIGS-----`
 
 // echTestProviderAlwaysAbort mocks an ECHProvider that, in response to any
@@ -892,17 +894,16 @@ func TestECHProvider(t *testing.T) {
 	p := echTestLoadKeySet(echTestKeys)
 	t.Run("ok", func(t *testing.T) {
 		handle := []byte{
-			0, 1, 0, 1, 8, 202, 62, 220, 1, 243, 58, 247, 102, 0, 32, 40, 52,
-			167, 167, 21, 125, 151, 32, 250, 255, 1, 125, 206, 103, 62, 96, 189,
-			112, 126, 48, 221, 41, 198, 146, 100, 149, 29, 133, 103, 87, 87, 78,
+			0, 1, 0, 1, 0, 0, 32, 40, 52, 167, 167, 21, 125, 151, 32, 250, 255, 1,
+			125, 206, 103, 62, 96, 189, 112, 126, 48, 221, 41, 198, 146, 100, 149,
+			29, 133, 103, 87, 87, 78,
 		}
 		context := []byte{
-			1, 0, 32, 0, 1, 0, 1, 32, 236, 67, 192, 226, 245, 110, 78, 204, 212,
-			236, 85, 28, 234, 9, 249, 154, 158, 25, 69, 140, 83, 156, 41, 237,
-			146, 108, 142, 83, 130, 231, 162, 53, 16, 80, 114, 44, 28, 184, 124,
-			105, 82, 228, 226, 156, 178, 245, 44, 171, 175, 12, 97, 213, 61,
-			253, 64, 224, 125, 59, 223, 107, 24, 119, 12, 0, 0, 0, 0, 0, 0, 0,
-			0, 0, 0, 0, 0,
+			1, 0, 32, 0, 1, 0, 1, 32, 36, 168, 201, 89, 6, 5, 216, 41, 55, 71, 51,
+			165, 58, 92, 20, 212, 13, 84, 72, 119, 247, 120, 50, 63, 21, 145, 190,
+			153, 201, 60, 38, 185, 16, 73, 40, 109, 39, 98, 199, 188, 154, 135, 218,
+			81, 43, 179, 83, 22, 108, 12, 225, 52, 73, 49, 74, 108, 22, 100, 11, 244,
+			38, 198, 12, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 		}
 		testECHProvider(t, p, handle, extensionECH, ECHProviderResult{
 			Status:       ECHProviderSuccess,
@@ -912,7 +913,7 @@ func TestECHProvider(t *testing.T) {
 	})
 	t.Run("invalid config id", func(t *testing.T) {
 		handle := []byte{
-			0, 1, 0, 1, 6, 202, 62, 220, 1, 243, 58, 0, 32, 40, 52, 167, 167,
+			0, 1, 0, 1, 255, 202, 62, 220, 1, 243, 58, 0, 32, 40, 52, 167, 167,
 			21, 125, 151, 32, 250, 255, 1, 125, 206, 103, 62, 96, 189, 112, 126,
 			48, 221, 41, 198, 146, 100, 149, 29, 133, 103, 87, 87, 78,
 		}

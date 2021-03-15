@@ -131,10 +131,11 @@ type Conn struct {
 		retryConfigs []byte // The retry configurations
 
 		// The client's state, used in case of HRR.
-		innerRandom []byte         // ClientHelloInner.random
-		publicName  string         // ECHConfig.contents.public_name
-		suite       echCipherSuite // ClientECH.cipher_suite
-		dummy       []byte         // serialized ClientECH when greasing ECH
+		innerRandom []byte                   // ClientHelloInner.random
+		publicName  string                   // ECHConfig.contents.public_name
+		configId    uint8                    // ECHConfig.contents.key_config.config_id
+		suite       hpkeSymmetricCipherSuite // ClientECH.cipher_suite
+		dummy       []byte                   // serialized ClientECH when greasing ECH
 	}
 
 	// Set by the client and server when an HRR message was sent in this
