@@ -337,7 +337,7 @@ func (hs *clientHandshakeStateTLS13) processHelloRetryRequest() error {
 		}
 		ech.raw = nil
 		ech.handle.raw = nil
-		ech.handle.configId = []byte{1, 2, 3, 4}
+		ech.handle.configId = uint8(0)
 		ech.handle.enc = []byte{1, 2, 3, 4}
 		hs.hello.ech = ech.marshal()
 	}
