@@ -570,6 +570,7 @@ func TestDCHandshakeServerAuth(t *testing.T) {
 	clientConfig := dcTestConfig.Clone()
 	serverConfig := dcTestConfig.Clone()
 	serverConfig.GetCertificate = testServerGetCertificate
+	clientConfig.InsecureSkipVerify = true
 
 	for i, test := range dcTests {
 		clientConfig.SupportDelegatedCredential = test.clientDCSupport
