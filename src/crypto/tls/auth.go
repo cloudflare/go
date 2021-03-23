@@ -196,8 +196,6 @@ var rsaSignatureSchemes = []struct {
 // and optionally filtered by its explicit SupportedSignatureAlgorithms.
 //
 // This function must be kept in sync with supportedSignatureAlgorithms.
-// NOTE: for the PQ KEM exp or using Delegated Credentials, it must be kept in
-// sync with supportedSignatureAlgorithmsDC.
 func signatureSchemesForCertificate(version uint16, cert *Certificate) []SignatureScheme {
 	priv, ok := cert.PrivateKey.(crypto.Signer)
 	if !ok {
