@@ -497,7 +497,8 @@ type ClientHelloInfo struct {
 
 	// SignatureSchemesDC lists the signature schemes that the client
 	// is willing to verify when using Delegated Credentials.
-	// This can be different from SignatureSchemes.
+	// This is and can be different from SignatureSchemes. SignatureSchemesDC
+	// is set only if the DelegatedCredentials Extension is being used.
 	// If Delegated Credentials are supported, this list should not be nil.
 	SignatureSchemesDC []SignatureScheme
 
@@ -549,6 +550,9 @@ type CertificateRequestInfo struct {
 
 	// SignatureSchemesDC lists the signature schemes that the server
 	// is willing to verify when using Delegated Credentials.
+	// This is and can be different from SignatureSchemes. SignatureSchemesDC
+	// is set only if the DelegatedCredentials Extension is being used.
+	// If Delegated Credentials are supported, this list should not be nil.
 	SignatureSchemesDC []SignatureScheme
 
 	// Version is the TLS version that was negotiated for this connection.
@@ -820,13 +824,6 @@ type Config struct {
 	// See https://tools.ietf.org/html/draft-ietf-tls-subcerts.
 	SupportDelegatedCredential bool
 
-	// GetDelegatedCredential returns a DelegatedCredential for use with the
-	// delegated credential extension based on the ClientHello. It only works
-	// with TLS 1.3. If this is nil, then the server will not offer
-	// a DelegatedCredential. If the call returns nil, the server is also
-	// not offering a DelegatedCredential.
-	GetDelegatedCredential func(*ClientHelloInfo, *CertificateRequestInfo) (*DelegatedCredential, crypto.PrivateKey, error)
-
 	// mutex protects sessionTicketKeys and autoSessionTicketKeys.
 	mutex sync.RWMutex
 	// sessionTicketKeys contains zero or more ticket keys. If set, it means the
@@ -917,7 +914,6 @@ func (c *Config) Clone() *Config {
 		Renegotiation:               c.Renegotiation,
 		KeyLogWriter:                c.KeyLogWriter,
 		SupportDelegatedCredential:  c.SupportDelegatedCredential,
-		GetDelegatedCredential:      c.GetDelegatedCredential,
 		ECHEnabled:                  c.ECHEnabled,
 		ClientECHConfigs:            c.ClientECHConfigs,
 		ServerECHProvider:           c.ServerECHProvider,
@@ -1462,6 +1458,16 @@ func (c *Config) writeKeyLog(label string, clientRandom, secret []byte) error {
 // and is only for debugging, so a global mutex saves space.
 var writerMutex sync.Mutex
 
+// A DelegatedCredentialPair contains a Delegated Credential and its
+// associated private key.
+type DelegatedCredentialPair struct {
+	// DC is the delegated credential.
+	DC *DelegatedCredential
+	// PrivateKey is the private key used to derive the public key of
+	// contained in DC. PrivateKey must implement crypto.Signer.
+	PrivateKey crypto.PrivateKey
+}
+
 // A Certificate is a chain of one or more certificates, leaf first.
 type Certificate struct {
 	Certificate [][]byte
@@ -1479,9 +1485,15 @@ type Certificate struct {
 	// SignedCertificateTimestamps contains an optional list of Signed
 	// Certificate Timestamps which will be served to clients that request it.
 	SignedCertificateTimestamps [][]byte
-	// DelegatedCredential is a serialized Delegated Credential, signed by
-	// the leaf certificate.
-	// If not supported, this will be nil.
+	// DelegatedCredentials are a list of Delegated Credentials with their
+	// corresponding private keys, signed by the leaf certificate.
+	// If there are no delegated credentials, this field is nil.
+	DelegatedCredentials []DelegatedCredentialPair
+	// DelegatedCredential is the delegated credential to be used in the
+	// handshake.
+	// If there are no delegated credentials, this field is nil.
+	// NOTE: Do not fill this field, as it will be filled depending on
+	// the provided list of delegated credentials.
 	DelegatedCredential []byte
 	// Leaf is the parsed form of the leaf certificate, which may be initialized
 	// using x509.ParseCertificate to reduce per-handshake processing. If nil,
