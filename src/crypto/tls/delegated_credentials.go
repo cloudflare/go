@@ -116,6 +116,16 @@ type DelegatedCredential struct {
 	signature []byte
 }
 
+// A DelegatedCredentialPair contains a Delegated Credential and its
+// associated private key.
+type DelegatedCredentialPair struct {
+	// DC is the delegated credential.
+	DC *DelegatedCredential
+	// PrivateKey is the private key used to derive the public key of
+	// contained in DC. PrivateKey must implement crypto.Signer.
+	PrivateKey crypto.PrivateKey
+}
+
 // marshalPublicKeyInfo returns a DER encoded PublicKeyInfo
 // from a Delegated Credential (as defined in the X.509 standard).
 // The following key types are currently supported: *ecdsa.PublicKey
@@ -321,7 +331,7 @@ func getSignatureAlgorithm(cert *Certificate) (SignatureScheme, error) {
 // algorithm ('pubAlgo') and it defines a validity interval (defined
 // by 'cert.Leaf.notBefore' and 'validTime'). It signs the Delegated Credential
 // using 'cert.PrivateKey'.
-func NewDelegatedCredential(cert *Certificate, pubAlgo SignatureScheme, validTime time.Duration, isClient bool) (*DelegatedCredential, crypto.PrivateKey, error) {
+func NewDelegatedCredential(cert *Certificate, pubAlgo SignatureScheme, validTime time.Duration, isClient bool) (*DelegatedCredentialPair, error) {
 	// The granularity of DC validity is seconds.
 	validTime = validTime.Round(time.Second)
 
@@ -329,22 +339,22 @@ func NewDelegatedCredential(cert *Certificate, pubAlgo SignatureScheme, validTim
 	var err error
 	if cert.Leaf == nil {
 		if len(cert.Certificate[0]) == 0 {
-			return nil, nil, errors.New("tls: missing leaf certificate for Delegated Credential")
+			return nil, errors.New("tls: missing leaf certificate for Delegated Credential")
 		}
 		cert.Leaf, err = x509.ParseCertificate(cert.Certificate[0])
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 	}
 
 	// Check that the leaf certificate can be used for delegation.
 	if !isValidForDelegation(cert.Leaf) {
-		return nil, nil, errors.New("tls: certificate not authorized for delegation")
+		return nil, errors.New("tls: certificate not authorized for delegation")
 	}
 
 	sigAlgo, err := getSignatureAlgorithm(cert)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	// Generate the Delegated Credential key pair based on the provided scheme
@@ -356,16 +366,16 @@ func NewDelegatedCredential(cert *Certificate, pubAlgo SignatureScheme, validTim
 		ECDSAWithP521AndSHA512:
 		privK, err = ecdsa.GenerateKey(getECDSACurve(pubAlgo), rand.Reader)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		pubK = privK.(*ecdsa.PrivateKey).Public()
 	case Ed25519:
 		pubK, privK, err = ed25519.GenerateKey(rand.Reader)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 	default:
-		return nil, nil, fmt.Errorf("tls: unsupported algorithm for Delegated Credential: %T", pubAlgo)
+		return nil, fmt.Errorf("tls: unsupported algorithm for Delegated Credential: %T", pubAlgo)
 	}
 
 	// Prepare the credential for signing
@@ -373,7 +383,7 @@ func NewDelegatedCredential(cert *Certificate, pubAlgo SignatureScheme, validTim
 	credential := &credential{validTime, pubAlgo, pubK}
 	values, err := prepareDelegationSignatureInput(hash, credential, cert.Leaf.Raw, sigAlgo, isClient)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	var sig []byte
@@ -382,27 +392,30 @@ func NewDelegatedCredential(cert *Certificate, pubAlgo SignatureScheme, validTim
 		opts := crypto.SignerOpts(hash)
 		sig, err = sk.Sign(rand.Reader, values, opts)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 	case ed25519.PrivateKey:
 		opts := crypto.SignerOpts(hash)
 		sig, err = sk.Sign(rand.Reader, values, opts)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 	default:
-		return nil, nil, fmt.Errorf("tls: unsupported key type for Delegated Credential")
+		return nil, fmt.Errorf("tls: unsupported key type for Delegated Credential")
 	}
 
 	if len(sig) > dcMaxSignatureLen {
-		return nil, nil, errors.New("tls: unable to create a Delegated Credential")
+		return nil, errors.New("tls: unable to create a Delegated Credential")
 	}
 
-	return &DelegatedCredential{
-		cred:      credential,
-		algorithm: sigAlgo,
-		signature: sig,
-	}, privK, nil
+	return &DelegatedCredentialPair{
+		DC: &DelegatedCredential{
+			cred:      credential,
+			algorithm: sigAlgo,
+			signature: sig,
+		},
+		PrivateKey: privK,
+	}, nil
 }
 
 // Validate validates the Delegated Credential by checking that the signature is

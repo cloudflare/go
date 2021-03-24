@@ -1458,16 +1458,6 @@ func (c *Config) writeKeyLog(label string, clientRandom, secret []byte) error {
 // and is only for debugging, so a global mutex saves space.
 var writerMutex sync.Mutex
 
-// A DelegatedCredentialPair contains a Delegated Credential and its
-// associated private key.
-type DelegatedCredentialPair struct {
-	// DC is the delegated credential.
-	DC *DelegatedCredential
-	// PrivateKey is the private key used to derive the public key of
-	// contained in DC. PrivateKey must implement crypto.Signer.
-	PrivateKey crypto.PrivateKey
-}
-
 // A Certificate is a chain of one or more certificates, leaf first.
 type Certificate struct {
 	Certificate [][]byte
