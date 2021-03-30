@@ -13,6 +13,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/ed25519"
 	"crypto/elliptic"
+	"crypto/kem"
 	"crypto/rsa"
 	"errors"
 	"fmt"
@@ -118,6 +119,8 @@ func typeAndHashFromSignatureScheme(signatureAlgorithm SignatureScheme) (sigType
 		sigType = signatureECDSA
 	case Ed25519:
 		sigType = signatureEd25519
+	case KEMTLSWithSIKEp434, KEMTLSWithKyber512:
+		sigType = authKEMTLS
 	default:
 		scheme := circlPki.SchemeByTLSID(uint(signatureAlgorithm))
 		if scheme == nil {
@@ -139,6 +142,8 @@ func typeAndHashFromSignatureScheme(signatureAlgorithm SignatureScheme) (sigType
 	case PKCS1WithSHA512, PSSWithSHA512, ECDSAWithP521AndSHA512:
 		hash = crypto.SHA512
 	case Ed25519:
+		hash = directSigning
+	case KEMTLSWithSIKEp434, KEMTLSWithKyber512:
 		hash = directSigning
 	default:
 		scheme := circlPki.SchemeByTLSID(uint(signatureAlgorithm))
@@ -267,39 +272,50 @@ func signatureSchemesForCertificate(version uint16, cert *Certificate) []Signatu
 // This function must be kept in sync with supportedSignatureAlgorithmsDC.
 func signatureSchemeForDelegatedCredential(version uint16, dc *DelegatedCredential) []SignatureScheme {
 	pub := dc.cred.publicKey
-
 	var sigAlgs []SignatureScheme
-	switch pub.(type) {
-	case *ecdsa.PublicKey:
-		pk, ok := pub.(*ecdsa.PublicKey)
-		if !ok {
+
+	kemPub, ok := pub.(*kem.PublicKey)
+	if ok {
+		if kemPub.KEMId == kem.SIKEp434 {
+			sigAlgs = []SignatureScheme{KEMTLSWithSIKEp434}
+		} else if kemPub.KEMId == kem.Kyber512 {
+			sigAlgs = []SignatureScheme{KEMTLSWithKyber512}
+		} else {
 			return nil
 		}
-		switch pk.Curve {
-		case elliptic.P256():
-			sigAlgs = []SignatureScheme{ECDSAWithP256AndSHA256}
-		case elliptic.P384():
-			sigAlgs = []SignatureScheme{ECDSAWithP384AndSHA384}
-		case elliptic.P521():
-			sigAlgs = []SignatureScheme{ECDSAWithP521AndSHA512}
+	} else {
+		switch pub.(type) {
+		case *ecdsa.PublicKey:
+			pk, ok := pub.(*ecdsa.PublicKey)
+			if !ok {
+				return nil
+			}
+			switch pk.Curve {
+			case elliptic.P256():
+				sigAlgs = []SignatureScheme{ECDSAWithP256AndSHA256}
+			case elliptic.P384():
+				sigAlgs = []SignatureScheme{ECDSAWithP384AndSHA384}
+			case elliptic.P521():
+				sigAlgs = []SignatureScheme{ECDSAWithP521AndSHA512}
+			default:
+				return nil
+			}
+		case ed25519.PublicKey:
+			sigAlgs = []SignatureScheme{Ed25519}
+		case circlSign.PublicKey:
+			pk, ok := pub.(circlSign.PublicKey)
+			if !ok {
+				return nil
+			}
+			scheme := pk.Scheme()
+			tlsScheme, ok := scheme.(circlPki.TLSScheme)
+			if !ok {
+				return nil
+			}
+			sigAlgs = []SignatureScheme{SignatureScheme(tlsScheme.TLSIdentifier())}
 		default:
 			return nil
 		}
-	case ed25519.PublicKey:
-		sigAlgs = []SignatureScheme{Ed25519}
-	case circlSign.PublicKey:
-		pk, ok := pub.(circlSign.PublicKey)
-		if !ok {
-			return nil
-		}
-		scheme := pk.Scheme()
-		tlsScheme, ok := scheme.(circlPki.TLSScheme)
-		if !ok {
-			return nil
-		}
-		sigAlgs = []SignatureScheme{SignatureScheme(tlsScheme.TLSIdentifier())}
-	default:
-		return nil
 	}
 
 	return sigAlgs

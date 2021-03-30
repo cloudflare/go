@@ -11,6 +11,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/ed25519"
 	"crypto/elliptic"
+	"crypto/kem"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha512"
@@ -125,7 +126,17 @@ const (
 	CurveP384 CurveID = 24
 	CurveP521 CurveID = 25
 	X25519    CurveID = 29
+	SIKEp434  CurveID = CurveID(kem.SIKEp434)
+	Kyber512  CurveID = CurveID(kem.Kyber512)
 )
+
+func (curve CurveID) isKEM() bool {
+	switch curve {
+	case SIKEp434, Kyber512:
+		return true
+	}
+	return false
+}
 
 // TLS 1.3 Key Share. See RFC 8446, Section 4.2.8.
 type keyShare struct {
@@ -171,6 +182,7 @@ const (
 	signatureECDSA
 	signatureEd25519
 	signatureEdDilithium3
+	authKEMTLS // for the KEMTLS
 )
 
 // directSigning is a standard Hash value that signals that no pre-hashing
@@ -205,6 +217,11 @@ var supportedSignatureAlgorithmsDC = []SignatureScheme{
 	Ed25519,
 	ECDSAWithP384AndSHA384,
 	ECDSAWithP521AndSHA512,
+
+	// authentication algorithms for KEMTLS. They are restricted for usage with Delegated
+	// Credentials.
+	KEMTLSWithSIKEp434,
+	KEMTLSWithKyber512,
 }
 
 // helloRetryRequestRandom is set as the Random value of a ServerHello
@@ -322,6 +339,9 @@ type ConnectionState struct {
 	// has been used.
 	VerifiedDC bool
 
+	// DidKEMTLS states that the connection was established by using KEMTLS.
+	DidKEMTLS bool
+
 	// SignedCertificateTimestamps is a list of SCTs provided by the peer
 	// through the TLS handshake for the leaf certificate, if any.
 	SignedCertificateTimestamps [][]byte
@@ -375,6 +395,10 @@ const (
 	// during the handshake, but does not require that the client send any
 	// certificates.
 	RequestClientCert
+	// RequestClientKEMCert indicates that a client certificate with a KEM
+	// public key should be requested during the handshake, but does not
+	// require that the client send any certificates.
+	RequestClientKEMCert
 	// RequireAnyClientCert indicates that a client certificate should be requested
 	// during the handshake, and that at least one certificate is required to be
 	// sent by the client, but that certificate is not required to be valid.
@@ -466,7 +490,21 @@ const (
 	// Legacy signature and hash algorithms for TLS 1.2.
 	PKCS1WithSHA1 SignatureScheme = 0x0201
 	ECDSAWithSHA1 SignatureScheme = 0x0203
+
+	// KEMTLS algorithms for the Post-Quantum Cryptography experiment.
+	// NOTE: Do not use outside of the experiment.
+	KEMTLSWithSIKEp434 SignatureScheme = 0xfe00
+	KEMTLSWithKyber512 SignatureScheme = 0xfe01
 )
+
+func (scheme SignatureScheme) isKEMTLS() bool {
+	switch scheme {
+	case KEMTLSWithSIKEp434, KEMTLSWithKyber512:
+		return true
+	default:
+		return false
+	}
+}
 
 // ClientHelloInfo contains information from a ClientHello message in order to
 // guide application logic in the GetCertificate and GetConfigForClient callbacks.
@@ -824,6 +862,10 @@ type Config struct {
 	// See https://tools.ietf.org/html/draft-ietf-tls-subcerts.
 	SupportDelegatedCredential bool
 
+	// AllowKEMTLS is true if the client or server is willing
+	// to start a KEMTLS handshake based on TLS 1.3.
+	AllowKEMTLS bool
+
 	// mutex protects sessionTicketKeys and autoSessionTicketKeys.
 	mutex sync.RWMutex
 	// sessionTicketKeys contains zero or more ticket keys. If set, it means the
@@ -914,6 +956,7 @@ func (c *Config) Clone() *Config {
 		Renegotiation:               c.Renegotiation,
 		KeyLogWriter:                c.KeyLogWriter,
 		SupportDelegatedCredential:  c.SupportDelegatedCredential,
+		AllowKEMTLS:                 c.AllowKEMTLS,
 		ECHEnabled:                  c.ECHEnabled,
 		ClientECHConfigs:            c.ClientECHConfigs,
 		ServerECHProvider:           c.ServerECHProvider,
@@ -1135,9 +1178,14 @@ func supportedVersionsFromMax(maxVersion uint16) []uint16 {
 }
 
 var defaultCurvePreferences = []CurveID{X25519, CurveP256, CurveP384, CurveP521}
+var defaultKEMPreferences = []CurveID{SIKEp434, Kyber512}
 
 func (c *Config) curvePreferences() []CurveID {
 	if c == nil || len(c.CurvePreferences) == 0 {
+		if c.AllowKEMTLS {
+			return defaultKEMPreferences
+		}
+
 		return defaultCurvePreferences
 	}
 	return c.CurvePreferences
@@ -1433,11 +1481,13 @@ func (c *Config) BuildNameToCertificate() {
 }
 
 const (
-	keyLogLabelTLS12           = "CLIENT_RANDOM"
-	keyLogLabelClientHandshake = "CLIENT_HANDSHAKE_TRAFFIC_SECRET"
-	keyLogLabelServerHandshake = "SERVER_HANDSHAKE_TRAFFIC_SECRET"
-	keyLogLabelClientTraffic   = "CLIENT_TRAFFIC_SECRET_0"
-	keyLogLabelServerTraffic   = "SERVER_TRAFFIC_SECRET_0"
+	keyLogLabelTLS12                           = "CLIENT_RANDOM"
+	keyLogLabelClientHandshake                 = "CLIENT_HANDSHAKE_TRAFFIC_SECRET"
+	keyLogLabelServerHandshake                 = "SERVER_HANDSHAKE_TRAFFIC_SECRET"
+	keyLogLabelClientKEMAuthenticatedHandshake = "CLIENT_AUTHENTICATED_HANDSHAKE_TRAFFIC_SECRET"
+	keyLogLabelServerKEMAuthenticatedHandshake = "SERVER_AUTHENTICATED_HANDSHAKE_TRAFFIC_SECRET"
+	keyLogLabelClientTraffic                   = "CLIENT_TRAFFIC_SECRET_0"
+	keyLogLabelServerTraffic                   = "SERVER_TRAFFIC_SECRET_0"
 )
 
 func (c *Config) writeKeyLog(label string, clientRandom, secret []byte) error {

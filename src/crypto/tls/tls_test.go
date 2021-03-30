@@ -816,6 +816,8 @@ func TestCloneNonFuncFields(t *testing.T) {
 			f.Set(reflect.ValueOf(true))
 		case "MinVersion", "MaxVersion":
 			f.Set(reflect.ValueOf(uint16(VersionTLS12)))
+		case "AllowKEMTLS":
+			f.Set(reflect.ValueOf(false))
 		case "SupportDelegatedCredential":
 			f.Set(reflect.ValueOf(true))
 		case "SessionTicketKey":
@@ -1480,5 +1482,57 @@ func TestPKCS1OnlyCert(t *testing.T) {
 	// be selected, and the handshake should succeed.
 	if _, _, err := testHandshake(t, clientConfig, serverConfig); err != nil {
 		t.Error(err)
+	}
+}
+
+func TestKEMEphemeralTLS13(t *testing.T) {
+	tests := []CurveID{
+		SIKEp434,
+		Kyber512,
+	}
+
+	for _, kem := range tests {
+		clientConfig := testConfig.Clone()
+		clientConfig.CurvePreferences = []CurveID{kem}
+		clientConfig.MinVersion = VersionTLS13
+		clientConfig.MaxVersion = VersionTLS13
+		clientConfig.AllowKEMTLS = true
+
+		serverConfig := testConfig.Clone()
+
+		if _, _, err := testHandshake(t, clientConfig, serverConfig); err == nil {
+			t.Fatal("Should have failed to connect with KEM-only client")
+		}
+
+		clientConfig = testConfig.Clone()
+		clientConfig.AllowKEMTLS = false
+
+		serverConfig = testConfig.Clone()
+		serverConfig.AllowKEMTLS = true
+		serverConfig.MinVersion = VersionTLS13
+		serverConfig.MaxVersion = VersionTLS13
+		serverConfig.CurvePreferences = []CurveID{kem}
+
+		if _, _, err := testHandshake(t, clientConfig, serverConfig); err == nil {
+			t.Fatal("Should have failed to connect with KEM-only server")
+		}
+
+		clientConfig.CurvePreferences = []CurveID{X25519}
+		if _, _, err := testHandshake(t, clientConfig, serverConfig); err == nil {
+			t.Fatal("Still connected with KEM-only server and no-KEM Client")
+		}
+
+		serverConfig = testConfig.Clone()
+		serverConfig.AllowKEMTLS = true
+		serverConfig.CurvePreferences = []CurveID{kem}
+
+		clientConfig = testConfig.Clone()
+		clientConfig.AllowKEMTLS = true
+		clientConfig.CurvePreferences = []CurveID{kem}
+		clientConfig.MaxVersion = VersionTLS12
+
+		if _, _, err := testHandshake(t, clientConfig, serverConfig); err == nil {
+			t.Fatal("Still connected with KEM-only server and TLS 1.2 Client")
+		}
 	}
 }

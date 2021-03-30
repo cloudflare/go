@@ -55,6 +55,8 @@ type Conn struct {
 	// verifiedDC contains the Delegated Credential sent by the peer (if advertised
 	// and correctly processed), which has been verified against the leaf certificate.
 	verifiedDC *DelegatedCredential
+	// didKEMTLS states that the connection was established by using KEMTLS.
+	didKEMTLS bool
 	// serverName contains the server name indicated by the client, if any.
 	serverName string
 	// secureRenegotiation is true if the server echoed the secure
@@ -1481,6 +1483,7 @@ func (c *Conn) connectionStateLocked() ConnectionState {
 	if c.verifiedDC != nil {
 		state.VerifiedDC = true
 	}
+	state.DidKEMTLS = c.didKEMTLS
 	state.SignedCertificateTimestamps = c.scts
 	state.OCSPResponse = c.ocspResponse
 	state.ECHAccepted = c.ech.accepted
