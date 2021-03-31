@@ -1787,7 +1787,7 @@ func buildCertExtensions(template *Certificate, subjectIsEmpty bool, authorityKe
 	}
 
 	// This extension is not critical
-	if template.KeyUsage == KeyUsageDigitalSignature && template.AllowDC && !template.IsCA && !oidInExtensions(oidExtensionDelegatedCredential, template.ExtraExtensions) {
+	if template.AllowDC && !template.IsCA && !oidInExtensions(oidExtensionDelegatedCredential, template.ExtraExtensions) && (template.KeyUsage&KeyUsageDigitalSignature != 0) {
 		ret[n].Id = oidExtensionDelegatedCredential
 		ret[n].Value, err = asn1.Marshal(asn1.NullRawValue)
 		if err != nil {
