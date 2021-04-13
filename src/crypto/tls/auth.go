@@ -274,48 +274,50 @@ func signatureSchemeForDelegatedCredential(version uint16, dc *DelegatedCredenti
 	pub := dc.cred.publicKey
 	var sigAlgs []SignatureScheme
 
-	kemPub, ok := pub.(*kem.PublicKey)
-	if ok {
-		if kemPub.KEMId == kem.SIKEp434 {
-			sigAlgs = []SignatureScheme{KEMTLSWithSIKEp434}
-		} else if kemPub.KEMId == kem.Kyber512 {
-			sigAlgs = []SignatureScheme{KEMTLSWithKyber512}
-		} else {
+	switch pub.(type) {
+	case *kem.PublicKey:
+		pk, ok := pub.(*kem.PublicKey)
+		if !ok {
 			return nil
 		}
-	} else {
-		switch pub.(type) {
-		case *ecdsa.PublicKey:
-			pk, ok := pub.(*ecdsa.PublicKey)
-			if !ok {
-				return nil
-			}
-			switch pk.Curve {
-			case elliptic.P256():
-				sigAlgs = []SignatureScheme{ECDSAWithP256AndSHA256}
-			case elliptic.P384():
-				sigAlgs = []SignatureScheme{ECDSAWithP384AndSHA384}
-			case elliptic.P521():
-				sigAlgs = []SignatureScheme{ECDSAWithP521AndSHA512}
-			default:
-				return nil
-			}
-		case ed25519.PublicKey:
-			sigAlgs = []SignatureScheme{Ed25519}
-		case circlSign.PublicKey:
-			pk, ok := pub.(circlSign.PublicKey)
-			if !ok {
-				return nil
-			}
-			scheme := pk.Scheme()
-			tlsScheme, ok := scheme.(circlPki.TLSScheme)
-			if !ok {
-				return nil
-			}
-			sigAlgs = []SignatureScheme{SignatureScheme(tlsScheme.TLSIdentifier())}
+		switch pk.KEMId {
+		case kem.SIKEp434:
+			sigAlgs = []SignatureScheme{KEMTLSWithSIKEp434}
+		case kem.Kyber512:
+			sigAlgs = []SignatureScheme{KEMTLSWithKyber512}
 		default:
 			return nil
 		}
+	case *ecdsa.PublicKey:
+		pk, ok := pub.(*ecdsa.PublicKey)
+		if !ok {
+			return nil
+		}
+		switch pk.Curve {
+		case elliptic.P256():
+			sigAlgs = []SignatureScheme{ECDSAWithP256AndSHA256}
+		case elliptic.P384():
+			sigAlgs = []SignatureScheme{ECDSAWithP384AndSHA384}
+		case elliptic.P521():
+			sigAlgs = []SignatureScheme{ECDSAWithP521AndSHA512}
+		default:
+			return nil
+		}
+	case ed25519.PublicKey:
+		sigAlgs = []SignatureScheme{Ed25519}
+	case circlSign.PublicKey:
+		pk, ok := pub.(circlSign.PublicKey)
+		if !ok {
+			return nil
+		}
+		scheme := pk.Scheme()
+		tlsScheme, ok := scheme.(circlPki.TLSScheme)
+		if !ok {
+			return nil
+		}
+		sigAlgs = []SignatureScheme{SignatureScheme(tlsScheme.TLSIdentifier())}
+	default:
+		return nil
 	}
 
 	return sigAlgs

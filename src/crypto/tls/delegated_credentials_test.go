@@ -503,7 +503,7 @@ func testClientGetCertificate(cr *CertificateRequestInfo) (*Certificate, error) 
 
 // Tests the handshake and one round of application data. Returns true if the
 // connection correctly used a Delegated Credential.
-func testConnWithDC(t *testing.T, clientMsg, serverMsg string, clientConfig, serverConfig *Config, peer string, kemtls bool) (bool, bool, error) {
+func testConnWithDC(t *testing.T, clientMsg, serverMsg string, clientConfig, serverConfig *Config, peer string, kemtls bool) (usedDC bool, usedKEMTLS bool, err error) {
 	ln := newLocalListener(t)
 	defer ln.Close()
 

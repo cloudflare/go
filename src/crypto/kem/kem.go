@@ -21,11 +21,6 @@ const (
 	Kyber512 ID = 0x01fc
 	// SIKEp434 is a post-quantum KEM, as defined in: https://sike.org/ .
 	SIKEp434 ID = 0x01fd
-
-	// minimum KEM to be used.
-	minKEM = KEM25519
-	// maximum KEM to be used.
-	maxKEM = SIKEp434
 )
 
 // PrivateKey is a KEM private key.
@@ -60,10 +55,6 @@ func (pubKey *PublicKey) UnmarshalBinary(raw []byte) error {
 	}
 
 	kemID := ID(id)
-	if kemID < minKEM || kemID > maxKEM {
-		return errors.New("crypto/kem: invalid KEM type")
-	}
-
 	pubKey.KEMId = kemID
 	pubKey.PublicKey = raw[2:]
 	return nil
@@ -113,7 +104,7 @@ func GenerateKey(rand io.Reader, kemID ID) (*PublicKey, *PrivateKey, error) {
 }
 
 // Encapsulate returns a shared secret and a ciphertext.
-func Encapsulate(rand io.Reader, pk *PublicKey) ([]byte, []byte, error) {
+func Encapsulate(rand io.Reader, pk *PublicKey) (sharedSecret []byte, ciphertext []byte, err error) {
 	switch pk.KEMId {
 	case Kyber512:
 		scheme := schemes.ByName("Kyber512")
@@ -167,7 +158,7 @@ func Encapsulate(rand io.Reader, pk *PublicKey) ([]byte, []byte, error) {
 }
 
 // Decapsulate returns the shared secret given the private key and the ciphertext.
-func Decapsulate(privateKey *PrivateKey, ciphertext []byte) ([]byte, error) {
+func Decapsulate(privateKey *PrivateKey, ciphertext []byte) (sharedSecret []byte, err error) {
 	switch privateKey.KEMId {
 	case Kyber512:
 		scheme := schemes.ByName("Kyber512")

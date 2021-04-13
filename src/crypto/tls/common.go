@@ -1178,7 +1178,7 @@ func supportedVersionsFromMax(maxVersion uint16) []uint16 {
 }
 
 var defaultCurvePreferences = []CurveID{X25519, CurveP256, CurveP384, CurveP521}
-var defaultKEMPreferences = []CurveID{SIKEp434, Kyber512}
+var defaultKEMPreferences = []CurveID{SIKEp434, Kyber512, X25519, CurveP256, CurveP384, CurveP521}
 
 func (c *Config) curvePreferences() []CurveID {
 	if c == nil || len(c.CurvePreferences) == 0 {

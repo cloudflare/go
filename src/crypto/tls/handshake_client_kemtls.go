@@ -149,7 +149,7 @@ func (hs *clientHandshakeStateTLS13) sendKEMClientCertificate() error {
 	if !ok {
 		// it has to be a KEM key
 		c.sendAlert(alertInternalError)
-		return nil
+		return errors.New("tls: incorrect certificate found")
 	}
 
 	certMsg := new(certificateMsgTLS13)
