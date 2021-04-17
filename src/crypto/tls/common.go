@@ -862,9 +862,9 @@ type Config struct {
 	// See https://tools.ietf.org/html/draft-ietf-tls-subcerts.
 	SupportDelegatedCredential bool
 
-	// AllowKEMTLS is true if the client or server is willing
+	// KEMTLSEnabled is true if the client or server is willing
 	// to start a KEMTLS handshake based on TLS 1.3.
-	AllowKEMTLS bool
+	KEMTLSEnabled bool
 
 	// mutex protects sessionTicketKeys and autoSessionTicketKeys.
 	mutex sync.RWMutex
@@ -956,7 +956,7 @@ func (c *Config) Clone() *Config {
 		Renegotiation:               c.Renegotiation,
 		KeyLogWriter:                c.KeyLogWriter,
 		SupportDelegatedCredential:  c.SupportDelegatedCredential,
-		AllowKEMTLS:                 c.AllowKEMTLS,
+		KEMTLSEnabled:               c.KEMTLSEnabled,
 		ECHEnabled:                  c.ECHEnabled,
 		ClientECHConfigs:            c.ClientECHConfigs,
 		ServerECHProvider:           c.ServerECHProvider,
@@ -1182,7 +1182,7 @@ var defaultKEMPreferences = []CurveID{SIKEp434, Kyber512, X25519, CurveP256, Cur
 
 func (c *Config) curvePreferences() []CurveID {
 	if c == nil || len(c.CurvePreferences) == 0 {
-		if c.AllowKEMTLS {
+		if c.KEMTLSEnabled {
 			return defaultKEMPreferences
 		}
 

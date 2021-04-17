@@ -816,7 +816,7 @@ func TestCloneNonFuncFields(t *testing.T) {
 			f.Set(reflect.ValueOf(true))
 		case "MinVersion", "MaxVersion":
 			f.Set(reflect.ValueOf(uint16(VersionTLS12)))
-		case "AllowKEMTLS":
+		case "KEMTLSEnabled":
 			f.Set(reflect.ValueOf(false))
 		case "SupportDelegatedCredential":
 			f.Set(reflect.ValueOf(true))
@@ -1496,7 +1496,7 @@ func TestKEMEphemeralTLS13(t *testing.T) {
 		clientConfig.CurvePreferences = []CurveID{kem}
 		clientConfig.MinVersion = VersionTLS13
 		clientConfig.MaxVersion = VersionTLS13
-		clientConfig.AllowKEMTLS = true
+		clientConfig.KEMTLSEnabled = true
 
 		serverConfig := testConfig.Clone()
 
@@ -1505,10 +1505,10 @@ func TestKEMEphemeralTLS13(t *testing.T) {
 		}
 
 		clientConfig = testConfig.Clone()
-		clientConfig.AllowKEMTLS = false
+		clientConfig.KEMTLSEnabled = false
 
 		serverConfig = testConfig.Clone()
-		serverConfig.AllowKEMTLS = true
+		serverConfig.KEMTLSEnabled = true
 		serverConfig.MinVersion = VersionTLS13
 		serverConfig.MaxVersion = VersionTLS13
 		serverConfig.CurvePreferences = []CurveID{kem}
@@ -1523,11 +1523,11 @@ func TestKEMEphemeralTLS13(t *testing.T) {
 		}
 
 		serverConfig = testConfig.Clone()
-		serverConfig.AllowKEMTLS = true
+		serverConfig.KEMTLSEnabled = true
 		serverConfig.CurvePreferences = []CurveID{kem}
 
 		clientConfig = testConfig.Clone()
-		clientConfig.AllowKEMTLS = true
+		clientConfig.KEMTLSEnabled = true
 		clientConfig.CurvePreferences = []CurveID{kem}
 		clientConfig.MaxVersion = VersionTLS12
 

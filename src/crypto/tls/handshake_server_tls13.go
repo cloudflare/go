@@ -311,7 +311,7 @@ GroupSelection:
 		clientKeyShare = &hs.clientHello.keyShares[0]
 	}
 
-	if selectedGroup.isKEM() && c.config.AllowKEMTLS {
+	if selectedGroup.isKEM() && c.config.KEMTLSEnabled {
 		sharedKey, ciphertext, err := kem.Encapsulate(c.config.rand(), &kem.PublicKey{KEMId: kem.ID(selectedGroup), PublicKey: clientKeyShare.data})
 		if err != nil {
 			c.sendAlert(alertInternalError)

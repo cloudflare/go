@@ -746,8 +746,8 @@ func TestDCKEMHandshakeServerAuth(t *testing.T) {
 
 	clientConfig := dcTestConfig.Clone()
 	serverConfig := dcTestConfig.Clone()
-	clientConfig.AllowKEMTLS = true
-	serverConfig.AllowKEMTLS = true
+	clientConfig.KEMTLSEnabled = true
+	serverConfig.KEMTLSEnabled = true
 	clientConfig.CurvePreferences = []CurveID{SIKEp434, Kyber512}
 	serverConfig.CurvePreferences = []CurveID{SIKEp434, Kyber512}
 	clientConfig.InsecureSkipVerify = true
@@ -789,13 +789,13 @@ func TestDCKEMHandshakeClientAuth(t *testing.T) {
 	serverConfig := dcTestConfig.Clone()
 	serverConfig.ClientAuth = RequestClientKEMCert
 	serverConfig.GetCertificate = testServerGetKEMCertificate
-	serverConfig.AllowKEMTLS = true
+	serverConfig.KEMTLSEnabled = true
 	serverConfig.CurvePreferences = []CurveID{SIKEp434, Kyber512}
 
 	clientConfig := dcTestConfig.Clone()
 	clientConfig.GetClientCertificate = testClientGetKEMCertificate
 	clientConfig.SupportDelegatedCredential = true // to force the sending of a KEM DC
-	clientConfig.AllowKEMTLS = true
+	clientConfig.KEMTLSEnabled = true
 	clientConfig.CurvePreferences = []CurveID{SIKEp434, Kyber512}
 
 	for i, test := range dcKEMClientTests {
@@ -835,8 +835,8 @@ func TestDCKEMHandshakeClientAndServerAuth(t *testing.T) {
 	serverConfig.GetCertificate = testServerGetKEMCertificate
 	clientConfig := dcTestConfig.Clone()
 	clientConfig.GetClientCertificate = testClientGetKEMCertificate
-	clientConfig.AllowKEMTLS = true
-	serverConfig.AllowKEMTLS = true
+	clientConfig.KEMTLSEnabled = true
+	serverConfig.KEMTLSEnabled = true
 	clientConfig.CurvePreferences = []CurveID{Kyber512}
 	serverConfig.CurvePreferences = []CurveID{Kyber512}
 

@@ -129,7 +129,7 @@ func (c *Conn) makeClientHello(minVersion uint16) (*clientHelloMsg, []clientKeyS
 	if hello.supportedVersions[0] == VersionTLS13 {
 		hello.cipherSuites = append(hello.cipherSuites, defaultCipherSuitesTLS13()...)
 
-		if !config.AllowKEMTLS {
+		if !config.KEMTLSEnabled {
 			curveID := config.curvePreferences()[0]
 			if _, ok := curveForCurveID(curveID); curveID != X25519 && !ok {
 				return nil, nil, errors.New("tls: CurvePreferences includes unsupported curve")
