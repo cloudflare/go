@@ -472,7 +472,7 @@ var (
 	oidPublicKeyDSA     = asn1.ObjectIdentifier{1, 2, 840, 10040, 4, 1}
 	oidPublicKeyECDSA   = asn1.ObjectIdentifier{1, 2, 840, 10045, 2, 1}
 	oidPublicKeyEd25519 = oidSignatureEd25519
-	oidPublicKeyKEMTLS  = asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 44363, 46, 1} // Cloudflare OID
+	oidPublicKeyKEMTLS  = asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 44363, 45, 11} // Cloudflare OID
 )
 
 func getPublicKeyAlgorithmFromOID(oid asn1.ObjectIdentifier) PublicKeyAlgorithm {
