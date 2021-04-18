@@ -693,6 +693,7 @@ func (hs *clientHandshakeStateTLS13) readServerCertificate() error {
 
 		if hs.keyKEMShare {
 			hs.isKEMTLS = true
+			hs.handshakeTimings.ReadCertificateVerify = hs.handshakeTimings.elapsedTime()
 		} else {
 			c.sendAlert(alertInternalError)
 			return errors.New("tls: received a KEM certificate without using KEMTLS")

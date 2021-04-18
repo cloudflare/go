@@ -881,6 +881,8 @@ func (hs *serverHandshakeStateTLS13) sendServerCertificate() error {
 		}
 
 		hs.handshakeTimings.WriteCertificateVerify = hs.handshakeTimings.elapsedTime()
+	} else {
+		hs.handshakeTimings.WriteCertificateVerify = hs.handshakeTimings.elapsedTime()
 	}
 
 	return nil

@@ -76,10 +76,14 @@ type CFEventTLS13ClientHandshakeTimingInfo struct {
 	ReadEncryptedExtensions time.Duration
 	ReadCertificate         time.Duration
 	ReadCertificateVerify   time.Duration
-	ReadServerFinished      time.Duration
-	WriteCertificate        time.Duration
-	WriteCertificateVerify  time.Duration
-	WriteClientFinished     time.Duration
+
+	ReadServerFinished     time.Duration
+	WriteCertificate       time.Duration
+	WriteCertificateVerify time.Duration
+	WriteClientFinished    time.Duration
+
+	WriteKEMCiphertext time.Duration
+	ReadKEMCiphertext  time.Duration
 }
 
 // Name is required by the CFEvent interface.
@@ -119,10 +123,14 @@ type CFEventTLS13ServerHandshakeTimingInfo struct {
 	WriteEncryptedExtensions time.Duration
 	WriteCertificate         time.Duration
 	WriteCertificateVerify   time.Duration
-	WriteServerFinished      time.Duration
-	ReadCertificate          time.Duration
-	ReadCertificateVerify    time.Duration
-	ReadClientFinished       time.Duration
+
+	WriteServerFinished   time.Duration
+	ReadCertificate       time.Duration
+	ReadCertificateVerify time.Duration
+	ReadClientFinished    time.Duration
+
+	ReadKEMCiphertext  time.Duration
+	WriteKEMCiphertext time.Duration
 }
 
 // Name is required by the CFEvent interface.

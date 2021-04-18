@@ -33,6 +33,7 @@ func (hs *serverHandshakeStateTLS13) handshakeKEMTLS() error {
 		return err
 	}
 
+	c.handleCFEvent(hs.handshakeTimings)
 	atomic.StoreUint32(&c.handshakeStatus, 1)
 
 	return nil
@@ -59,6 +60,7 @@ func (hs *serverHandshakeStateTLS13) readClientKEMCiphertext() error {
 	}
 
 	hs.transcript.Write(kexMsg.marshal())
+	hs.handshakeTimings.ReadKEMCiphertext = hs.handshakeTimings.elapsedTime()
 
 	ss, err := kem.Decapsulate(sk, kexMsg.ciphertext)
 	if err != nil {
@@ -116,6 +118,8 @@ func (hs *serverHandshakeStateTLS13) readClientKEMCertificate() error {
 	}
 	hs.transcript.Write(certMsg.marshal())
 
+	hs.handshakeTimings.ReadCertificate = hs.handshakeTimings.elapsedTime()
+
 	if err := c.processCertsFromClient(certMsg.certificate); err != nil {
 		return err
 	}
@@ -126,8 +130,6 @@ func (hs *serverHandshakeStateTLS13) readClientKEMCertificate() error {
 			return err
 		}
 	}
-
-	hs.handshakeTimings.ReadCertificate = hs.handshakeTimings.elapsedTime()
 
 	if len(certMsg.certificate.Certificate) != 0 {
 		if certMsg.delegatedCredential {
@@ -194,6 +196,7 @@ func (hs *serverHandshakeStateTLS13) sendServerKEMCiphertext() error {
 	if err != nil {
 		return err
 	}
+	hs.handshakeTimings.WriteKEMCiphertext = hs.handshakeTimings.elapsedTime()
 
 	// MS <- HKDF.Extract(dAHS, ssC)
 	hs.masterSecret = hs.suite.extract(ss, hs.handshakeSecret)
@@ -215,6 +218,8 @@ func (hs *serverHandshakeStateTLS13) readKEMTLSClientFinished() error {
 		c.sendAlert(alertUnexpectedMessage)
 		return unexpectedMessageError(finished, msg)
 	}
+
+	hs.handshakeTimings.ReadClientFinished = hs.handshakeTimings.elapsedTime()
 
 	if !hs.isClientAuthKEMTLS {
 		// compute MS
@@ -259,6 +264,8 @@ func (hs *serverHandshakeStateTLS13) writeKEMTLSServerFinished() error {
 	if _, err := c.writeRecord(recordTypeHandshake, finished.marshal()); err != nil {
 		return err
 	}
+
+	hs.handshakeTimings.WriteServerFinished = hs.handshakeTimings.elapsedTime()
 
 	// TS <- HKDF.Expand(MS, "s ap traffic", CH..SF)
 	hs.trafficSecret = hs.suite.deriveSecret(hs.masterSecret,

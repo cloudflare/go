@@ -43,6 +43,7 @@ func (hs *clientHandshakeStateTLS13) handshakeKEMTLS() error {
 		return err
 	}
 
+	c.handleCFEvent(hs.handshakeTimings)
 	atomic.StoreUint32(&c.handshakeStatus, 1)
 
 	return nil
@@ -85,6 +86,8 @@ func (hs *clientHandshakeStateTLS13) sendClientKEMCiphertext() error {
 	if err != nil {
 		return err
 	}
+
+	hs.handshakeTimings.WriteKEMCiphertext = hs.handshakeTimings.elapsedTime()
 
 	// AHS <- HKDF.Extract(dHS, ss_s)
 	ahs := hs.suite.extract(ss, hs.suite.deriveSecret(hs.handshakeSecret, "derived", nil))
@@ -195,6 +198,8 @@ func (hs *clientHandshakeStateTLS13) readServerKEMCiphertext() error {
 	}
 	hs.transcript.Write(kexMsg.marshal())
 
+	hs.handshakeTimings.ReadKEMCiphertext = hs.handshakeTimings.elapsedTime()
+
 	ss, err := kem.Decapsulate(sk, kexMsg.key)
 	if err != nil {
 		return err
@@ -226,6 +231,7 @@ func (hs *clientHandshakeStateTLS13) sendKEMTLSClientFinished() error {
 	if _, err := c.writeRecord(recordTypeHandshake, finished.marshal()); err != nil {
 		return err
 	}
+	hs.handshakeTimings.WriteClientFinished = hs.handshakeTimings.elapsedTime()
 
 	// CATS <- HKDF.Expand(MS, "c ap traffic", CH..CF)
 	hs.trafficSecret = hs.suite.deriveSecret(hs.masterSecret,
@@ -254,6 +260,8 @@ func (hs *clientHandshakeStateTLS13) processKEMTLSServerFinished() error {
 		c.sendAlert(alertUnexpectedMessage)
 		return unexpectedMessageError(finished, msg)
 	}
+
+	hs.handshakeTimings.ReadServerFinished = hs.handshakeTimings.elapsedTime()
 
 	// HMAC(fk_s , CH..CF)
 	expectedMAC := hs.suite.finishedHashKEMTLS(hs.masterSecret, "s", hs.transcript)
