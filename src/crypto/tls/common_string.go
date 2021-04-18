@@ -99,13 +99,12 @@ func _() {
 	var x [1]struct{}
 	_ = x[NoClientCert-0]
 	_ = x[RequestClientCert-1]
-	_ = x[RequestClientKEMCert-2]
-	_ = x[RequireAnyClientCert-3]
-	_ = x[VerifyClientCertIfGiven-4]
-	_ = x[RequireAndVerifyClientCert-5]
+	_ = x[RequireAnyClientCert-2]
+	_ = x[VerifyClientCertIfGiven-3]
+	_ = x[RequireAndVerifyClientCert-4]
 }
 
-const _ClientAuthType_name = "NoClientCertRequestClientCertRequestClientKEMRequireAnyClientCertVerifyClientCertIfGivenRequireAndVerifyClientCert"
+const _ClientAuthType_name = "NoClientCertRequestClientCertRequireAnyClientCertVerifyClientCertIfGivenRequireAndVerifyClientCert"
 
 var _ClientAuthType_index = [...]uint8{0, 12, 29, 49, 72, 98}
 

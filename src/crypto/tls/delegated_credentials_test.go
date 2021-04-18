@@ -787,7 +787,7 @@ func TestDCKEMHandshakeClientAuth(t *testing.T) {
 	serverMsg := "hello, client"
 
 	serverConfig := dcTestConfig.Clone()
-	serverConfig.ClientAuth = RequestClientKEMCert
+	serverConfig.ClientAuth = RequestClientCert
 	serverConfig.GetCertificate = testServerGetKEMCertificate
 	serverConfig.KEMTLSEnabled = true
 	serverConfig.CurvePreferences = []CurveID{SIKEp434, Kyber512}
@@ -831,7 +831,7 @@ func TestDCKEMHandshakeClientAndServerAuth(t *testing.T) {
 	serverMsg := "hello, client"
 
 	serverConfig := dcTestConfig.Clone()
-	serverConfig.ClientAuth = RequestClientKEMCert
+	serverConfig.ClientAuth = RequestClientCert
 	serverConfig.GetCertificate = testServerGetKEMCertificate
 	clientConfig := dcTestConfig.Clone()
 	clientConfig.GetClientCertificate = testClientGetKEMCertificate

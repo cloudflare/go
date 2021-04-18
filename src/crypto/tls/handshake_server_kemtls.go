@@ -86,7 +86,7 @@ func (hs *serverHandshakeStateTLS13) readClientKEMCiphertext() error {
 }
 
 func (hs *serverHandshakeStateTLS13) requestClientKEMCert() bool {
-	return hs.c.config.ClientAuth >= RequestClientKEMCert && !hs.usingPSK
+	return hs.c.config.ClientAuth >= RequestClientCert && !hs.usingPSK
 }
 
 func (hs *serverHandshakeStateTLS13) readClientKEMCertificate() error {

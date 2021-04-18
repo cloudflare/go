@@ -395,10 +395,6 @@ const (
 	// during the handshake, but does not require that the client send any
 	// certificates.
 	RequestClientCert
-	// RequestClientKEMCert indicates that a client certificate with a KEM
-	// public key should be requested during the handshake, but does not
-	// require that the client send any certificates.
-	RequestClientKEMCert
 	// RequireAnyClientCert indicates that a client certificate should be requested
 	// during the handshake, and that at least one certificate is required to be
 	// sent by the client, but that certificate is not required to be valid.
