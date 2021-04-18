@@ -67,7 +67,7 @@ func (hs *clientHandshakeStateTLS13) sendClientKEMCiphertext() error {
 		}
 	}
 
-	ss, ct, err := kem.Encapsulate(hs.c.config.Rand, pk)
+	ss, ct, err := kem.Encapsulate(hs.c.config.rand(), pk)
 	if err != nil {
 		return err
 	}

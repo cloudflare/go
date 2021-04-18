@@ -635,6 +635,8 @@ type Config struct {
 	// If Rand is nil, TLS uses the cryptographic random reader in package
 	// crypto/rand.
 	// The Reader must be safe for use by multiple goroutines.
+	// NOTE: it also provides a source of randomness for kemtls encapsulation
+	// mechanisms.
 	Rand io.Reader
 
 	// Time returns the current time as the number of seconds since the epoch.
