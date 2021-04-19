@@ -299,7 +299,7 @@ func (hs *clientHandshakeStateTLS13) processHelloRetryRequest() error {
 					c.sendAlert(alertIllegalParameter)
 					return errors.New("tls: server sent an unnecessary HelloRetryRequest key_share")
 				}
-			} else if c.config.KEMTLSEnabled {
+			} else if c.config.KEMTLSEnabled || c.config.PQTLSEnabled {
 				if kemShare, ok := keyShare.(*kem.PrivateKey); ok {
 					if CurveID(kemShare.KEMId) == curveID {
 						c.sendAlert(alertIllegalParameter)
@@ -312,7 +312,7 @@ func (hs *clientHandshakeStateTLS13) processHelloRetryRequest() error {
 
 		}
 
-		if curveID.isKEM() && c.config.KEMTLSEnabled {
+		if curveID.isKEM() && (c.config.KEMTLSEnabled || c.config.PQTLSEnabled) {
 			kemID := kem.ID(curveID)
 			pk, sk, err := kem.GenerateKey(c.config.rand(), kemID)
 			if err != nil {
@@ -441,7 +441,7 @@ func (hs *clientHandshakeStateTLS13) processServerHello() error {
 			if hs.serverHello.serverShare.group == ecdheParams.CurveID() {
 				found = true
 			}
-		} else if c.config.KEMTLSEnabled {
+		} else if c.config.KEMTLSEnabled || c.config.PQTLSEnabled {
 			kemShare := keyShare.(*kem.PrivateKey)
 			if CurveID(kemShare.KEMId) == hs.serverHello.serverShare.group {
 				found = true
@@ -493,7 +493,7 @@ func (hs *clientHandshakeStateTLS13) establishHandshakeKeys() error {
 	for _, keyShare := range hs.keyShare {
 		if params, ok := keyShare.(ecdheParameters); ok && params.CurveID() == hs.serverHello.serverShare.group {
 			sharedKey = params.SharedKey(hs.serverHello.serverShare.data)
-		} else if c.config.KEMTLSEnabled {
+		} else if c.config.KEMTLSEnabled || c.config.PQTLSEnabled {
 			if kemPrivate, ok := keyShare.(*kem.PrivateKey); ok && kemPrivate.KEMId == kem.ID(hs.serverHello.serverShare.group) {
 				var err error
 				sharedKey, err = kem.Decapsulate(kemPrivate, hs.serverHello.serverShare.data)

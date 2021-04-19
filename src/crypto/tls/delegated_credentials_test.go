@@ -130,15 +130,21 @@ ZyJKvc2KqjGeZh0Or5pq6ZJb0zR7WPdz5aJIzaZ5YcxLMSv0KwaAEPH2
 `
 
 var (
-	dcTestConfig            *Config
-	dcTestCerts             map[string]*Certificate
-	serverDC                []DelegatedCredentialPair
-	serverKEMDC             []DelegatedCredentialPair
-	clientDC                []DelegatedCredentialPair
-	clientKEMDC             []DelegatedCredentialPair
+	dcTestConfig *Config
+	dcTestCerts  map[string]*Certificate
+
+	serverDC    []DelegatedCredentialPair
+	serverKEMDC []DelegatedCredentialPair
+	serverPQDC  []DelegatedCredentialPair
+
+	clientDC    []DelegatedCredentialPair
+	clientKEMDC []DelegatedCredentialPair
+	clientPQDC  []DelegatedCredentialPair
+
 	dcNow                   time.Time
 	dcTestDCSignatureScheme = []SignatureScheme{ECDSAWithP256AndSHA256, Ed25519, ECDSAWithP384AndSHA384, ECDSAWithP521AndSHA512}
 	dcTestDCKEMScheme       = []SignatureScheme{KEMTLSWithSIKEp434, KEMTLSWithKyber512}
+	dcTestDCPQScheme        = []SignatureScheme{PQTLSWithDilithium3, PQTLSWithDilithium4}
 )
 
 func init() {
@@ -265,6 +271,20 @@ func initDCTest() {
 			panic(err)
 		}
 		clientKEMDC = append(clientKEMDC, DelegatedCredentialPair{dc, priv})
+	}
+
+	for i := 0; i < len(dcTestDCPQScheme); i++ {
+		dc, priv, err := NewDelegatedCredential(dcCertP256, dcTestDCPQScheme[i], dcNow.Sub(dcCertP256.Leaf.NotBefore)+dcMaxTTL, false)
+		if err != nil {
+			panic(err)
+		}
+		serverPQDC = append(serverPQDC, DelegatedCredentialPair{dc, priv})
+
+		dc, priv, err = NewDelegatedCredential(dcCertP256, dcTestDCPQScheme[i], dcNow.Sub(dcCertP256.Leaf.NotBefore)+dcMaxTTL, true)
+		if err != nil {
+			panic(err)
+		}
+		clientPQDC = append(clientPQDC, DelegatedCredentialPair{dc, priv})
 	}
 }
 
@@ -748,8 +768,8 @@ func TestDCKEMHandshakeServerAuth(t *testing.T) {
 	serverConfig := dcTestConfig.Clone()
 	clientConfig.KEMTLSEnabled = true
 	serverConfig.KEMTLSEnabled = true
-	clientConfig.CurvePreferences = []CurveID{SIKEp434, Kyber512}
-	serverConfig.CurvePreferences = []CurveID{SIKEp434, Kyber512}
+	clientConfig.CurvePreferences = []CurveID{Kyber512, SIKEp434}
+	serverConfig.CurvePreferences = []CurveID{Kyber512, SIKEp434}
 	clientConfig.InsecureSkipVerify = true
 
 	for i, test := range dcKEMServerTests {
@@ -860,5 +880,94 @@ func TestDCKEMHandshakeClientAndServerAuth(t *testing.T) {
 
 	if !usedKEMTLS {
 		t.Errorf("test server and client auth with kems did not use kemtls")
+	}
+}
+
+var dcPQServerTests = []struct {
+	clientDCSupport bool
+	clientMaxVers   uint16
+	serverMaxVers   uint16
+	expectSuccess   bool
+	expectDC        bool
+	name            string
+}{
+	{true, VersionTLS13, VersionTLS13, true, true, "tls13: DC client support"},
+}
+
+// Checks that the client suppports a version >= 1.3 and accepts Delegated
+// Credentials with KEMs. If so, it returns the delegation certificate; otherwise it
+// returns a non-delegated certificate.
+func testServerGetPQCertificate(ch *ClientHelloInfo) (*Certificate, error) {
+	versOk := false
+	for _, vers := range ch.SupportedVersions {
+		versOk = versOk || (vers >= uint16(VersionTLS13))
+	}
+
+	if versOk && ch.SupportsDelegatedCredential {
+		serverCert := dcTestCerts["dcP256"]
+		serverCert.DelegatedCredentials = serverPQDC[dcCount:]
+		return serverCert, nil
+	}
+	return dcTestCerts["no dc"], nil
+
+}
+
+// Checks that the client suppports a version >= 1.3 and accepts Delegated
+// Credentials with KEMs. If so, it returns the delegation certificate; otherwise it
+// returns a non-Delegated certificate.
+func testClientGetPQCertificate(cr *CertificateRequestInfo) (*Certificate, error) {
+	versOk := false
+	if cr.Version == VersionTLS13 {
+		versOk = true
+	}
+
+	if versOk && cr.SupportsDelegatedCredential {
+		clientCert := dcTestCerts["dcP256"]
+		clientCert.DelegatedCredentials = clientPQDC[dcCount:]
+		return clientCert, nil
+	}
+	return dcTestCerts["no dc"], nil
+
+}
+
+// Test the server authentication with the Delegated Credential extension using
+// KEMs.
+func TestDCPQHandshakeServerAuth(t *testing.T) {
+	serverMsg := "hello, client"
+	clientMsg := "hello, server"
+
+	clientConfig := dcTestConfig.Clone()
+	serverConfig := dcTestConfig.Clone()
+	clientConfig.PQTLSEnabled = true
+	serverConfig.PQTLSEnabled = true
+	clientConfig.CurvePreferences = []CurveID{Kyber512, SIKEp434}
+	serverConfig.CurvePreferences = []CurveID{Kyber512, SIKEp434}
+	clientConfig.InsecureSkipVerify = true
+
+	for i, test := range dcKEMServerTests {
+		clientConfig.SupportDelegatedCredential = test.clientDCSupport
+
+		for dcCount = 0; dcCount < len(dcTestDCPQScheme); dcCount++ {
+			initDCTest()
+			serverConfig.GetCertificate = testServerGetPQCertificate
+			clientConfig.MaxVersion = test.clientMaxVers
+			serverConfig.MaxVersion = test.serverMaxVers
+
+			usedDC, _, err := testConnWithDC(t, clientMsg, serverMsg, clientConfig, serverConfig, "client", true)
+
+			if err != nil && test.expectSuccess {
+				t.Errorf("test #%d (%s) with kem #%d fails: %s", i, test.name, dcCount, err.Error())
+			} else if err == nil && !test.expectSuccess {
+				t.Errorf("test #%d (%s) with kem #%d succeeds; expected failure", i, test.name, dcCount)
+			}
+
+			if usedDC != test.expectDC {
+				t.Errorf("test #%d (%s) with kem #%d usedDC = %v; expected %v", i, test.name, dcCount, usedDC, test.expectDC)
+			}
+
+			//if !usedKEMTLS && test.expectSuccess {
+			//	t.Errorf("test #%d (%s) with kem #%d did not use kemtls", i, test.name, dcCount)
+			//}
+		}
 	}
 }

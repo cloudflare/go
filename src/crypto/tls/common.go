@@ -182,6 +182,7 @@ const (
 	signatureECDSA
 	signatureEd25519
 	signatureEdDilithium3
+	signatureEdDilithium4
 	authKEMTLS // for the KEMTLS
 )
 
@@ -220,8 +221,13 @@ var supportedSignatureAlgorithmsDC = []SignatureScheme{
 
 	// authentication algorithms for KEMTLS. They are restricted for usage with Delegated
 	// Credentials.
-	KEMTLSWithSIKEp434,
 	KEMTLSWithKyber512,
+	KEMTLSWithSIKEp434,
+
+	// authentication algorithms for PQTLS. They are restricted for usage with Delegated
+	// Credentials.
+	PQTLSWithDilithium3,
+	PQTLSWithDilithium4,
 }
 
 // helloRetryRequestRandom is set as the Random value of a ServerHello
@@ -491,11 +497,25 @@ const (
 	// NOTE: Do not use outside of the experiment.
 	KEMTLSWithSIKEp434 SignatureScheme = 0xfe00
 	KEMTLSWithKyber512 SignatureScheme = 0xfe01
+
+	// PQTLS algorithms for the Post-Quantum Cryptography experiment.
+	// NOTE: Do not use outside of the experiment.
+	PQTLSWithDilithium3 SignatureScheme = 0xfe61
+	PQTLSWithDilithium4 SignatureScheme = 0xfe62
 )
 
 func (scheme SignatureScheme) isKEMTLS() bool {
 	switch scheme {
 	case KEMTLSWithSIKEp434, KEMTLSWithKyber512:
+		return true
+	default:
+		return false
+	}
+}
+
+func (scheme SignatureScheme) isPQTLS() bool {
+	switch scheme {
+	case PQTLSWithDilithium3, PQTLSWithDilithium4:
 		return true
 	default:
 		return false
@@ -864,6 +884,11 @@ type Config struct {
 	// to start a KEMTLS handshake based on TLS 1.3.
 	KEMTLSEnabled bool
 
+	// PQTLSEnabled is true if the client or server is willing
+	// to start a PQTLS handshake (PQ KEMs for confidentiality and PQ Signatures for
+	// authentication based on TLS 1.3.
+	PQTLSEnabled bool
+
 	// mutex protects sessionTicketKeys and autoSessionTicketKeys.
 	mutex sync.RWMutex
 	// sessionTicketKeys contains zero or more ticket keys. If set, it means the
@@ -955,6 +980,7 @@ func (c *Config) Clone() *Config {
 		KeyLogWriter:                c.KeyLogWriter,
 		SupportDelegatedCredential:  c.SupportDelegatedCredential,
 		KEMTLSEnabled:               c.KEMTLSEnabled,
+		PQTLSEnabled:                c.PQTLSEnabled,
 		ECHEnabled:                  c.ECHEnabled,
 		ClientECHConfigs:            c.ClientECHConfigs,
 		ServerECHProvider:           c.ServerECHProvider,
@@ -1176,11 +1202,11 @@ func supportedVersionsFromMax(maxVersion uint16) []uint16 {
 }
 
 var defaultCurvePreferences = []CurveID{X25519, CurveP256, CurveP384, CurveP521}
-var defaultKEMPreferences = []CurveID{SIKEp434, Kyber512, X25519, CurveP256, CurveP384, CurveP521}
+var defaultKEMPreferences = []CurveID{Kyber512, SIKEp434, X25519, CurveP256, CurveP384, CurveP521}
 
 func (c *Config) curvePreferences() []CurveID {
 	if c == nil || len(c.CurvePreferences) == 0 {
-		if c.KEMTLSEnabled {
+		if c.KEMTLSEnabled || c.PQTLSEnabled {
 			return defaultKEMPreferences
 		}
 

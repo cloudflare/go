@@ -215,6 +215,7 @@ const (
 	SHA512WithRSAPSS
 	PureEd25519
 	PureEdDilithium3
+	PureEdDilithium4
 )
 
 func (algo SignatureAlgorithm) isRSAPSS() bool {
@@ -244,6 +245,7 @@ const (
 	ECDSA
 	Ed25519
 	EdDilithium3
+	EdDilithium4
 	KEMTLS
 )
 
@@ -253,6 +255,7 @@ var publicKeyAlgoName = [...]string{
 	ECDSA:        "ECDSA",
 	Ed25519:      "Ed25519",
 	EdDilithium3: "Ed25519-Dilithium3",
+	EdDilithium4: "Ed448-Dilithium4",
 	KEMTLS:       "KEMTLS",
 }
 
@@ -468,11 +471,13 @@ func getSignatureAlgorithmFromAI(ai pkix.AlgorithmIdentifier) SignatureAlgorithm
 // id-ecPublicKey OBJECT IDENTIFIER ::= {
 //       iso(1) member-body(2) us(840) ansi-X9-62(10045) keyType(2) 1 }
 var (
-	oidPublicKeyRSA     = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 1, 1}
-	oidPublicKeyDSA     = asn1.ObjectIdentifier{1, 2, 840, 10040, 4, 1}
-	oidPublicKeyECDSA   = asn1.ObjectIdentifier{1, 2, 840, 10045, 2, 1}
-	oidPublicKeyEd25519 = oidSignatureEd25519
-	oidPublicKeyKEMTLS  = asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 44363, 45, 11} // Cloudflare OID
+	oidPublicKeyRSA          = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 1, 1}
+	oidPublicKeyDSA          = asn1.ObjectIdentifier{1, 2, 840, 10040, 4, 1}
+	oidPublicKeyECDSA        = asn1.ObjectIdentifier{1, 2, 840, 10045, 2, 1}
+	oidPublicKeyEd25519      = oidSignatureEd25519
+	oidPublicKeyEdDilithium3 = asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 44363, 45, 9}  // Cloudflare OID
+	oidPublicKeyEdDilithium4 = asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 44363, 45, 10} // Cloudflare OID
+	oidPublicKeyKEMTLS       = asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 44363, 45, 11} // Cloudflare OID
 )
 
 func getPublicKeyAlgorithmFromOID(oid asn1.ObjectIdentifier) PublicKeyAlgorithm {
@@ -485,6 +490,10 @@ func getPublicKeyAlgorithmFromOID(oid asn1.ObjectIdentifier) PublicKeyAlgorithm 
 		return ECDSA
 	case oid.Equal(oidPublicKeyEd25519):
 		return Ed25519
+	case oid.Equal(oidPublicKeyEdDilithium3):
+		return EdDilithium3
+	case oid.Equal(oidPublicKeyEdDilithium4):
+		return EdDilithium4
 	case oid.Equal(oidPublicKeyKEMTLS):
 		return KEMTLS
 	default:

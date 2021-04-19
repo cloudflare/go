@@ -818,6 +818,8 @@ func TestCloneNonFuncFields(t *testing.T) {
 			f.Set(reflect.ValueOf(uint16(VersionTLS12)))
 		case "KEMTLSEnabled":
 			f.Set(reflect.ValueOf(false))
+		case "PQTLSEnabled":
+			f.Set(reflect.ValueOf(false))
 		case "SupportDelegatedCredential":
 			f.Set(reflect.ValueOf(true))
 		case "SessionTicketKey":

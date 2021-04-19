@@ -8,6 +8,7 @@ import (
 	circlSign "circl/sign"
 
 	"circl/sign/eddilithium3"
+	"circl/sign/eddilithium4"
 	"time"
 )
 
@@ -30,6 +31,7 @@ var circlSchemes = [...]struct {
 	scheme  circlSign.Scheme
 }{
 	{signatureEdDilithium3, eddilithium3.Scheme()},
+	{signatureEdDilithium4, eddilithium4.Scheme()},
 }
 
 func circlSchemeBySigType(sigType uint8) circlSign.Scheme {

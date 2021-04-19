@@ -27,6 +27,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+
+	"circl/sign/schemes"
 	"time"
 
 	"golang.org/x/crypto/cryptobyte"
@@ -128,7 +130,8 @@ func (cred *credential) marshalPublicKeyInfo() ([]byte, error) {
 		ECDSAWithP384AndSHA384,
 		ECDSAWithP521AndSHA512,
 		Ed25519,
-		KEMTLSWithSIKEp434, KEMTLSWithKyber512:
+		KEMTLSWithSIKEp434, KEMTLSWithKyber512,
+		PQTLSWithDilithium3, PQTLSWithDilithium4:
 		rawPub, err := x509.MarshalPKIXPublicKey(cred.publicKey)
 		if err != nil {
 			return nil, err
@@ -373,6 +376,18 @@ func NewDelegatedCredential(cert *Certificate, pubAlgo SignatureScheme, validTim
 		}
 	case KEMTLSWithKyber512:
 		pubK, privK, err = kem.GenerateKey(rand.Reader, kem.Kyber512)
+		if err != nil {
+			return nil, nil, err
+		}
+	case PQTLSWithDilithium3:
+		scheme := schemes.ByName("Ed25519-Dilithium3")
+		pubK, privK, err = scheme.GenerateKey()
+		if err != nil {
+			return nil, nil, err
+		}
+	case PQTLSWithDilithium4:
+		scheme := schemes.ByName("Ed448-Dilithium4")
+		pubK, privK, err = scheme.GenerateKey()
 		if err != nil {
 			return nil, nil, err
 		}

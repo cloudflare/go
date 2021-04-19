@@ -5,6 +5,7 @@ import (
 	circlSign "circl/sign"
 
 	"circl/sign/eddilithium3"
+	"circl/sign/eddilithium4"
 
 	"crypto"
 	"encoding/asn1"
@@ -23,6 +24,7 @@ var circlSchemes = [...]struct {
 	scheme circlSign.Scheme
 }{
 	{PureEdDilithium3, EdDilithium3, eddilithium3.Scheme()},
+	{PureEdDilithium4, EdDilithium4, eddilithium4.Scheme()},
 }
 
 func CirclSchemeByPublicKeyAlgorithm(alg PublicKeyAlgorithm) circlSign.Scheme {

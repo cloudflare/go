@@ -129,7 +129,7 @@ func (c *Conn) makeClientHello(minVersion uint16) (*clientHelloMsg, []clientKeyS
 	if hello.supportedVersions[0] == VersionTLS13 {
 		hello.cipherSuites = append(hello.cipherSuites, defaultCipherSuitesTLS13()...)
 
-		if !config.KEMTLSEnabled {
+		if !config.KEMTLSEnabled && !config.PQTLSEnabled {
 			curveID := config.curvePreferences()[0]
 			if _, ok := curveForCurveID(curveID); curveID != X25519 && !ok {
 				return nil, nil, errors.New("tls: CurvePreferences includes unsupported curve")
@@ -140,7 +140,7 @@ func (c *Conn) makeClientHello(minVersion uint16) (*clientHelloMsg, []clientKeyS
 			}
 			keyShares = append(keyShares, keyShare{group: curveID, data: params.PublicKey()})
 			keySharePrivates = append(keySharePrivates, params)
-		} else {
+		} else if config.KEMTLSEnabled || config.PQTLSEnabled {
 			var haveECDHE, haveKEM bool
 
 			// loop over supported curves and kems until there is a KEM and an ECDHE curve
