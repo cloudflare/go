@@ -892,6 +892,25 @@ var dcPQServerTests = []struct {
 	name            string
 }{
 	{true, VersionTLS13, VersionTLS13, true, true, "tls13: DC client support"},
+	{false, VersionTLS13, VersionTLS13, false, false, "DC not client support"},
+	{true, VersionTLS12, VersionTLS13, false, false, "client using TLS 1.2. No DC is supported in that version."},
+	{true, VersionTLS13, VersionTLS12, false, false, "server using TLS 1.2. No DC is supported in that version."},
+	{true, VersionTLS11, VersionTLS13, false, false, "client using TLS 1.1. No DC is supported in that version."},
+	{true, VersionTLS13, VersionTLS10, false, false, "server using TLS 1.0. No DC is supported in that version."},
+}
+
+var dcPQClientTests = []struct {
+	serverDCSupport bool
+	clientMaxVers   uint16
+	serverMaxVers   uint16
+	expectSuccess   bool
+	expectDC        bool
+	name            string
+}{
+	{true, VersionTLS13, VersionTLS13, true, true, "tls13: DC server support"},
+	{true, VersionTLS13, VersionTLS12, false, false, "server using TLS 1.2. No DC is supported in that version."},
+	{true, VersionTLS11, VersionTLS13, false, false, "client using TLS 1.1. No DC is supported in that version."},
+	{true, VersionTLS13, VersionTLS10, false, false, "server using TLS 1.0. No DC is supported in that version."},
 }
 
 // Checks that the client suppports a version >= 1.3 and accepts Delegated
@@ -931,7 +950,7 @@ func testClientGetPQCertificate(cr *CertificateRequestInfo) (*Certificate, error
 }
 
 // Test the server authentication with the Delegated Credential extension using
-// KEMs.
+// PQTLS.
 func TestDCPQHandshakeServerAuth(t *testing.T) {
 	serverMsg := "hello, client"
 	clientMsg := "hello, server"
@@ -953,7 +972,7 @@ func TestDCPQHandshakeServerAuth(t *testing.T) {
 			clientConfig.MaxVersion = test.clientMaxVers
 			serverConfig.MaxVersion = test.serverMaxVers
 
-			usedDC, _, err := testConnWithDC(t, clientMsg, serverMsg, clientConfig, serverConfig, "client", true)
+			usedDC, usedKEMTLS, err := testConnWithDC(t, clientMsg, serverMsg, clientConfig, serverConfig, "client", true)
 
 			if err != nil && test.expectSuccess {
 				t.Errorf("test #%d (%s) with kem #%d fails: %s", i, test.name, dcCount, err.Error())
@@ -965,9 +984,92 @@ func TestDCPQHandshakeServerAuth(t *testing.T) {
 				t.Errorf("test #%d (%s) with kem #%d usedDC = %v; expected %v", i, test.name, dcCount, usedDC, test.expectDC)
 			}
 
-			//if !usedKEMTLS && test.expectSuccess {
-			//	t.Errorf("test #%d (%s) with kem #%d did not use kemtls", i, test.name, dcCount)
-			//}
+			if usedKEMTLS && test.expectSuccess {
+				t.Errorf("test #%d (%s) with kem #%d did not use kemtls", i, test.name, dcCount)
+			}
 		}
+	}
+}
+
+// Test the client authentication with the Delegated Credential extension with
+// PQTLS.
+func TestDCPQHandshakeClientAuth(t *testing.T) {
+	clientMsg := "hello, server"
+	serverMsg := "hello, client"
+
+	serverConfig := dcTestConfig.Clone()
+	serverConfig.ClientAuth = RequestClientCert
+	serverConfig.GetCertificate = testServerGetPQCertificate
+	serverConfig.PQTLSEnabled = true
+	serverConfig.CurvePreferences = []CurveID{SIKEp434, Kyber512}
+
+	clientConfig := dcTestConfig.Clone()
+	clientConfig.GetClientCertificate = testClientGetPQCertificate
+	clientConfig.SupportDelegatedCredential = true // to force the sending of a PQ DC
+	clientConfig.PQTLSEnabled = true
+	clientConfig.CurvePreferences = []CurveID{SIKEp434, Kyber512}
+
+	for i, test := range dcPQClientTests {
+		serverConfig.SupportDelegatedCredential = test.serverDCSupport
+
+		for dcCount = 0; dcCount < len(dcTestDCPQScheme); dcCount++ {
+			initDCTest()
+			serverConfig.MaxVersion = test.serverMaxVers
+			clientConfig.MaxVersion = test.clientMaxVers
+
+			usedDC, usedKEMTLS, err := testConnWithDC(t, clientMsg, serverMsg, clientConfig, serverConfig, "server", true)
+
+			if err != nil && test.expectSuccess {
+				t.Errorf("test #%d (%s) with kem algorithm #%d fails: %s", i, test.name, dcCount, err.Error())
+			} else if err == nil && !test.expectSuccess {
+				t.Errorf("test #%d (%s) with kem algorithm #%d succeeds; expected failure", i, test.name, dcCount)
+			}
+
+			if usedDC != test.expectDC {
+				t.Errorf("test #%d (%s) with kem algorithm #%d usedDC = %v; expected %v", i, test.name, dcCount, usedDC, test.expectDC)
+			}
+
+			if usedKEMTLS && test.expectSuccess {
+				t.Errorf("test #%d (%s) with kem #%d did not use kemtls", i, test.name, dcCount)
+			}
+		}
+	}
+}
+
+// Test server and client authentication with the Delegated Credential extension with pqtls.
+func TestDCPQHandshakeClientAndServerAuth(t *testing.T) {
+	clientMsg := "hello, server"
+	serverMsg := "hello, client"
+
+	serverConfig := dcTestConfig.Clone()
+	serverConfig.ClientAuth = RequestClientCert
+	serverConfig.GetCertificate = testServerGetPQCertificate
+	clientConfig := dcTestConfig.Clone()
+	clientConfig.GetClientCertificate = testClientGetPQCertificate
+	clientConfig.PQTLSEnabled = true
+	serverConfig.PQTLSEnabled = true
+	clientConfig.CurvePreferences = []CurveID{Kyber512}
+	serverConfig.CurvePreferences = []CurveID{Kyber512}
+
+	serverConfig.SupportDelegatedCredential = true
+	clientConfig.SupportDelegatedCredential = true
+
+	serverConfig.MaxVersion = VersionTLS13
+	clientConfig.MaxVersion = VersionTLS13
+
+	initDCTest()
+
+	usedDC, usedKEMTLS, err := testConnWithDC(t, clientMsg, serverMsg, clientConfig, serverConfig, "both", true)
+
+	if err != nil {
+		t.Errorf("test server and client auth with kems fails: %s", err.Error())
+	}
+
+	if usedDC != true {
+		t.Errorf("test server and client auth with kems does not succeed")
+	}
+
+	if usedKEMTLS {
+		t.Errorf("test server and client auth with kems did not use kemtls")
 	}
 }
