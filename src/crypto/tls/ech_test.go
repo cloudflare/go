@@ -846,6 +846,16 @@ func TestUnmarshalConfigs(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	if len(configs) != 2 {
+		t.Errorf("wrong number of configs: got %d; want %d", len(configs), 2)
+	}
+
+	for i, config := range configs {
+		if len(config.suites) != 1 {
+			t.Errorf("wrong number of cipher suites in config #%d: got %d; want %d", i, len(config.suites), 1)
+		}
+	}
+
 	for _, config := range configs {
 		if len(config.raw) == 0 {
 			t.Error("raw config not set")
@@ -864,9 +874,17 @@ func TestUnmarshalKeys(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for _, key := range keys {
+	if len(keys) != 2 {
+		t.Errorf("wrong number of configs: got %d; want %d", len(keys), 2)
+	}
+
+	for i, key := range keys {
 		if len(key.config.raw) == 0 {
 			t.Error("raw config not set")
+		}
+
+		if len(key.config.suites) != 1 {
+			t.Errorf("wrong number of cipher suites in config #%d: got %d; want %d", i, len(key.config.suites), 1)
 		}
 	}
 }
