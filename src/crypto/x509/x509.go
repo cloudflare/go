@@ -214,6 +214,7 @@ const (
 	SHA384WithRSAPSS
 	SHA512WithRSAPSS
 	PureEd25519
+	PureEd448
 	PureEdDilithium3
 	PureEdDilithium4
 )
@@ -244,6 +245,7 @@ const (
 	DSA // Unsupported.
 	ECDSA
 	Ed25519
+	Ed448
 	EdDilithium3
 	EdDilithium4
 	KEMTLS
@@ -254,6 +256,7 @@ var publicKeyAlgoName = [...]string{
 	DSA:          "DSA",
 	ECDSA:        "ECDSA",
 	Ed25519:      "Ed25519",
+	Ed448:        "Ed448",
 	EdDilithium3: "Ed25519-Dilithium3",
 	EdDilithium4: "Ed448-Dilithium4",
 	KEMTLS:       "KEMTLS",
@@ -475,6 +478,7 @@ var (
 	oidPublicKeyDSA          = asn1.ObjectIdentifier{1, 2, 840, 10040, 4, 1}
 	oidPublicKeyECDSA        = asn1.ObjectIdentifier{1, 2, 840, 10045, 2, 1}
 	oidPublicKeyEd25519      = oidSignatureEd25519
+	oidPublicKeyEd448        = asn1.ObjectIdentifier{1, 3, 101, 113}
 	oidPublicKeyEdDilithium3 = asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 44363, 45, 9}  // Cloudflare OID
 	oidPublicKeyEdDilithium4 = asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 44363, 45, 10} // Cloudflare OID
 	oidPublicKeyKEMTLS       = asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 44363, 45, 11} // Cloudflare OID
@@ -490,6 +494,8 @@ func getPublicKeyAlgorithmFromOID(oid asn1.ObjectIdentifier) PublicKeyAlgorithm 
 		return ECDSA
 	case oid.Equal(oidPublicKeyEd25519):
 		return Ed25519
+	case oid.Equal(oidPublicKeyEd448):
+		return Ed448
 	case oid.Equal(oidPublicKeyEdDilithium3):
 		return EdDilithium3
 	case oid.Equal(oidPublicKeyEdDilithium4):

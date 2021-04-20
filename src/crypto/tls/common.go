@@ -181,6 +181,7 @@ const (
 	signatureRSAPSS
 	signatureECDSA
 	signatureEd25519
+	signatureEd448
 	signatureEdDilithium3
 	signatureEdDilithium4
 	authKEMTLS // for the KEMTLS
@@ -216,6 +217,7 @@ var supportedSignatureAlgorithms = []SignatureScheme{
 var supportedSignatureAlgorithmsDC = []SignatureScheme{
 	ECDSAWithP256AndSHA256,
 	Ed25519,
+	Ed448,
 	ECDSAWithP384AndSHA384,
 	ECDSAWithP521AndSHA512,
 
@@ -488,6 +490,7 @@ const (
 
 	// EdDSA algorithms.
 	Ed25519 SignatureScheme = 0x0807
+	Ed448   SignatureScheme = 0x0808
 
 	// Legacy signature and hash algorithms for TLS 1.2.
 	PKCS1WithSHA1 SignatureScheme = 0x0201

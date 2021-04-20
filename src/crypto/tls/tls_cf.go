@@ -7,6 +7,7 @@ import (
 	circlPki "circl/pki"
 	circlSign "circl/sign"
 
+	"circl/sign/ed448"
 	"circl/sign/eddilithium3"
 	"circl/sign/eddilithium4"
 	"time"
@@ -32,6 +33,7 @@ var circlSchemes = [...]struct {
 }{
 	{signatureEdDilithium3, eddilithium3.Scheme()},
 	{signatureEdDilithium4, eddilithium4.Scheme()},
+	{signatureEd448, ed448.Scheme()},
 }
 
 func circlSchemeBySigType(sigType uint8) circlSign.Scheme {

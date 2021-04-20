@@ -129,7 +129,7 @@ func (cred *credential) marshalPublicKeyInfo() ([]byte, error) {
 	case ECDSAWithP256AndSHA256,
 		ECDSAWithP384AndSHA384,
 		ECDSAWithP521AndSHA512,
-		Ed25519,
+		Ed25519, Ed448,
 		KEMTLSWithSIKEp434, KEMTLSWithKyber512,
 		PQTLSWithDilithium3, PQTLSWithDilithium4:
 		rawPub, err := x509.MarshalPKIXPublicKey(cred.publicKey)
@@ -366,6 +366,12 @@ func NewDelegatedCredential(cert *Certificate, pubAlgo SignatureScheme, validTim
 		pubK = privK.(*ecdsa.PrivateKey).Public()
 	case Ed25519:
 		pubK, privK, err = ed25519.GenerateKey(rand.Reader)
+		if err != nil {
+			return nil, nil, err
+		}
+	case Ed448:
+		scheme := schemes.ByName("Ed448")
+		pubK, privK, err = scheme.GenerateKey()
 		if err != nil {
 			return nil, nil, err
 		}

@@ -4,6 +4,7 @@ import (
 	circlPki "circl/pki"
 	circlSign "circl/sign"
 
+	"circl/sign/ed448"
 	"circl/sign/eddilithium3"
 	"circl/sign/eddilithium4"
 
@@ -23,6 +24,7 @@ var circlSchemes = [...]struct {
 	alg    PublicKeyAlgorithm
 	scheme circlSign.Scheme
 }{
+	{PureEd448, Ed448, ed448.Scheme()},
 	{PureEdDilithium3, EdDilithium3, eddilithium3.Scheme()},
 	{PureEdDilithium4, EdDilithium4, eddilithium4.Scheme()},
 }

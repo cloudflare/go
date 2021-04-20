@@ -119,6 +119,8 @@ func typeAndHashFromSignatureScheme(signatureAlgorithm SignatureScheme) (sigType
 		sigType = signatureECDSA
 	case Ed25519:
 		sigType = signatureEd25519
+	case Ed448:
+		sigType = signatureEd448
 	case KEMTLSWithSIKEp434, KEMTLSWithKyber512:
 		sigType = authKEMTLS
 	case PQTLSWithDilithium3:
@@ -145,7 +147,7 @@ func typeAndHashFromSignatureScheme(signatureAlgorithm SignatureScheme) (sigType
 		hash = crypto.SHA384
 	case PKCS1WithSHA512, PSSWithSHA512, ECDSAWithP521AndSHA512:
 		hash = crypto.SHA512
-	case Ed25519:
+	case Ed25519, Ed448:
 		hash = directSigning
 	case KEMTLSWithSIKEp434, KEMTLSWithKyber512:
 		hash = directSigning
