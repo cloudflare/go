@@ -629,6 +629,27 @@ func isKEMTLSAuthUsed(peerCertificate *x509.Certificate, cert Certificate) bool 
 	return false
 }
 
+func isPQTLSAuthUsed(peerCertificate *x509.Certificate, cert Certificate) bool {
+	if cert.DelegatedCredential != nil {
+		dCred, err := unmarshalDelegatedCredential(cert.DelegatedCredential)
+		if err != nil {
+			return false
+		}
+
+		if dCred.cred.expCertVerfAlgo.isPQTLS() {
+			return true
+		}
+	}
+
+	if kemPriv, ok := peerCertificate.PublicKey.(*kem.PublicKey); ok {
+		if kemPriv.KEMId == kem.SIKEp434 || kemPriv.KEMId == kem.Kyber512 {
+			return true
+		}
+	}
+
+	return false
+}
+
 func (hs *clientHandshakeStateTLS13) readServerCertificate() error {
 	c := hs.c
 
@@ -682,6 +703,12 @@ func (hs *clientHandshakeStateTLS13) readServerCertificate() error {
 
 	if err := c.verifyServerCertificate(certMsg.certificate.Certificate); err != nil {
 		return err
+	}
+
+	if isPQTLSAuthUsed(c.peerCertificates[0], certMsg.certificate) {
+		if hs.keyKEMShare {
+			c.didPQTLS = true
+		}
 	}
 
 	if isKEMTLSAuthUsed(c.peerCertificates[0], certMsg.certificate) {

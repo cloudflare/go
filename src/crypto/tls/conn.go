@@ -55,6 +55,8 @@ type Conn struct {
 	// verifiedDC contains the Delegated Credential sent by the peer (if advertised
 	// and correctly processed), which has been verified against the leaf certificate.
 	verifiedDC *DelegatedCredential
+	// didPQTLS states that the connection was established by using PQTLS.
+	didPQTLS bool
 	// didKEMTLS states that the connection was established by using KEMTLS.
 	didKEMTLS bool
 	// didClientAuthentication states that the connection used client authentication.
@@ -1487,6 +1489,7 @@ func (c *Conn) connectionStateLocked() ConnectionState {
 	}
 	state.DidClientAuthentication = c.didClientAuthentication
 	state.DidKEMTLS = c.didKEMTLS
+	state.DidPQTLS = c.didPQTLS
 	state.SignedCertificateTimestamps = c.scts
 	state.OCSPResponse = c.ocspResponse
 	state.ECHAccepted = c.ech.accepted

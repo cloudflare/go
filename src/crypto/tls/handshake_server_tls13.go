@@ -562,6 +562,8 @@ func (hs *serverHandshakeStateTLS13) pickCertificate() error {
 			if hs.keyKEMShare {
 				if delegatedCredentialPair.DC.cred.expCertVerfAlgo.isKEMTLS() {
 					hs.isKEMTLS = true
+				} else if delegatedCredentialPair.DC.cred.expCertVerfAlgo.isPQTLS() {
+					c.didPQTLS = true
 				} else {
 					return nil
 				}
@@ -571,6 +573,8 @@ func (hs *serverHandshakeStateTLS13) pickCertificate() error {
 		if hs.keyKEMShare {
 			if hs.sigAlg.isKEMTLS() {
 				hs.isKEMTLS = true
+			} else if hs.sigAlg.isPQTLS() {
+				c.didPQTLS = true
 			} else {
 				c.sendAlert(alertHandshakeFailure)
 				return err

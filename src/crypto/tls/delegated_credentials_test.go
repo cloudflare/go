@@ -523,7 +523,7 @@ func testClientGetCertificate(cr *CertificateRequestInfo) (*Certificate, error) 
 
 // Tests the handshake and one round of application data. Returns true if the
 // connection correctly used a Delegated Credential.
-func testConnWithDC(t *testing.T, clientMsg, serverMsg string, clientConfig, serverConfig *Config, peer string, kemtls bool) (usedDC bool, usedKEMTLS bool, err error) {
+func testConnWithDC(t *testing.T, clientMsg, serverMsg string, clientConfig, serverConfig *Config, peer string, kemtls bool, pqtls bool) (usedDC bool, usedKEMTLS bool, usedPQTLS bool, err error) {
 	ln := newLocalListener(t)
 	defer ln.Close()
 
@@ -547,13 +547,13 @@ func testConnWithDC(t *testing.T, clientMsg, serverMsg string, clientConfig, ser
 
 	client, err := Dial("tcp", ln.Addr().String(), clientConfig)
 	if err != nil {
-		return false, false, err
+		return false, false, false, err
 	}
 	defer client.Close()
 
 	server := <-serverCh
 	if server == nil {
-		return false, false, serverErr
+		return false, false, false, serverErr
 	}
 
 	bufLen := len(clientMsg)
@@ -565,34 +565,43 @@ func testConnWithDC(t *testing.T, clientMsg, serverMsg string, clientConfig, ser
 	client.Write([]byte(clientMsg))
 	n, err := server.Read(buf)
 	if err != nil || n != len(clientMsg) || string(buf[:n]) != clientMsg {
-		return false, false, fmt.Errorf("Server read = %d, buf= %q; want %d, %s", n, buf, len(clientMsg), clientMsg)
+		return false, false, false, fmt.Errorf("Server read = %d, buf= %q; want %d, %s", n, buf, len(clientMsg), clientMsg)
 	}
 
 	server.Write([]byte(serverMsg))
 	n, err = client.Read(buf)
 	if n != len(serverMsg) || err != nil || string(buf[:n]) != serverMsg {
-		return false, false, fmt.Errorf("Client read = %d, %v, data %q; want %d, nil, %s", n, err, buf, len(serverMsg), serverMsg)
+		return false, false, false, fmt.Errorf("Client read = %d, %v, data %q; want %d, nil, %s", n, err, buf, len(serverMsg), serverMsg)
 	}
 
 	if kemtls {
 		if peer == "server" {
-			return (server.verifiedDC != nil), (server.didKEMTLS && client.didKEMTLS), nil
+			return (server.verifiedDC != nil), (server.didKEMTLS && client.didKEMTLS), false, nil
 		} else if peer == "client" {
-			return (client.verifiedDC != nil), (server.didKEMTLS && client.didKEMTLS), nil
+			return (client.verifiedDC != nil), (server.didKEMTLS && client.didKEMTLS), false, nil
 		} else if peer == "both" {
-			return (client.verifiedDC != nil && server.verifiedDC != nil), (server.didKEMTLS && client.didKEMTLS), nil
+			return (client.verifiedDC != nil && server.verifiedDC != nil), (server.didKEMTLS && client.didKEMTLS), false, nil
 		}
+	} else if pqtls {
+		if peer == "server" {
+			return (server.verifiedDC != nil), false, (server.didPQTLS && client.didPQTLS), nil
+		} else if peer == "client" {
+			return (client.verifiedDC != nil), false, (server.didPQTLS && client.didPQTLS), nil
+		} else if peer == "both" {
+			return (client.verifiedDC != nil && server.verifiedDC != nil), false, (server.didPQTLS && client.didPQTLS), nil
+		}
+
 	} else {
 		if peer == "server" {
-			return (server.verifiedDC != nil), false, nil
+			return (server.verifiedDC != nil), false, false, nil
 		} else if peer == "client" {
-			return (client.verifiedDC != nil), false, nil
+			return (client.verifiedDC != nil), false, false, nil
 		} else if peer == "both" {
-			return (client.verifiedDC != nil && server.verifiedDC != nil), false, nil
+			return (client.verifiedDC != nil && server.verifiedDC != nil), false, false, nil
 		}
 	}
 
-	return false, false, nil
+	return false, false, false, nil
 }
 
 // Test the server authentication with the Delegated Credential extension.
@@ -613,7 +622,7 @@ func TestDCHandshakeServerAuth(t *testing.T) {
 			clientConfig.MaxVersion = test.clientMaxVers
 			serverConfig.MaxVersion = test.serverMaxVers
 
-			usedDC, _, err := testConnWithDC(t, clientMsg, serverMsg, clientConfig, serverConfig, "client", false)
+			usedDC, _, _, err := testConnWithDC(t, clientMsg, serverMsg, clientConfig, serverConfig, "client", false, false)
 
 			if err != nil && test.expectSuccess {
 				t.Errorf("test #%d (%s) with signature algorithm #%d fails: %s", i, test.name, dcCount, err.Error())
@@ -647,7 +656,7 @@ func TestDCHandshakeClientAuth(t *testing.T) {
 			serverConfig.MaxVersion = test.serverMaxVers
 			clientConfig.MaxVersion = test.clientMaxVers
 
-			usedDC, _, err := testConnWithDC(t, clientMsg, serverMsg, clientConfig, serverConfig, "server", false)
+			usedDC, _, _, err := testConnWithDC(t, clientMsg, serverMsg, clientConfig, serverConfig, "server", false, false)
 
 			if err != nil && test.expectSuccess {
 				t.Errorf("test #%d (%s) with signature algorithm #%d fails: %s", j, test.name, dcCount, err.Error())
@@ -681,7 +690,7 @@ func TestDCHandshakeClientAndServerAuth(t *testing.T) {
 
 	initDCTest()
 
-	usedDC, _, err := testConnWithDC(t, clientMsg, serverMsg, clientConfig, serverConfig, "both", false)
+	usedDC, _, _, err := testConnWithDC(t, clientMsg, serverMsg, clientConfig, serverConfig, "both", false, false)
 
 	if err != nil {
 		t.Errorf("test server and client auth fails: %s", err.Error())
@@ -781,7 +790,7 @@ func TestDCKEMHandshakeServerAuth(t *testing.T) {
 			clientConfig.MaxVersion = test.clientMaxVers
 			serverConfig.MaxVersion = test.serverMaxVers
 
-			usedDC, usedKEMTLS, err := testConnWithDC(t, clientMsg, serverMsg, clientConfig, serverConfig, "client", true)
+			usedDC, usedKEMTLS, _, err := testConnWithDC(t, clientMsg, serverMsg, clientConfig, serverConfig, "client", true, false)
 
 			if err != nil && test.expectSuccess {
 				t.Errorf("test #%d (%s) with kem #%d fails: %s", i, test.name, dcCount, err.Error())
@@ -826,7 +835,7 @@ func TestDCKEMHandshakeClientAuth(t *testing.T) {
 			serverConfig.MaxVersion = test.serverMaxVers
 			clientConfig.MaxVersion = test.clientMaxVers
 
-			usedDC, usedKEMTLS, err := testConnWithDC(t, clientMsg, serverMsg, clientConfig, serverConfig, "server", true)
+			usedDC, usedKEMTLS, _, err := testConnWithDC(t, clientMsg, serverMsg, clientConfig, serverConfig, "server", true, false)
 
 			if err != nil && test.expectSuccess {
 				t.Errorf("test #%d (%s) with kem algorithm #%d fails: %s", i, test.name, dcCount, err.Error())
@@ -868,7 +877,7 @@ func TestDCKEMHandshakeClientAndServerAuth(t *testing.T) {
 
 	initDCTest()
 
-	usedDC, usedKEMTLS, err := testConnWithDC(t, clientMsg, serverMsg, clientConfig, serverConfig, "both", true)
+	usedDC, usedKEMTLS, _, err := testConnWithDC(t, clientMsg, serverMsg, clientConfig, serverConfig, "both", true, false)
 
 	if err != nil {
 		t.Errorf("test server and client auth with kems fails: %s", err.Error())
@@ -972,20 +981,20 @@ func TestDCPQHandshakeServerAuth(t *testing.T) {
 			clientConfig.MaxVersion = test.clientMaxVers
 			serverConfig.MaxVersion = test.serverMaxVers
 
-			usedDC, usedKEMTLS, err := testConnWithDC(t, clientMsg, serverMsg, clientConfig, serverConfig, "client", true)
+			usedDC, _, usedPQTLS, err := testConnWithDC(t, clientMsg, serverMsg, clientConfig, serverConfig, "client", false, true)
 
 			if err != nil && test.expectSuccess {
-				t.Errorf("test #%d (%s) with kem #%d fails: %s", i, test.name, dcCount, err.Error())
+				t.Errorf("test #%d (%s) with pq #%d fails: %s", i, test.name, dcCount, err.Error())
 			} else if err == nil && !test.expectSuccess {
-				t.Errorf("test #%d (%s) with kem #%d succeeds; expected failure", i, test.name, dcCount)
+				t.Errorf("test #%d (%s) with pq #%d succeeds; expected failure", i, test.name, dcCount)
 			}
 
 			if usedDC != test.expectDC {
-				t.Errorf("test #%d (%s) with kem #%d usedDC = %v; expected %v", i, test.name, dcCount, usedDC, test.expectDC)
+				t.Errorf("test #%d (%s) with pq #%d usedDC = %v; expected %v", i, test.name, dcCount, usedDC, test.expectDC)
 			}
 
-			if usedKEMTLS && test.expectSuccess {
-				t.Errorf("test #%d (%s) with kem #%d did not use kemtls", i, test.name, dcCount)
+			if !usedPQTLS && test.expectSuccess {
+				t.Errorf("test #%d (%s) with pq #%d did not use pqtls", i, test.name, dcCount)
 			}
 		}
 	}
@@ -1017,20 +1026,20 @@ func TestDCPQHandshakeClientAuth(t *testing.T) {
 			serverConfig.MaxVersion = test.serverMaxVers
 			clientConfig.MaxVersion = test.clientMaxVers
 
-			usedDC, usedKEMTLS, err := testConnWithDC(t, clientMsg, serverMsg, clientConfig, serverConfig, "server", true)
+			usedDC, _, usedPQTLS, err := testConnWithDC(t, clientMsg, serverMsg, clientConfig, serverConfig, "server", false, true)
 
 			if err != nil && test.expectSuccess {
-				t.Errorf("test #%d (%s) with kem algorithm #%d fails: %s", i, test.name, dcCount, err.Error())
+				t.Errorf("test #%d (%s) with pq algorithm #%d fails: %s", i, test.name, dcCount, err.Error())
 			} else if err == nil && !test.expectSuccess {
-				t.Errorf("test #%d (%s) with kem algorithm #%d succeeds; expected failure", i, test.name, dcCount)
+				t.Errorf("test #%d (%s) with pq algorithm #%d succeeds; expected failure", i, test.name, dcCount)
 			}
 
 			if usedDC != test.expectDC {
-				t.Errorf("test #%d (%s) with kem algorithm #%d usedDC = %v; expected %v", i, test.name, dcCount, usedDC, test.expectDC)
+				t.Errorf("test #%d (%s) with pq algorithm #%d usedDC = %v; expected %v", i, test.name, dcCount, usedDC, test.expectDC)
 			}
 
-			if usedKEMTLS && test.expectSuccess {
-				t.Errorf("test #%d (%s) with kem #%d did not use kemtls", i, test.name, dcCount)
+			if !usedPQTLS && test.expectSuccess {
+				t.Errorf("test #%d (%s) with pqs #%d did not use pqtls", i, test.name, dcCount)
 			}
 		}
 	}
@@ -1059,17 +1068,17 @@ func TestDCPQHandshakeClientAndServerAuth(t *testing.T) {
 
 	initDCTest()
 
-	usedDC, usedKEMTLS, err := testConnWithDC(t, clientMsg, serverMsg, clientConfig, serverConfig, "both", true)
+	usedDC, _, usedPQTLS, err := testConnWithDC(t, clientMsg, serverMsg, clientConfig, serverConfig, "both", false, true)
 
 	if err != nil {
-		t.Errorf("test server and client auth with kems fails: %s", err.Error())
+		t.Errorf("test server and client auth with pqs fails: %s", err.Error())
 	}
 
 	if usedDC != true {
-		t.Errorf("test server and client auth with kems does not succeed")
+		t.Errorf("test server and client auth with pqs does not succeed")
 	}
 
-	if usedKEMTLS {
-		t.Errorf("test server and client auth with kems did not use kemtls")
+	if !usedPQTLS {
+		t.Errorf("test server and client auth with pqs did not use pqtls")
 	}
 }

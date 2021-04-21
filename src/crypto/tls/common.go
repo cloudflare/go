@@ -353,6 +353,9 @@ type ConnectionState struct {
 	// DidKEMTLS states that the connection was established by using KEMTLS.
 	DidKEMTLS bool
 
+	// DidPQTLS states that the connection was established by using PQTLS.
+	DidPQTLS bool
+
 	// SignedCertificateTimestamps is a list of SCTs provided by the peer
 	// through the TLS handshake for the leaf certificate, if any.
 	SignedCertificateTimestamps [][]byte
