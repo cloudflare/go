@@ -347,6 +347,9 @@ type ConnectionState struct {
 	// has been used.
 	VerifiedDC bool
 
+	// DidClientAuthentiation states that the connection used client authentication.
+	DidClientAuthentication bool
+
 	// DidKEMTLS states that the connection was established by using KEMTLS.
 	DidKEMTLS bool
 

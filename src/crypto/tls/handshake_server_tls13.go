@@ -1093,6 +1093,8 @@ func (hs *serverHandshakeStateTLS13) readClientCertificate() error {
 		}
 
 		hs.transcript.Write(certVerify.marshal())
+
+		c.didClientAuthentication = true
 	}
 
 	hs.handshakeTimings.ReadCertificateVerify = hs.handshakeTimings.elapsedTime()

@@ -180,6 +180,10 @@ func (hs *clientHandshakeStateTLS13) readServerKEMCiphertext() error {
 		return nil
 	}
 
+	if hs.certKEMTLS == nil {
+		return nil
+	}
+
 	sk, ok := hs.certKEMTLS.PrivateKey.(*kem.PrivateKey)
 	if !ok {
 		c.sendAlert(alertInternalError)
@@ -209,6 +213,7 @@ func (hs *clientHandshakeStateTLS13) readServerKEMCiphertext() error {
 	// MS <- HKDF.Extract(dAHS, ssC)
 	hs.masterSecret = hs.suite.extract(ss, hs.handshakeSecret)
 	hs.isClientAuthKEMTLS = true
+	c.didClientAuthentication = true
 
 	return nil
 }

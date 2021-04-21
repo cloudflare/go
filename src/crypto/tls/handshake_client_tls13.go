@@ -942,6 +942,7 @@ func (hs *clientHandshakeStateTLS13) sendClientCertificate() error {
 		return err
 	}
 
+	c.didClientAuthentication = true
 	hs.handshakeTimings.WriteCertificateVerify = hs.handshakeTimings.elapsedTime()
 
 	return nil

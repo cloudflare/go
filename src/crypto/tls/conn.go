@@ -57,6 +57,8 @@ type Conn struct {
 	verifiedDC *DelegatedCredential
 	// didKEMTLS states that the connection was established by using KEMTLS.
 	didKEMTLS bool
+	// didClientAuthentication states that the connection used client authentication.
+	didClientAuthentication bool
 	// serverName contains the server name indicated by the client, if any.
 	serverName string
 	// secureRenegotiation is true if the server echoed the secure
@@ -1483,6 +1485,7 @@ func (c *Conn) connectionStateLocked() ConnectionState {
 	if c.verifiedDC != nil {
 		state.VerifiedDC = true
 	}
+	state.DidClientAuthentication = c.didClientAuthentication
 	state.DidKEMTLS = c.didKEMTLS
 	state.SignedCertificateTimestamps = c.scts
 	state.OCSPResponse = c.ocspResponse

@@ -161,6 +161,10 @@ func (hs *serverHandshakeStateTLS13) sendServerKEMCiphertext() error {
 		return nil
 	}
 
+	if c.peerCertificates[0] == nil {
+		return nil
+	}
+
 	var pk *kem.PublicKey
 	var ok bool
 
@@ -201,6 +205,7 @@ func (hs *serverHandshakeStateTLS13) sendServerKEMCiphertext() error {
 	// MS <- HKDF.Extract(dAHS, ssC)
 	hs.masterSecret = hs.suite.extract(ss, hs.handshakeSecret)
 	hs.isClientAuthKEMTLS = true
+	c.didClientAuthentication = true
 
 	return nil
 }
