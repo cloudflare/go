@@ -42,10 +42,15 @@ func (hs *serverHandshakeStateTLS13) handshakeKEMTLS() error {
 func (hs *serverHandshakeStateTLS13) readClientKEMCiphertext() error {
 	c := hs.c
 
-	sk, ok := hs.cert.PrivateKey.(*kem.PrivateKey)
+	var sk *kem.PrivateKey
+	var ok, ok1 bool
+	sk, ok = hs.cert.PrivateKey.(*kem.PrivateKey)
 	if !ok {
-		c.sendAlert(alertInternalError)
-		return errors.New("crypto/tls: private key unexpectedly of wrong type")
+		sk, ok1 = hs.cert.DelegatedCredentialPrivateKey.(*kem.PrivateKey)
+		if !ok1 {
+			c.sendAlert(alertInternalError)
+			return errors.New("crypto/tls: private key unexpectedly of wrong type")
+		}
 	}
 
 	msg, err := c.readHandshake()

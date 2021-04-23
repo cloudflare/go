@@ -943,7 +943,7 @@ func (hs *clientHandshakeStateTLS13) sendClientCertificate() error {
 			// CertificateRequestInfo supported signature algorithms.
 			cert.DelegatedCredential = nil
 		} else {
-			cert.PrivateKey = dcPair.PrivateKey
+			cert.DelegatedCredentialPrivateKey = dcPair.PrivateKey
 		}
 	}
 
@@ -959,11 +959,24 @@ func (hs *clientHandshakeStateTLS13) sendClientCertificate() error {
 	if sigType == signatureRSAPSS {
 		signOpts = &rsa.PSSOptions{SaltLength: rsa.PSSSaltLengthEqualsHash, Hash: sigHash}
 	}
-	sig, err := cert.PrivateKey.(crypto.Signer).Sign(c.config.rand(), signed, signOpts)
-	if err != nil {
-		c.sendAlert(alertInternalError)
-		return errors.New("tls: failed to sign handshake: " + err.Error())
+
+	var sig []byte
+	if len(cert.DelegatedCredential) > 0 {
+		var err error
+		sig, err = cert.DelegatedCredentialPrivateKey.(crypto.Signer).Sign(c.config.rand(), signed, signOpts)
+		if err != nil {
+			c.sendAlert(alertInternalError)
+			return errors.New("tls: failed to sign handshake: " + err.Error())
+		}
+	} else {
+		var err error
+		sig, err = cert.PrivateKey.(crypto.Signer).Sign(c.config.rand(), signed, signOpts)
+		if err != nil {
+			c.sendAlert(alertInternalError)
+			return errors.New("tls: failed to sign handshake: " + err.Error())
+		}
 	}
+
 	certVerifyMsg.signature = sig
 
 	hs.transcript.Write(certVerifyMsg.marshal())

@@ -142,17 +142,26 @@ func (hs *clientHandshakeStateTLS13) sendKEMClientCertificate() error {
 				if delegatedCredentialPair.DC.raw, err = delegatedCredentialPair.DC.marshal(); err == nil {
 					dcPair = delegatedCredentialPair
 					cert.DelegatedCredential = dcPair.DC.raw
-					cert.PrivateKey = dcPair.PrivateKey
+					cert.DelegatedCredentialPrivateKey = dcPair.PrivateKey
 				}
 			}
 		}
 	}
 
-	_, ok := cert.PrivateKey.(*kem.PrivateKey)
-	if !ok {
-		// it has to be a KEM key
-		c.sendAlert(alertInternalError)
-		return errors.New("tls: incorrect certificate found")
+	if len(cert.DelegatedCredential) > 0 {
+		_, ok := cert.DelegatedCredentialPrivateKey.(*kem.PrivateKey)
+		if !ok {
+			// it has to be a KEM key
+			c.sendAlert(alertInternalError)
+			return errors.New("tls: incorrect certificate found")
+		}
+	} else {
+		_, ok := cert.PrivateKey.(*kem.PrivateKey)
+		if !ok {
+			// it has to be a KEM key
+			c.sendAlert(alertInternalError)
+			return errors.New("tls: incorrect certificate found")
+		}
 	}
 
 	certMsg := new(certificateMsgTLS13)
@@ -184,10 +193,15 @@ func (hs *clientHandshakeStateTLS13) readServerKEMCiphertext() error {
 		return nil
 	}
 
-	sk, ok := hs.certKEMTLS.PrivateKey.(*kem.PrivateKey)
+	var sk *kem.PrivateKey
+	var ok, ok1 bool
+	sk, ok = hs.certKEMTLS.PrivateKey.(*kem.PrivateKey)
 	if !ok {
-		c.sendAlert(alertInternalError)
-		return errors.New("crypto/tls: private key unexpectedly wrong type")
+		sk, ok1 = hs.certKEMTLS.DelegatedCredentialPrivateKey.(*kem.PrivateKey)
+		if !ok1 {
+			c.sendAlert(alertInternalError)
+			return errors.New("crypto/tls: private key unexpectedly of wrong type")
+		}
 	}
 
 	msg, err := c.readHandshake()

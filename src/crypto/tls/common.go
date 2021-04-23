@@ -1581,6 +1581,11 @@ type Certificate struct {
 	// NOTE: Do not fill this field, as it will be filled depending on
 	// the provided list of delegated credentials.
 	DelegatedCredential []byte
+	// DelegatedCredentialPrivateKey contains the private key corresponding to the public key in
+	// the Delegated Credential.
+	// NOTE: Do not fill this field, as it will be filled depending on
+	// the provided list of delegated credentials.
+	DelegatedCredentialPrivateKey crypto.PrivateKey
 	// Leaf is the parsed form of the leaf certificate, which may be initialized
 	// using x509.ParseCertificate to reduce per-handshake processing. If nil,
 	// the leaf certificate will be parsed as needed.

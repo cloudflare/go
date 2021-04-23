@@ -567,7 +567,7 @@ func (hs *serverHandshakeStateTLS13) pickCertificate() error {
 				return nil
 			}
 
-			hs.cert.PrivateKey = delegatedCredentialPair.PrivateKey
+			hs.cert.DelegatedCredentialPrivateKey = delegatedCredentialPair.PrivateKey
 			hs.cert.DelegatedCredential = delegatedCredentialPair.DC.raw
 			if hs.keyKEMShare {
 				if delegatedCredentialPair.DC.cred.expCertVerfAlgo.isKEMTLS() {
@@ -878,17 +878,36 @@ func (hs *serverHandshakeStateTLS13) sendServerCertificate() error {
 		if sigType == signatureRSAPSS {
 			signOpts = &rsa.PSSOptions{SaltLength: rsa.PSSSaltLengthEqualsHash, Hash: sigHash}
 		}
-		sig, err := hs.cert.PrivateKey.(crypto.Signer).Sign(c.config.rand(), signed, signOpts)
-		if err != nil {
-			public := hs.cert.PrivateKey.(crypto.Signer).Public()
-			if rsaKey, ok := public.(*rsa.PublicKey); ok && sigType == signatureRSAPSS &&
-				rsaKey.N.BitLen()/8 < sigHash.Size()*2+2 { // key too small for RSA-PSS
-				fmt.Println("\n HERE 7")
-				c.sendAlert(alertHandshakeFailure)
-			} else {
-				c.sendAlert(alertInternalError)
+
+		var sig []byte
+		if len(hs.cert.DelegatedCredential) > 0 {
+			var err error
+			sig, err = hs.cert.DelegatedCredentialPrivateKey.(crypto.Signer).Sign(c.config.rand(), signed, signOpts)
+			if err != nil {
+				public := hs.cert.DelegatedCredentialPrivateKey.(crypto.Signer).Public()
+				if rsaKey, ok := public.(*rsa.PublicKey); ok && sigType == signatureRSAPSS &&
+					rsaKey.N.BitLen()/8 < sigHash.Size()*2+2 { // key too small for RSA-PSS
+					fmt.Println("\n HERE 7")
+					c.sendAlert(alertHandshakeFailure)
+				} else {
+					c.sendAlert(alertInternalError)
+				}
+				return errors.New("tls: failed to sign handshake: " + err.Error())
 			}
-			return errors.New("tls: failed to sign handshake: " + err.Error())
+		} else {
+			var err error
+			sig, err = hs.cert.PrivateKey.(crypto.Signer).Sign(c.config.rand(), signed, signOpts)
+			if err != nil {
+				public := hs.cert.PrivateKey.(crypto.Signer).Public()
+				if rsaKey, ok := public.(*rsa.PublicKey); ok && sigType == signatureRSAPSS &&
+					rsaKey.N.BitLen()/8 < sigHash.Size()*2+2 { // key too small for RSA-PSS
+					fmt.Println("\n HERE 7.1")
+					c.sendAlert(alertHandshakeFailure)
+				} else {
+					c.sendAlert(alertInternalError)
+				}
+				return errors.New("tls: failed to sign handshake: " + err.Error())
+			}
 		}
 		certVerifyMsg.signature = sig
 
