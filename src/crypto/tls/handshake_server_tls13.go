@@ -194,6 +194,7 @@ func (hs *serverHandshakeStateTLS13) processClientHello() error {
 	}
 
 	if len(hs.clientHello.secureRenegotiation) != 0 {
+		fmt.Println("\n HERE 2")
 		c.sendAlert(alertHandshakeFailure)
 		return errors.New("tls: initial handshake had non-empty renegotiation extension")
 	}
@@ -240,6 +241,7 @@ func (hs *serverHandshakeStateTLS13) processClientHello() error {
 		}
 	}
 	if hs.suite == nil {
+		fmt.Println("\n HERE 3")
 		c.sendAlert(alertHandshakeFailure)
 		return errors.New("tls: no cipher suite supported by both client and server")
 	}
@@ -249,6 +251,7 @@ func (hs *serverHandshakeStateTLS13) processClientHello() error {
 
 	// Resolve the server's preference for the ECDHE group.
 	supportedCurves := c.config.curvePreferences()
+	fmt.Printf("\n server %v \n", supportedCurves)
 	if testingTriggerHRR {
 		// A HelloRetryRequest (HRR) is sent if the client does not offer a key
 		// share for a curve supported by the server. To trigger this condition
@@ -281,6 +284,8 @@ func (hs *serverHandshakeStateTLS13) processClientHello() error {
 	// groups with a key share, to avoid a HelloRetryRequest round-trip.
 	var selectedGroup CurveID
 	var clientKeyShare *keyShare
+
+	fmt.Printf("\n client %v \n", hs.clientHello.keyShares)
 GroupSelection:
 	for _, preferredGroup := range supportedCurves {
 		for _, ks := range hs.clientHello.keyShares {
@@ -301,6 +306,7 @@ GroupSelection:
 		}
 	}
 	if selectedGroup == 0 {
+		fmt.Println("\n HERE 4")
 		c.sendAlert(alertHandshakeFailure)
 		return errors.New("tls: no ECDHE curve supported by both client and server")
 	}
@@ -339,6 +345,7 @@ GroupSelection:
 		return errors.New("tls: invalid client key share")
 	}
 
+	fmt.Printf("\n keyshare? %v \n", hs.keyKEMShare)
 	c.serverName = hs.clientHello.serverName
 
 	hs.handshakeTimings.ProcessClientHello = hs.handshakeTimings.elapsedTime()
@@ -526,6 +533,7 @@ func (hs *serverHandshakeStateTLS13) pickCertificate() error {
 
 	hs.sigAlg, err = selectSignatureScheme(c.vers, certificate, hs.clientHello.supportedSignatureAlgorithms)
 	if err != nil {
+		fmt.Println("\n HERE 5")
 		// getCertificate returned a certificate that is unsupported or
 		// incompatible with the client's signature algorithms.
 		c.sendAlert(alertHandshakeFailure)
@@ -576,6 +584,7 @@ func (hs *serverHandshakeStateTLS13) pickCertificate() error {
 			} else if hs.sigAlg.isPQTLS() {
 				c.didPQTLS = true
 			} else {
+				fmt.Println("\n HERE 6")
 				c.sendAlert(alertHandshakeFailure)
 				return err
 			}
@@ -871,6 +880,7 @@ func (hs *serverHandshakeStateTLS13) sendServerCertificate() error {
 			public := hs.cert.PrivateKey.(crypto.Signer).Public()
 			if rsaKey, ok := public.(*rsa.PublicKey); ok && sigType == signatureRSAPSS &&
 				rsaKey.N.BitLen()/8 < sigHash.Size()*2+2 { // key too small for RSA-PSS
+				fmt.Println("\n HERE 7")
 				c.sendAlert(alertHandshakeFailure)
 			} else {
 				c.sendAlert(alertInternalError)

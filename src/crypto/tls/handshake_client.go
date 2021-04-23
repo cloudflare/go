@@ -176,6 +176,7 @@ func (c *Conn) makeClientHello(minVersion uint16) (*clientHelloMsg, []clientKeyS
 			}
 		}
 
+		fmt.Printf("\n %v KEYSHARES \n", keyShares)
 		hello.keyShares = keyShares
 		hello.delegatedCredentialSupported = config.SupportDelegatedCredential
 		hello.supportedSignatureAlgorithmsDC = supportedSignatureAlgorithmsDC
@@ -185,6 +186,7 @@ func (c *Conn) makeClientHello(minVersion uint16) (*clientHelloMsg, []clientKeyS
 }
 
 func (c *Conn) clientHandshake() (err error) {
+	fmt.Println("\n AT LEAST HERE?")
 	if c.config == nil {
 		c.config = defaultConfig()
 	}
@@ -237,6 +239,7 @@ func (c *Conn) clientHandshake() (err error) {
 		return err
 	}
 
+	fmt.Println("\n AT LEAST HERE? 6")
 	handshakeTimings.WriteClientHello = handshakeTimings.elapsedTime()
 
 	msg, err := c.readHandshake()
@@ -266,6 +269,7 @@ func (c *Conn) clientHandshake() (err error) {
 		return errors.New("tls: downgrade attempt detected, possibly due to a MitM attack or a broken middlebox")
 	}
 
+	fmt.Println("\n AT LEAST HERE? 3")
 	if c.vers == VersionTLS13 {
 		hs := &clientHandshakeStateTLS13{
 			c:                c,
@@ -280,6 +284,7 @@ func (c *Conn) clientHandshake() (err error) {
 			handshakeTimings: handshakeTimings,
 		}
 
+		fmt.Println("\n AT LEAST HERE? 2")
 		// In TLS 1.3, session tickets are delivered after the handshake.
 		return hs.handshake()
 	}
@@ -523,6 +528,7 @@ func (hs *clientHandshakeState) handshake() error {
 func (hs *clientHandshakeState) pickCipherSuite() error {
 	if hs.suite = mutualCipherSuite(hs.hello.cipherSuites, hs.serverHello.cipherSuite); hs.suite == nil {
 		hs.c.sendAlert(alertHandshakeFailure)
+		fmt.Println("\n HYUD")
 		return errors.New("tls: server chose an unconfigured cipher suite")
 	}
 

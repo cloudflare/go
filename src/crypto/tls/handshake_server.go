@@ -41,6 +41,7 @@ type serverHandshakeState struct {
 
 // serverHandshake performs a TLS handshake as a server.
 func (c *Conn) serverHandshake() error {
+	fmt.Println("\n AT LEAST HERE? 7")
 	clientHello, err := c.readClientHello()
 	if err != nil {
 		return err

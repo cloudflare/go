@@ -927,8 +927,10 @@ func (hs *clientHandshakeStateTLS13) sendClientCertificate() error {
 	suppSigAlgo := hs.certReq.supportedSignatureAlgorithms
 	sigAlgorithm, err = selectSignatureScheme(c.vers, cert, suppSigAlgo)
 	if err != nil {
+
 		// getClientCertificate returned a certificate incompatible with the
 		// CertificateRequestInfo supported signature algorithms.
+		fmt.Println("\n HERE 1")
 		c.sendAlert(alertHandshakeFailure)
 		return err
 	}
