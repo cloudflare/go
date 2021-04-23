@@ -542,6 +542,7 @@ func (hs *serverHandshakeStateTLS13) pickCertificate() error {
 
 	hs.cert = certificate
 
+	fmt.Println("\n CHECKING FOR DCs")
 	if hs.clientHello.delegatedCredentialSupported && len(hs.clientHello.supportedSignatureAlgorithmsDC) > 0 {
 		delegatedCredentialPair, err := getDelegatedCredential(clientHelloInfo(c, hs.clientHello), hs.cert)
 		if err != nil {
@@ -549,6 +550,7 @@ func (hs *serverHandshakeStateTLS13) pickCertificate() error {
 			return nil
 		}
 
+		fmt.Println("\n HAVE A DC?")
 		if delegatedCredentialPair.DC != nil && delegatedCredentialPair.PrivateKey != nil {
 			// Even if the Delegated Credential has already been marshalled, be sure it is the correct one.
 			delegatedCredentialPair.DC.raw, err = delegatedCredentialPair.DC.marshal()
@@ -569,6 +571,7 @@ func (hs *serverHandshakeStateTLS13) pickCertificate() error {
 			hs.cert.DelegatedCredential = delegatedCredentialPair.DC.raw
 			if hs.keyKEMShare {
 				if delegatedCredentialPair.DC.cred.expCertVerfAlgo.isKEMTLS() {
+					fmt.Println("\n IS DC KEMTLS?")
 					hs.isKEMTLS = true
 				} else if delegatedCredentialPair.DC.cred.expCertVerfAlgo.isPQTLS() {
 					c.didPQTLS = true
