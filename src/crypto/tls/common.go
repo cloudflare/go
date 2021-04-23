@@ -1214,16 +1214,13 @@ var defaultCurvePreferences = []CurveID{X25519, CurveP256, CurveP384, CurveP521}
 var defaultKEMPreferences = []CurveID{Kyber512, SIKEp434, X25519, CurveP256, CurveP384, CurveP521}
 
 func (c *Config) curvePreferences() []CurveID {
-	fmt.Println("\n ENTERING HERE?")
 	if c == nil || len(c.CurvePreferences) == 0 {
 		if c.KEMTLSEnabled || c.PQTLSEnabled {
-			fmt.Println("\n HEEERE")
 			return defaultKEMPreferences
 		}
 
 		return defaultCurvePreferences
 	}
-	fmt.Println("\n AM I HERE? kaiiao")
 	return c.CurvePreferences
 }
 

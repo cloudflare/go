@@ -930,7 +930,6 @@ func (hs *clientHandshakeStateTLS13) sendClientCertificate() error {
 
 		// getClientCertificate returned a certificate incompatible with the
 		// CertificateRequestInfo supported signature algorithms.
-		fmt.Println("\n HERE 1")
 		c.sendAlert(alertHandshakeFailure)
 		return err
 	}
