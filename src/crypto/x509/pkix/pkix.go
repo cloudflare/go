@@ -24,6 +24,8 @@ type AlgorithmIdentifier struct {
 type RDNSequence []RelativeDistinguishedNameSET
 
 var attributeTypeNames = map[string]string{
+	"1.2.840.113549.1.9.1": "emailAddress",
+
 	"2.5.4.6":  "C",
 	"2.5.4.10": "O",
 	"2.5.4.11": "OU",
@@ -124,7 +126,7 @@ type Name struct {
 	Country, Organization, OrganizationalUnit []string
 	Locality, Province                        []string
 	StreetAddress, PostalCode                 []string
-	SerialNumber, CommonName                  string
+	SerialNumber, CommonName, EmailAddress    string
 
 	// Names contains all parsed attributes. When parsing distinguished names,
 	// this can be used to extract non-standard attributes that are not parsed
@@ -177,6 +179,10 @@ func (n *Name) FillFromRDNSequence(rdns *RDNSequence) {
 					n.PostalCode = append(n.PostalCode, value)
 				}
 			}
+
+			if t.Equal(asn1.ObjectIdentifier(oidEmailAddress)) {
+				n.EmailAddress = value
+			}
 		}
 	}
 }
@@ -191,6 +197,7 @@ var (
 	oidProvince           = []int{2, 5, 4, 8}
 	oidStreetAddress      = []int{2, 5, 4, 9}
 	oidPostalCode         = []int{2, 5, 4, 17}
+	oidEmailAddress       = []int{1, 2, 840, 113549, 1, 9, 1}
 )
 
 // appendRDNs appends a relativeDistinguishedNameSET to the given RDNSequence
@@ -237,6 +244,9 @@ func (n Name) ToRDNSequence() (ret RDNSequence) {
 	if len(n.SerialNumber) > 0 {
 		ret = n.appendRDNs(ret, []string{n.SerialNumber}, oidSerialNumber)
 	}
+	if len(n.EmailAddress) > 0 {
+		ret = n.appendRDNs(ret, []string{n.EmailAddress}, oidEmailAddress)
+	}
 	for _, atv := range n.ExtraNames {
 		ret = append(ret, []AttributeTypeAndValue{atv})
 	}
@@ -259,6 +269,10 @@ func (n Name) String() string {
 					// These attributes were already parsed into named fields.
 					continue
 				}
+			}
+			if t.Equal(asn1.ObjectIdentifier(oidEmailAddress)) {
+				// This attribute is already parsed into a named field.
+				continue
 			}
 			// Place non-standard parsed values at the beginning of the sequence
 			// so they will be at the end of the string. See Issue 39924.
