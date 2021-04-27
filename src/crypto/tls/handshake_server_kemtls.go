@@ -166,7 +166,7 @@ func (hs *serverHandshakeStateTLS13) sendServerKEMCiphertext() error {
 		return nil
 	}
 
-	if c.peerCertificates[0] == nil {
+	if len(c.peerCertificates) == 0 {
 		return nil
 	}
 

@@ -155,12 +155,12 @@ func (hs *clientHandshakeStateTLS13) sendKEMClientCertificate() error {
 			c.sendAlert(alertInternalError)
 			return errors.New("tls: incorrect delegated credential found")
 		}
-	} else if cert != nil {
+	} else if len(cert.Certificate) != 0 {
 		_, ok := cert.PrivateKey.(*kem.PrivateKey)
 		if !ok {
 			// it has to be a KEM key
 			c.sendAlert(alertInternalError)
-			return errors.New("tls: JU incorrect certificate found")
+			return errors.New("tls: incorrect certificate found")
 		}
 	}
 
@@ -189,7 +189,7 @@ func (hs *clientHandshakeStateTLS13) readServerKEMCiphertext() error {
 		return nil
 	}
 
-	if hs.certKEMTLS == nil {
+	if len(hs.certKEMTLS.Certificate) == 0 {
 		return nil
 	}
 
