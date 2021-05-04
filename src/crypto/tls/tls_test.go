@@ -822,6 +822,10 @@ func TestCloneNonFuncFields(t *testing.T) {
 			f.Set(reflect.ValueOf(false))
 		case "SupportDelegatedCredential":
 			f.Set(reflect.ValueOf(true))
+		case "CachedCert":
+			f.Set(reflect.ValueOf([]byte{}))
+		case "CachedCertReq":
+			f.Set(reflect.ValueOf([]byte{}))
 		case "SessionTicketKey":
 			f.Set(reflect.ValueOf([32]byte{}))
 		case "CipherSuites":

@@ -69,6 +69,16 @@ func (c *Conn) makeClientHello(minVersion uint16) (*clientHelloMsg, []clientKeyS
 		clientHelloVersion = VersionTLS12
 	}
 
+	var cachedCert, cachedCertReq bool
+	var cachedCertHash, cachedCertReqHash []byte
+	if len(config.CachedCert) > 0 {
+		cachedCert = true
+		cachedCertHash = calculateHashCachedInfo(config.CachedCert)
+	} else if len(config.CachedCertReq) > 0 {
+		cachedCertReq = true
+		cachedCertReqHash = calculateHashCachedInfo(config.CachedCertReq)
+	}
+
 	hello := &clientHelloMsg{
 		vers:                         clientHelloVersion,
 		compressionMethods:           []uint8{compressionNone},
@@ -82,6 +92,10 @@ func (c *Conn) makeClientHello(minVersion uint16) (*clientHelloMsg, []clientKeyS
 		secureRenegotiationSupported: true,
 		alpnProtocols:                config.NextProtos,
 		supportedVersions:            supportedVersions,
+		cachedInformationCert:        cachedCert,
+		cachedInformationCertHash:    cachedCertHash,
+		cachedInformationCertReq:     cachedCertReq,
+		cachedInformationCertReqHash: cachedCertReqHash,
 	}
 
 	if c.handshakes > 0 {
@@ -140,6 +154,7 @@ func (c *Conn) makeClientHello(minVersion uint16) (*clientHelloMsg, []clientKeyS
 			}
 			keyShares = append(keyShares, keyShare{group: curveID, data: params.PublicKey()})
 			keySharePrivates = append(keySharePrivates, params)
+			// TODO: EXP
 		} else if config.KEMTLSEnabled || config.PQTLSEnabled {
 			var haveECDHE, haveKEM bool
 
@@ -197,9 +212,9 @@ func (c *Conn) clientHandshake() (err error) {
 
 	// Determine the minimum required version for this handshake.
 	minVersion := c.config.MinVersion
-	if c.config.echCanOffer() {
-		// If the ECH extension will be offered in this handshake, then the
-		// ClientHelloInner must not offer TLS 1.2 or below.
+	if c.config.echCanOffer() || len(c.config.CachedCert) > 0 || len(c.config.CachedCertReq) > 0 {
+		// If the ECH extension or the cached information extension will be offered in this handshake,
+		// then the ClientHelloInner must not offer TLS 1.2 or below.
 		minVersion = VersionTLS13
 	}
 

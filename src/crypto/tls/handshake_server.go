@@ -857,6 +857,8 @@ func clientHelloInfo(c *Conn, clientHello *clientHelloMsg) *ClientHelloInfo {
 		SupportedVersions:           supportedVersions,
 		SupportsDelegatedCredential: clientHello.delegatedCredentialSupported,
 		SignatureSchemesDC:          clientHello.supportedSignatureAlgorithmsDC,
+		CachedInformationCert:       clientHello.cachedInformationCert,
+		CachedInformationCertReq:    clientHello.cachedInformationCertReq,
 		Conn:                        c.conn,
 		config:                      c.config,
 	}

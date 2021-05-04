@@ -85,6 +85,10 @@ type clientHelloMsg struct {
 	secureRenegotiationSupported     bool
 	secureRenegotiation              []byte
 	delegatedCredentialSupported     bool
+	cachedInformationCert            bool
+	cachedInformationCertHash        []byte
+	cachedInformationCertReq         bool
+	cachedInformationCertReqHash     []byte
 	alpnProtocols                    []string
 	scts                             bool
 	supportedVersions                []uint16
@@ -229,6 +233,22 @@ func (m *clientHelloMsg) marshal() []byte {
 						})
 					})
 				}
+			}
+			if m.cachedInformationCert {
+				// RFC: https://tools.ietf.org/html/rfc6066
+				b.AddUint16(extensionCachedInfo)
+				b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
+					b.AddUint8(1) // CachedInformationType: cert
+					b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
+						b.AddBytes([]byte(m.cachedInformationCertHash))
+					})
+					if m.cachedInformationCertReq {
+						b.AddUint8(2) // CachedInformationType: cert_req
+						b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
+							b.AddBytes([]byte(m.cachedInformationCertReqHash))
+						})
+					}
+				})
 			}
 			if len(m.alpnProtocols) > 0 {
 				// RFC 7301, Section 3.1
@@ -579,6 +599,26 @@ func (m *clientHelloMsg) unmarshal(data []byte) bool {
 					m.supportedSignatureAlgorithmsDC, SignatureScheme(sigAndAlg))
 			}
 			m.delegatedCredentialSupported = true
+		case extensionCachedInfo:
+			// RFC 7924, Section 4
+			var cachedType uint8
+			if extData.ReadUint8(&cachedType) {
+				if readUint16LengthPrefixed(&extData, &m.cachedInformationCertHash) {
+					m.cachedInformationCert = true
+				}
+			} else {
+				return false
+			}
+
+			if !extData.Empty() {
+				if extData.ReadUint8(&cachedType) {
+					if readUint16LengthPrefixed(&extData, &m.cachedInformationCertReqHash) {
+						m.cachedInformationCertReq = true
+					}
+				} else {
+					return false
+				}
+			}
 		case extensionKeyShare:
 			// RFC 8446, Section 4.2.8
 			var clientShares cryptobyte.String
@@ -663,6 +703,8 @@ type serverHelloMsg struct {
 	selectedIdentityPresent      bool
 	selectedIdentity             uint16
 	supportedPoints              []uint8
+	cachedInformationCert        bool
+	cachedInformationCertReq     bool
 
 	// HelloRetryRequest extensions
 	cookie        []byte

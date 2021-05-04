@@ -93,6 +93,7 @@ const (
 	extensionSignatureAlgorithms     uint16 = 13
 	extensionALPN                    uint16 = 16
 	extensionSCT                     uint16 = 18
+	extensionCachedInfo              uint16 = 25
 	extensionDelegatedCredentials    uint16 = 34
 	extensionSessionTicket           uint16 = 35
 	extensionPreSharedKey            uint16 = 41
@@ -583,6 +584,12 @@ type ClientHelloInfo struct {
 	// to negotiate the Delegated Credential extension.
 	SupportsDelegatedCredential bool
 
+	// CachedInformationCert is true if the client has the server's certificate
+	// message cached for the cached information extension.
+	CachedInformationCert bool
+	// CachedInformationCertReq is true if the client has the server's certificate
+	// request message cached for the cached information extension.
+	CachedInformationCertReq bool
 	// Conn is the underlying net.Conn for the connection. Do not read
 	// from, or write to, this connection; that will cause the TLS
 	// connection to fail.
@@ -898,6 +905,13 @@ type Config struct {
 	// authentication based on TLS 1.3.
 	PQTLSEnabled bool
 
+	// CachedCert corresponds to a cached server's Certificate message by the
+	// client. If filled, it will be used by the cached information extension.
+	CachedCert []byte
+	// CachedCertReq corresponds to a cached server's Certificate Request message
+	// by the client. If filled, it will be used by the cached information extension.
+	CachedCertReq []byte
+
 	// mutex protects sessionTicketKeys and autoSessionTicketKeys.
 	mutex sync.RWMutex
 	// sessionTicketKeys contains zero or more ticket keys. If set, it means the
@@ -990,6 +1004,8 @@ func (c *Config) Clone() *Config {
 		SupportDelegatedCredential:  c.SupportDelegatedCredential,
 		KEMTLSEnabled:               c.KEMTLSEnabled,
 		PQTLSEnabled:                c.PQTLSEnabled,
+		CachedCert:                  c.CachedCert,
+		CachedCertReq:               c.CachedCertReq,
 		ECHEnabled:                  c.ECHEnabled,
 		ClientECHConfigs:            c.ClientECHConfigs,
 		ServerECHProvider:           c.ServerECHProvider,

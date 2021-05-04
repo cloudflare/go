@@ -97,6 +97,14 @@ type Conn struct {
 	clientFinished [12]byte
 	serverFinished [12]byte
 
+	// certificateMessage contain the Certificate message sent
+	// by the server in the most recent handshake.
+	// certificateMessageReq contain the Certificate Request message sent
+	// by the server in the most recent handshake.
+	// This is retained to be used as cached information for a new handshake.
+	certificateMessage    []byte
+	certificateReqMessage []byte
+
 	// clientProtocol is the negotiated ALPN protocol.
 	clientProtocol string
 

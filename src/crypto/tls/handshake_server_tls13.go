@@ -180,6 +180,20 @@ func (hs *serverHandshakeStateTLS13) processClientHello() error {
 		return errors.New("tls: TLS 1.3 client supports illegal compression methods")
 	}
 
+	if hs.clientHello.cachedInformationCert {
+		cachedCertHash := calculateHashCachedInfo(hs.clientHello.cachedInformationCertHash)
+		if bytes.Equal(cachedCertHash, hs.clientHello.cachedInformationCertHash) {
+			hs.hello.cachedInformationCert = true
+		}
+	}
+
+	if hs.clientHello.cachedInformationCertReq {
+		cachedCertReqHash := calculateHashCachedInfo(hs.clientHello.cachedInformationCertReqHash)
+		if bytes.Equal(cachedCertReqHash, hs.clientHello.cachedInformationCertReqHash) {
+			hs.hello.cachedInformationCertReq = true
+		}
+	}
+
 	hs.hello.random = make([]byte, 32)
 	if _, err := io.ReadFull(c.config.rand(), hs.hello.random); err != nil {
 		c.sendAlert(alertInternalError)
