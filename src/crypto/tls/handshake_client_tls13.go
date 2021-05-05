@@ -774,6 +774,8 @@ func (hs *clientHandshakeStateTLS13) readServerCertificate() error {
 		hs.handshakeTimings.ReadCertificateVerify = hs.handshakeTimings.elapsedTime()
 	}
 
+	c.certificateMessage = certMsg.marshal()
+
 	return nil
 }
 
@@ -985,6 +987,8 @@ func (hs *clientHandshakeStateTLS13) sendClientCertificate() error {
 
 	c.didClientAuthentication = true
 	hs.handshakeTimings.WriteCertificateVerify = hs.handshakeTimings.elapsedTime()
+
+	c.certificateReqMessage = hs.certReq.marshal()
 
 	return nil
 }

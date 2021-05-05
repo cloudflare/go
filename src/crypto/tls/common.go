@@ -357,6 +357,12 @@ type ConnectionState struct {
 	// DidPQTLS states that the connection was established by using PQTLS.
 	DidPQTLS bool
 
+	// CertificateMessage contains the server's Certificate Message.
+	CertificateMessage []byte
+
+	// CertificateReqMessage contains the server's Certificate Request Message.
+	CertificateReqMessage []byte
+
 	// SignedCertificateTimestamps is a list of SCTs provided by the peer
 	// through the TLS handshake for the leaf certificate, if any.
 	SignedCertificateTimestamps [][]byte

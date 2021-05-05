@@ -814,6 +814,16 @@ func (m *serverHelloMsg) marshal() []byte {
 					})
 				})
 			}
+			if m.cachedInformationCert {
+				// RFC: https://tools.ietf.org/html/rfc6066
+				b.AddUint16(extensionCachedInfo)
+				b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
+					b.AddUint8(1) // CachedInformationType: cert
+					if m.cachedInformationCertReq {
+						b.AddUint8(2) // CachedInformationType: cert_req
+					}
+				})
+			}
 
 			extensionsPresent = len(b.BytesOrPanic()) > 2
 		})
@@ -923,6 +933,22 @@ func (m *serverHelloMsg) unmarshal(data []byte) bool {
 			if !readUint8LengthPrefixed(&extData, &m.supportedPoints) ||
 				len(m.supportedPoints) == 0 {
 				return false
+			}
+		case extensionCachedInfo:
+			// RFC 7924, Section 4
+			var cachedType uint8
+			if extData.ReadUint8(&cachedType) {
+				m.cachedInformationCert = true
+			} else {
+				return false
+			}
+
+			if !extData.Empty() {
+				if extData.ReadUint8(&cachedType) {
+					m.cachedInformationCertReq = true
+				} else {
+					return false
+				}
 			}
 		default:
 			// Ignore unknown extensions.

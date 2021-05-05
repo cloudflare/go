@@ -1542,3 +1542,25 @@ func TestKEMEphemeralTLS13(t *testing.T) {
 		}
 	}
 }
+
+func TestChachedInformationTLS13(t *testing.T) {
+	clientConfig := testConfig.Clone()
+	clientConfig.MinVersion = VersionTLS13
+	clientConfig.MaxVersion = VersionTLS13
+
+	serverConfig := testConfig.Clone()
+	serverConfig.ClientAuth = RequestClientCert
+
+	serverState, clientState, err := testHandshake(t, clientConfig, serverConfig)
+	if err != nil {
+		t.Fatal("Should have succedeed")
+	}
+
+	if len(serverState.CertificateMessage) < 0 || len(clientState.CertificateMessage) < 0 {
+		t.Fatal("Should have saved the Certificate Message")
+	}
+
+	if len(serverState.CertificateReqMessage) < 0 || len(clientState.CertificateReqMessage) < 0 {
+		t.Fatal("Should have saved the Certificate Request Message")
+	}
+}

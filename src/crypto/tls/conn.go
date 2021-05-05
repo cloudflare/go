@@ -1498,6 +1498,8 @@ func (c *Conn) connectionStateLocked() ConnectionState {
 	state.DidClientAuthentication = c.didClientAuthentication
 	state.DidKEMTLS = c.didKEMTLS
 	state.DidPQTLS = c.didPQTLS
+	state.CertificateMessage = c.certificateMessage
+	state.CertificateReqMessage = c.certificateReqMessage
 	state.SignedCertificateTimestamps = c.scts
 	state.OCSPResponse = c.ocspResponse
 	state.ECHAccepted = c.ech.accepted

@@ -850,6 +850,8 @@ func (hs *serverHandshakeStateTLS13) sendServerCertificate() error {
 		if _, err := c.writeRecord(recordTypeHandshake, certReq.marshal()); err != nil {
 			return err
 		}
+
+		c.certificateReqMessage = certReq.marshal()
 	}
 
 	certMsg := new(certificateMsgTLS13)
@@ -863,6 +865,7 @@ func (hs *serverHandshakeStateTLS13) sendServerCertificate() error {
 	if _, err := c.writeRecord(recordTypeHandshake, certMsg.marshal()); err != nil {
 		return err
 	}
+	c.certificateMessage = certMsg.marshal()
 
 	hs.handshakeTimings.WriteCertificate = hs.handshakeTimings.elapsedTime()
 
