@@ -89,6 +89,8 @@ type clientHelloMsg struct {
 	cachedInformationCertHash        []byte
 	cachedInformationCertReq         bool
 	cachedInformationCertReqHash     []byte
+	pdkKEMTLS                        bool
+	ciphertextKEMTLS                 []byte
 	alpnProtocols                    []string
 	scts                             bool
 	supportedVersions                []uint16
@@ -239,15 +241,19 @@ func (m *clientHelloMsg) marshal() []byte {
 				b.AddUint16(extensionCachedInfo)
 				b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
 					b.AddUint8(1) // CachedInformationType: cert
-					b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
-						b.AddBytes([]byte(m.cachedInformationCertHash))
-					})
+					addBytesWithLength(b, m.cachedInformationCertHash, 32)
 					if m.cachedInformationCertReq {
 						b.AddUint8(2) // CachedInformationType: cert_req
-						b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
-							b.AddBytes([]byte(m.cachedInformationCertReqHash))
-						})
+						addBytesWithLength(b, m.cachedInformationCertReqHash, 32)
 					}
+				})
+			}
+			if m.pdkKEMTLS {
+				b.AddUint16(extensionPDKKEMTLS)
+				b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
+					b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
+						b.AddBytes(m.ciphertextKEMTLS)
+					})
 				})
 			}
 			if len(m.alpnProtocols) > 0 {
@@ -603,7 +609,7 @@ func (m *clientHelloMsg) unmarshal(data []byte) bool {
 			// RFC 7924, Section 4
 			var cachedType uint8
 			if extData.ReadUint8(&cachedType) {
-				if readUint16LengthPrefixed(&extData, &m.cachedInformationCertHash) {
+				if extData.ReadBytes(&m.cachedInformationCertHash, 32) {
 					m.cachedInformationCert = true
 				}
 			} else {
@@ -612,13 +618,20 @@ func (m *clientHelloMsg) unmarshal(data []byte) bool {
 
 			if !extData.Empty() {
 				if extData.ReadUint8(&cachedType) {
-					if readUint16LengthPrefixed(&extData, &m.cachedInformationCertReqHash) {
+					if extData.ReadBytes(&m.cachedInformationCertReqHash, 32) {
 						m.cachedInformationCertReq = true
 					}
 				} else {
 					return false
 				}
 			}
+		case extensionPDKKEMTLS:
+			// RFC 8446, Section 4.2.2
+			if !readUint16LengthPrefixed(&extData, &m.ciphertextKEMTLS) ||
+				len(m.ciphertextKEMTLS) == 0 {
+				return false
+			}
+			m.pdkKEMTLS = true
 		case extensionKeyShare:
 			// RFC 8446, Section 4.2.8
 			var clientShares cryptobyte.String

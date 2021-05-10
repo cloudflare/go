@@ -35,6 +35,39 @@ type clientHandshakeState struct {
 	session      *ClientSessionState
 }
 
+// processCachedDelegatedCredentialFromServer unmarshals the cached DelegatedCredential
+// offered by the server (if present) and validates it using the peer's
+// certificate.
+func processCachedDelegatedCredentialFromServer(c *Conn, dcSupport bool, rawDC []byte, certVerifyMsg *certificateVerifyMsg) error {
+	var dc *DelegatedCredential
+	var err error
+	if rawDC != nil {
+		// Assert that support for the DC extension was indicated by the client.
+		if !dcSupport {
+			return errors.New("tls: got Delegated Credential extension without indication")
+		}
+
+		dc, err = unmarshalDelegatedCredential(rawDC)
+		if err != nil {
+			return fmt.Errorf("tls: Delegated Credential: %s", err)
+		}
+
+		if !isSupportedSignatureAlgorithm(dc.cred.expCertVerfAlgo, supportedSignatureAlgorithmsDC) {
+			return errors.New("tls: Delegated Credential used with invalid signature algorithm")
+		}
+	}
+
+	if dc != nil {
+		if !dc.Validate(c.peerCertificates[0], false, c.config.time(), certVerifyMsg) {
+			return errors.New("tls: invalid Delegated Credential")
+		}
+	}
+
+	c.verifiedDC = dc
+
+	return nil
+}
+
 // defines the private part to the handshake keyshares
 type clientKeySharePrivate interface{}
 
@@ -69,12 +102,57 @@ func (c *Conn) makeClientHello(minVersion uint16) (*clientHelloMsg, []clientKeyS
 		clientHelloVersion = VersionTLS12
 	}
 
-	var cachedCert, cachedCertReq bool
+	var cachedCert, cachedCertReq, pdkKEMTLS bool
+	var ciphertextKEMTLS []byte
 	var cachedCertHash, cachedCertReqHash []byte
 	if len(config.CachedCert) > 0 {
 		cachedCert = true
 		cachedCertHash = calculateHashCachedInfo(config.CachedCert)
+
+		if config.KEMTLSEnabled {
+			certMsg := new(certificateMsgTLS13)
+			data := append([]byte(nil), config.CachedCert...)
+
+			if !certMsg.unmarshal(data) {
+				return nil, nil, errors.New("tls: wrong cached certificates message")
+			}
+
+			if len(certMsg.certificate.Certificate) == 0 {
+				c.sendAlert(alertDecodeError)
+				return nil, nil, errors.New("tls: wrong cached certificates message")
+			}
+			// do we need to write this?
+			//hs.transcript.Write(certMsg.marshal())
+
+			c.scts = certMsg.certificate.SignedCertificateTimestamps
+			c.ocspResponse = certMsg.certificate.OCSPStaple
+
+			if err := c.verifyServerCertificate(certMsg.certificate.Certificate); err != nil {
+				return nil, nil, err
+			}
+
+			if isKEMTLSAuthUsed(c.peerCertificates[0], certMsg.certificate) {
+				if certMsg.delegatedCredential {
+					if err := processCachedDelegatedCredentialFromServer(c, config.SupportDelegatedCredential, certMsg.certificate.DelegatedCredential, nil); err != nil {
+						return nil, nil, err
+					}
+				}
+				pk, ok := c.verifiedDC.cred.publicKey.(*kem.PublicKey)
+				if !ok {
+					return nil, nil, errors.New("tls: invalid key")
+				}
+
+				ct, _, err := kem.Encapsulate(c.config.rand(), pk)
+				if err != nil {
+					return nil, nil, err
+				}
+
+				pdkKEMTLS = true
+				ciphertextKEMTLS = ct
+			}
+		}
 	}
+
 	if len(config.CachedCertReq) > 0 {
 		cachedCertReq = true
 		cachedCertReqHash = calculateHashCachedInfo(config.CachedCertReq)
@@ -97,6 +175,8 @@ func (c *Conn) makeClientHello(minVersion uint16) (*clientHelloMsg, []clientKeyS
 		cachedInformationCertHash:    cachedCertHash,
 		cachedInformationCertReq:     cachedCertReq,
 		cachedInformationCertReqHash: cachedCertReqHash,
+		pdkKEMTLS:                    pdkKEMTLS,
+		ciphertextKEMTLS:             ciphertextKEMTLS,
 	}
 
 	if c.handshakes > 0 {
@@ -155,7 +235,7 @@ func (c *Conn) makeClientHello(minVersion uint16) (*clientHelloMsg, []clientKeyS
 			}
 			keyShares = append(keyShares, keyShare{group: curveID, data: params.PublicKey()})
 			keySharePrivates = append(keySharePrivates, params)
-			// TODO: EXP
+			// TODO: add EXP name
 		} else if config.KEMTLSEnabled || config.PQTLSEnabled {
 			var haveECDHE, haveKEM bool
 

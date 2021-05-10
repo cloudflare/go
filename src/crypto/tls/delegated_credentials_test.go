@@ -523,7 +523,7 @@ func testClientGetCertificate(cr *CertificateRequestInfo) (*Certificate, error) 
 
 // Tests the handshake and one round of application data. Returns true if the
 // connection correctly used a Delegated Credential.
-func testConnWithDC(t *testing.T, clientMsg, serverMsg string, clientConfig, serverConfig *Config, peer string, kemtls bool, pqtls bool) (usedDC bool, usedKEMTLS bool, usedPQTLS bool, err error) {
+func testConnWithDC(t *testing.T, clientMsg, serverMsg string, clientConfig, serverConfig *Config, peer string, kemtls bool, pqtls bool) (usedDC bool, usedKEMTLS bool, usedPQTLS bool, serverState, clientState ConnectionState, err error) {
 	ln := newLocalListener(t)
 	defer ln.Close()
 
@@ -545,15 +545,16 @@ func testConnWithDC(t *testing.T, clientMsg, serverMsg string, clientConfig, ser
 		serverCh <- server
 	}()
 
+	var state ConnectionState
 	client, err := Dial("tcp", ln.Addr().String(), clientConfig)
 	if err != nil {
-		return false, false, false, err
+		return false, false, false, state, state, err
 	}
 	defer client.Close()
 
 	server := <-serverCh
 	if server == nil {
-		return false, false, false, serverErr
+		return false, false, false, state, state, serverErr
 	}
 
 	bufLen := len(clientMsg)
@@ -565,43 +566,43 @@ func testConnWithDC(t *testing.T, clientMsg, serverMsg string, clientConfig, ser
 	client.Write([]byte(clientMsg))
 	n, err := server.Read(buf)
 	if err != nil || n != len(clientMsg) || string(buf[:n]) != clientMsg {
-		return false, false, false, fmt.Errorf("Server read = %d, buf= %q; want %d, %s", n, buf, len(clientMsg), clientMsg)
+		return false, false, false, state, state, fmt.Errorf("Server read = %d, buf= %q; want %d, %s", n, buf, len(clientMsg), clientMsg)
 	}
 
 	server.Write([]byte(serverMsg))
 	n, err = client.Read(buf)
 	if n != len(serverMsg) || err != nil || string(buf[:n]) != serverMsg {
-		return false, false, false, fmt.Errorf("Client read = %d, %v, data %q; want %d, nil, %s", n, err, buf, len(serverMsg), serverMsg)
+		return false, false, false, state, state, fmt.Errorf("Client read = %d, %v, data %q; want %d, nil, %s", n, err, buf, len(serverMsg), serverMsg)
 	}
 
 	if kemtls {
 		if peer == "server" {
-			return (server.verifiedDC != nil), (server.didKEMTLS && client.didKEMTLS), false, nil
+			return (server.verifiedDC != nil), (server.didKEMTLS && client.didKEMTLS), false, server.ConnectionState(), client.ConnectionState(), nil
 		} else if peer == "client" {
-			return (client.verifiedDC != nil), (server.didKEMTLS && client.didKEMTLS), false, nil
+			return (client.verifiedDC != nil), (server.didKEMTLS && client.didKEMTLS), false, server.ConnectionState(), client.ConnectionState(), nil
 		} else if peer == "both" {
-			return (client.verifiedDC != nil && server.verifiedDC != nil), (server.didKEMTLS && client.didKEMTLS), false, nil
+			return (client.verifiedDC != nil && server.verifiedDC != nil), (server.didKEMTLS && client.didKEMTLS), false, server.ConnectionState(), client.ConnectionState(), nil
 		}
 	} else if pqtls {
 		if peer == "server" {
-			return (server.verifiedDC != nil), false, (server.didPQTLS && client.didPQTLS), nil
+			return (server.verifiedDC != nil), false, (server.didPQTLS && client.didPQTLS), state, state, nil
 		} else if peer == "client" {
-			return (client.verifiedDC != nil), false, (server.didPQTLS && client.didPQTLS), nil
+			return (client.verifiedDC != nil), false, (server.didPQTLS && client.didPQTLS), state, state, nil
 		} else if peer == "both" {
-			return (client.verifiedDC != nil && server.verifiedDC != nil), false, (server.didPQTLS && client.didPQTLS), nil
+			return (client.verifiedDC != nil && server.verifiedDC != nil), false, (server.didPQTLS && client.didPQTLS), state, state, nil
 		}
 
 	} else {
 		if peer == "server" {
-			return (server.verifiedDC != nil), false, false, nil
+			return (server.verifiedDC != nil), false, false, state, state, nil
 		} else if peer == "client" {
-			return (client.verifiedDC != nil), false, false, nil
+			return (client.verifiedDC != nil), false, false, state, state, nil
 		} else if peer == "both" {
-			return (client.verifiedDC != nil && server.verifiedDC != nil), false, false, nil
+			return (client.verifiedDC != nil && server.verifiedDC != nil), false, false, state, state, nil
 		}
 	}
 
-	return false, false, false, nil
+	return false, false, false, state, state, nil
 }
 
 // Test the server authentication with the Delegated Credential extension.
@@ -622,7 +623,7 @@ func TestDCHandshakeServerAuth(t *testing.T) {
 			clientConfig.MaxVersion = test.clientMaxVers
 			serverConfig.MaxVersion = test.serverMaxVers
 
-			usedDC, _, _, err := testConnWithDC(t, clientMsg, serverMsg, clientConfig, serverConfig, "client", false, false)
+			usedDC, _, _, _, _, err := testConnWithDC(t, clientMsg, serverMsg, clientConfig, serverConfig, "client", false, false)
 
 			if err != nil && test.expectSuccess {
 				t.Errorf("test #%d (%s) with signature algorithm #%d fails: %s", i, test.name, dcCount, err.Error())
@@ -656,7 +657,7 @@ func TestDCHandshakeClientAuth(t *testing.T) {
 			serverConfig.MaxVersion = test.serverMaxVers
 			clientConfig.MaxVersion = test.clientMaxVers
 
-			usedDC, _, _, err := testConnWithDC(t, clientMsg, serverMsg, clientConfig, serverConfig, "server", false, false)
+			usedDC, _, _, _, _, err := testConnWithDC(t, clientMsg, serverMsg, clientConfig, serverConfig, "server", false, false)
 
 			if err != nil && test.expectSuccess {
 				t.Errorf("test #%d (%s) with signature algorithm #%d fails: %s", j, test.name, dcCount, err.Error())
@@ -690,7 +691,7 @@ func TestDCHandshakeClientAndServerAuth(t *testing.T) {
 
 	initDCTest()
 
-	usedDC, _, _, err := testConnWithDC(t, clientMsg, serverMsg, clientConfig, serverConfig, "both", false, false)
+	usedDC, _, _, _, _, err := testConnWithDC(t, clientMsg, serverMsg, clientConfig, serverConfig, "both", false, false)
 
 	if err != nil {
 		t.Errorf("test server and client auth fails: %s", err.Error())
@@ -790,7 +791,7 @@ func TestDCKEMHandshakeServerAuth(t *testing.T) {
 			clientConfig.MaxVersion = test.clientMaxVers
 			serverConfig.MaxVersion = test.serverMaxVers
 
-			usedDC, usedKEMTLS, _, err := testConnWithDC(t, clientMsg, serverMsg, clientConfig, serverConfig, "client", true, false)
+			usedDC, usedKEMTLS, _, _, _, err := testConnWithDC(t, clientMsg, serverMsg, clientConfig, serverConfig, "client", true, false)
 
 			if err != nil && test.expectSuccess {
 				t.Errorf("test #%d (%s) with kem #%d fails: %s", i, test.name, dcCount, err.Error())
@@ -835,7 +836,7 @@ func TestDCKEMHandshakeClientAuth(t *testing.T) {
 			serverConfig.MaxVersion = test.serverMaxVers
 			clientConfig.MaxVersion = test.clientMaxVers
 
-			usedDC, usedKEMTLS, _, err := testConnWithDC(t, clientMsg, serverMsg, clientConfig, serverConfig, "server", true, false)
+			usedDC, usedKEMTLS, _, _, _, err := testConnWithDC(t, clientMsg, serverMsg, clientConfig, serverConfig, "server", true, false)
 
 			if err != nil && test.expectSuccess {
 				t.Errorf("test #%d (%s) with kem algorithm #%d fails: %s", i, test.name, dcCount, err.Error())
@@ -877,7 +878,7 @@ func TestDCKEMHandshakeClientAndServerAuth(t *testing.T) {
 
 	initDCTest()
 
-	usedDC, usedKEMTLS, _, err := testConnWithDC(t, clientMsg, serverMsg, clientConfig, serverConfig, "both", true, false)
+	usedDC, usedKEMTLS, _, _, _, err := testConnWithDC(t, clientMsg, serverMsg, clientConfig, serverConfig, "both", true, false)
 
 	if err != nil {
 		t.Errorf("test server and client auth with kems fails: %s", err.Error())
@@ -889,6 +890,55 @@ func TestDCKEMHandshakeClientAndServerAuth(t *testing.T) {
 
 	if !usedKEMTLS {
 		t.Errorf("test server and client auth with kems did not use kemtls")
+	}
+}
+
+// Test server and client authentication with the Delegated Credential extension with kems and cached information.
+func TestDCKEMCachedInfoHandshakeClientAndServerAuth(t *testing.T) {
+	clientMsg := "hello, server"
+	serverMsg := "hello, client"
+
+	serverConfig := dcTestConfig.Clone()
+	serverConfig.ClientAuth = RequestClientCert
+	serverConfig.GetCertificate = testServerGetKEMCertificate
+	clientConfig := dcTestConfig.Clone()
+	clientConfig.GetClientCertificate = testClientGetKEMCertificate
+	clientConfig.KEMTLSEnabled = true
+	serverConfig.KEMTLSEnabled = true
+	clientConfig.CurvePreferences = []CurveID{Kyber512}
+	serverConfig.CurvePreferences = []CurveID{Kyber512}
+
+	serverConfig.SupportDelegatedCredential = true
+	clientConfig.SupportDelegatedCredential = true
+
+	serverConfig.MaxVersion = VersionTLS13
+	clientConfig.MaxVersion = VersionTLS13
+
+	initDCTest()
+
+	usedDC, usedKEMTLS, _, serverState, clientState, err := testConnWithDC(t, clientMsg, serverMsg, clientConfig, serverConfig, "both", true, false)
+
+	if err != nil {
+		t.Errorf("test server and client auth with kems fails: %s", err.Error())
+	}
+
+	if usedDC != true {
+		t.Errorf("test server and client auth with kems does not succeed")
+	}
+
+	if !usedKEMTLS {
+		t.Errorf("test server and client auth with kems did not use kemtls")
+	}
+
+	serverConfig.CachedCert = serverState.CertificateMessage
+	serverConfig.CachedCertReq = serverState.CertificateReqMessage
+	clientConfig.CachedCert = clientState.CertificateMessage
+	clientConfig.CachedCertReq = clientState.CertificateReqMessage
+
+	usedDC, usedKEMTLS, _, _, _, err = testConnWithDC(t, clientMsg, serverMsg, clientConfig, serverConfig, "both", true, false)
+
+	if err != nil {
+		t.Errorf("test server and client auth with kems fails: %s", err.Error())
 	}
 }
 
@@ -981,7 +1031,7 @@ func TestDCPQHandshakeServerAuth(t *testing.T) {
 			clientConfig.MaxVersion = test.clientMaxVers
 			serverConfig.MaxVersion = test.serverMaxVers
 
-			usedDC, _, usedPQTLS, err := testConnWithDC(t, clientMsg, serverMsg, clientConfig, serverConfig, "client", false, true)
+			usedDC, _, usedPQTLS, _, _, err := testConnWithDC(t, clientMsg, serverMsg, clientConfig, serverConfig, "client", false, true)
 
 			if err != nil && test.expectSuccess {
 				t.Errorf("test #%d (%s) with pq #%d fails: %s", i, test.name, dcCount, err.Error())
@@ -1026,7 +1076,7 @@ func TestDCPQHandshakeClientAuth(t *testing.T) {
 			serverConfig.MaxVersion = test.serverMaxVers
 			clientConfig.MaxVersion = test.clientMaxVers
 
-			usedDC, _, usedPQTLS, err := testConnWithDC(t, clientMsg, serverMsg, clientConfig, serverConfig, "server", false, true)
+			usedDC, _, usedPQTLS, _, _, err := testConnWithDC(t, clientMsg, serverMsg, clientConfig, serverConfig, "server", false, true)
 
 			if err != nil && test.expectSuccess {
 				t.Errorf("test #%d (%s) with pq algorithm #%d fails: %s", i, test.name, dcCount, err.Error())
@@ -1068,7 +1118,7 @@ func TestDCPQHandshakeClientAndServerAuth(t *testing.T) {
 
 	initDCTest()
 
-	usedDC, _, usedPQTLS, err := testConnWithDC(t, clientMsg, serverMsg, clientConfig, serverConfig, "both", false, true)
+	usedDC, _, usedPQTLS, _, _, err := testConnWithDC(t, clientMsg, serverMsg, clientConfig, serverConfig, "both", false, true)
 
 	if err != nil {
 		t.Errorf("test server and client auth with pqs fails: %s", err.Error())

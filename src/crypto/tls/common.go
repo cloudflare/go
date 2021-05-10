@@ -108,6 +108,7 @@ const (
 	extensionECH                     uint16 = 0xfe0a // draft-ietf-tls-esni-10
 	extensionECHIsInner              uint16 = 0xda09 // draft-ietf-tls-esni-10
 	extensionECHOuterExtensions      uint16 = 0xfd00 // draft-ietf-tls-esni-10
+	extensionPDKKEMTLS               uint16 = 0xfd01 // arbitraly chosen
 )
 
 // TLS signaling cipher suite values
