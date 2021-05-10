@@ -181,14 +181,14 @@ func (hs *serverHandshakeStateTLS13) processClientHello() error {
 	}
 
 	if hs.clientHello.cachedInformationCert {
-		cachedCertHash := calculateHashCachedInfo(hs.clientHello.cachedInformationCertHash)
+		cachedCertHash := calculateHashCachedInfo(c.config.CachedCert)
 		if bytes.Equal(cachedCertHash, hs.clientHello.cachedInformationCertHash) {
 			hs.hello.cachedInformationCert = true
 		}
 	}
 
 	if hs.clientHello.cachedInformationCertReq {
-		cachedCertReqHash := calculateHashCachedInfo(hs.clientHello.cachedInformationCertReqHash)
+		cachedCertReqHash := calculateHashCachedInfo(c.config.CachedCertReq)
 		if bytes.Equal(cachedCertReqHash, hs.clientHello.cachedInformationCertReqHash) {
 			hs.hello.cachedInformationCertReq = true
 		}

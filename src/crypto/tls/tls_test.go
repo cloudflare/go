@@ -1563,4 +1563,14 @@ func TestChachedInformationTLS13(t *testing.T) {
 	if len(serverState.CertificateReqMessage) < 0 || len(clientState.CertificateReqMessage) < 0 {
 		t.Fatal("Should have saved the Certificate Request Message")
 	}
+
+	serverConfig.CachedCert = serverState.CertificateMessage
+	serverConfig.CachedCertReq = serverState.CertificateReqMessage
+	clientConfig.CachedCert = clientState.CertificateMessage
+	clientConfig.CachedCertReq = clientState.CertificateReqMessage
+
+	_, _, err = testHandshake(t, clientConfig, serverConfig)
+	if err != nil {
+		t.Fatal("Should have succedeed")
+	}
 }

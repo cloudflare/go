@@ -74,7 +74,8 @@ func (c *Conn) makeClientHello(minVersion uint16) (*clientHelloMsg, []clientKeyS
 	if len(config.CachedCert) > 0 {
 		cachedCert = true
 		cachedCertHash = calculateHashCachedInfo(config.CachedCert)
-	} else if len(config.CachedCertReq) > 0 {
+	}
+	if len(config.CachedCertReq) > 0 {
 		cachedCertReq = true
 		cachedCertReqHash = calculateHashCachedInfo(config.CachedCertReq)
 	}
