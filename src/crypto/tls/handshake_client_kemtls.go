@@ -43,6 +43,7 @@ func (hs *clientHandshakeStateTLS13) handshakeKEMTLS() error {
 		return err
 	}
 
+	hs.handshakeTimings.ExperimentName = experimentName(c)
 	c.handleCFEvent(hs.handshakeTimings)
 	atomic.StoreUint32(&c.handshakeStatus, 1)
 
