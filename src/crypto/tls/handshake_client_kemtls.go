@@ -53,44 +53,49 @@ func (hs *clientHandshakeStateTLS13) sendClientKEMCiphertext() error {
 	c := hs.c
 	var pk *kem.PublicKey
 	var ok bool
+	var ahs []byte
 
-	if c.verifiedDC != nil && c.verifiedDC.cred.expCertVerfAlgo.isKEMTLS() {
-		pk, ok = c.verifiedDC.cred.publicKey.(*kem.PublicKey)
-		if !ok {
-			c.sendAlert(alertInternalError)
-			return errors.New("tls: invalid key")
+	if !(hs.pdkKEMTLS && hs.keyKEMShare) {
+		if c.verifiedDC != nil && c.verifiedDC.cred.expCertVerfAlgo.isKEMTLS() {
+			pk, ok = c.verifiedDC.cred.publicKey.(*kem.PublicKey)
+			if !ok {
+				c.sendAlert(alertInternalError)
+				return errors.New("tls: invalid key")
+			}
+		} else {
+			pk, ok = c.peerCertificates[0].PublicKey.(*kem.PublicKey)
+			if !ok {
+				c.sendAlert(alertInternalError)
+				return errors.New("tls: invalid key")
+			}
 		}
+
+		ss, ct, err := kem.Encapsulate(hs.c.config.rand(), pk)
+		if err != nil {
+			return err
+		}
+
+		msg := clientKeyExchangeMsg{
+			ciphertext: ct,
+		}
+
+		_, err = c.writeRecord(recordTypeHandshake, msg.marshal())
+		if err != nil {
+			return err
+		}
+
+		_, err = hs.transcript.Write(msg.marshal())
+		if err != nil {
+			return err
+		}
+
+		hs.handshakeTimings.WriteKEMCiphertext = hs.handshakeTimings.elapsedTime()
+
+		// AHS <- HKDF.Extract(dHS, ss_s)
+		ahs = hs.suite.extract(ss, hs.suite.deriveSecret(hs.handshakeSecret, "derived", nil))
 	} else {
-		pk, ok = c.peerCertificates[0].PublicKey.(*kem.PublicKey)
-		if !ok {
-			c.sendAlert(alertInternalError)
-			return errors.New("tls: invalid key")
-		}
+		ahs = hs.suite.extract(hs.ssKEMTLS, hs.suite.deriveSecret(hs.handshakeSecret, "derived", nil))
 	}
-
-	ss, ct, err := kem.Encapsulate(hs.c.config.rand(), pk)
-	if err != nil {
-		return err
-	}
-
-	msg := clientKeyExchangeMsg{
-		ciphertext: ct,
-	}
-
-	_, err = c.writeRecord(recordTypeHandshake, msg.marshal())
-	if err != nil {
-		return err
-	}
-
-	_, err = hs.transcript.Write(msg.marshal())
-	if err != nil {
-		return err
-	}
-
-	hs.handshakeTimings.WriteKEMCiphertext = hs.handshakeTimings.elapsedTime()
-
-	// AHS <- HKDF.Extract(dHS, ss_s)
-	ahs := hs.suite.extract(ss, hs.suite.deriveSecret(hs.handshakeSecret, "derived", nil))
 
 	// CAHTS <- HKDF.Expand(AHS, "c ahs traffic", CH..CKC)
 	clientSecret := hs.suite.deriveSecret(ahs,
@@ -104,7 +109,7 @@ func (hs *clientHandshakeStateTLS13) sendClientKEMCiphertext() error {
 	// dAHS  <- HKDF.Expand(AHS, "derived", nil)
 	hs.handshakeSecret = hs.suite.deriveSecret(ahs, "derived", nil)
 
-	err = c.config.writeKeyLog(keyLogLabelClientKEMAuthenticatedHandshake, hs.hello.random, clientSecret)
+	err := c.config.writeKeyLog(keyLogLabelClientKEMAuthenticatedHandshake, hs.hello.random, clientSecret)
 	if err != nil {
 		c.sendAlert(alertInternalError)
 		return err

@@ -894,12 +894,11 @@ func TestDCKEMHandshakeClientAndServerAuth(t *testing.T) {
 }
 
 // Test server and client authentication with the Delegated Credential extension with kems and cached information.
-func TestDCKEMCachedInfoHandshakeClientAndServerAuth(t *testing.T) {
+func TestDCKEMCachedInfoHandshakeServerAuth(t *testing.T) {
 	clientMsg := "hello, server"
 	serverMsg := "hello, client"
 
 	serverConfig := dcTestConfig.Clone()
-	serverConfig.ClientAuth = RequestClientCert
 	serverConfig.GetCertificate = testServerGetKEMCertificate
 	clientConfig := dcTestConfig.Clone()
 	clientConfig.GetClientCertificate = testClientGetKEMCertificate
@@ -916,7 +915,7 @@ func TestDCKEMCachedInfoHandshakeClientAndServerAuth(t *testing.T) {
 
 	initDCTest()
 
-	usedDC, usedKEMTLS, _, serverState, clientState, err := testConnWithDC(t, clientMsg, serverMsg, clientConfig, serverConfig, "both", true, false)
+	usedDC, usedKEMTLS, _, serverState, clientState, err := testConnWithDC(t, clientMsg, serverMsg, clientConfig, serverConfig, "client", true, false)
 
 	if err != nil {
 		t.Errorf("test server and client auth with kems fails: %s", err.Error())

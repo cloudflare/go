@@ -36,6 +36,8 @@ type clientHandshakeStateTLS13 struct {
 
 	keyKEMShare        bool
 	isKEMTLS           bool
+	pdkKEMTLS          bool
+	ssKEMTLS           []byte
 	isClientAuthKEMTLS bool
 	certKEMTLS         *Certificate // only for KEMTLS
 
@@ -435,6 +437,10 @@ func (hs *clientHandshakeStateTLS13) processServerHello() error {
 		return errors.New("tls: server did not send a key share")
 	}
 
+	if hs.serverHello.pdkKEMTLS && !hs.hello.pdkKEMTLS {
+		return errors.New("tls: server using pre-shared KEMTLS and client not")
+	}
+
 	var found bool
 	for _, keyShare := range hs.keyShare {
 		if ecdheParams, ok := keyShare.(ecdheParameters); ok {
@@ -652,6 +658,11 @@ func isPQTLSAuthUsed(peerCertificate *x509.Certificate, cert Certificate) bool {
 
 func (hs *clientHandshakeStateTLS13) readServerCertificate() error {
 	c := hs.c
+
+	if hs.pdkKEMTLS && hs.keyKEMShare {
+		hs.isKEMTLS = true
+		return nil
+	}
 
 	// Either a PSK or a certificate is always used, but not both.
 	// See RFC 8446, Section 4.1.1.

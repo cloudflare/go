@@ -718,6 +718,7 @@ type serverHelloMsg struct {
 	supportedPoints              []uint8
 	cachedInformationCert        bool
 	cachedInformationCertReq     bool
+	pdkKEMTLS                    bool
 
 	// HelloRetryRequest extensions
 	cookie        []byte
@@ -836,6 +837,10 @@ func (m *serverHelloMsg) marshal() []byte {
 						b.AddUint8(2) // CachedInformationType: cert_req
 					}
 				})
+			}
+			if m.pdkKEMTLS {
+				b.AddUint16(extensionPDKKEMTLS)
+				b.AddUint16(0) // empty extension_data
 			}
 
 			extensionsPresent = len(b.BytesOrPanic()) > 2
@@ -963,6 +968,8 @@ func (m *serverHelloMsg) unmarshal(data []byte) bool {
 					return false
 				}
 			}
+		case extensionPDKKEMTLS:
+			m.pdkKEMTLS = true
 		default:
 			// Ignore unknown extensions.
 			continue

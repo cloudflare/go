@@ -42,39 +42,46 @@ func (hs *serverHandshakeStateTLS13) handshakeKEMTLS() error {
 func (hs *serverHandshakeStateTLS13) readClientKEMCiphertext() error {
 	c := hs.c
 
-	var sk *kem.PrivateKey
-	var ok, ok1 bool
-	sk, ok = hs.cert.PrivateKey.(*kem.PrivateKey)
-	if !ok {
-		sk, ok1 = hs.cert.DelegatedCredentialPrivateKey.(*kem.PrivateKey)
-		if !ok1 {
-			c.sendAlert(alertInternalError)
-			return errors.New("crypto/tls: private key unexpectedly of wrong type")
+	var ahs []byte
+
+	if !(hs.pdkKEMTLS && hs.keyKEMShare) {
+		var sk *kem.PrivateKey
+		var ok, ok1 bool
+		sk, ok = hs.cert.PrivateKey.(*kem.PrivateKey)
+		if !ok {
+			sk, ok1 = hs.cert.DelegatedCredentialPrivateKey.(*kem.PrivateKey)
+			if !ok1 {
+				c.sendAlert(alertInternalError)
+				return errors.New("crypto/tls: private key unexpectedly of wrong type")
+			}
 		}
+
+		msg, err := c.readHandshake()
+		if err != nil {
+			return err
+		}
+
+		kexMsg, ok := msg.(*clientKeyExchangeMsg)
+		if !ok {
+			c.sendAlert(alertUnexpectedMessage)
+			return unexpectedMessageError(kexMsg, msg)
+		}
+
+		hs.transcript.Write(kexMsg.marshal())
+		hs.handshakeTimings.ReadKEMCiphertext = hs.handshakeTimings.elapsedTime()
+
+		ss, err := kem.Decapsulate(sk, kexMsg.ciphertext)
+		if err != nil {
+			return err
+		}
+
+		// derive AHS
+		// AHS <- HKDF.Extract(dHS, ss_s)
+		ahs = hs.suite.extract(ss, hs.suite.deriveSecret(hs.handshakeSecret, "derived", nil))
+	} else {
+		ahs = hs.suite.extract(hs.ssKEMTLS, hs.suite.deriveSecret(hs.handshakeSecret, "derived", nil))
 	}
 
-	msg, err := c.readHandshake()
-	if err != nil {
-		return err
-	}
-
-	kexMsg, ok := msg.(*clientKeyExchangeMsg)
-	if !ok {
-		c.sendAlert(alertUnexpectedMessage)
-		return unexpectedMessageError(kexMsg, msg)
-	}
-
-	hs.transcript.Write(kexMsg.marshal())
-	hs.handshakeTimings.ReadKEMCiphertext = hs.handshakeTimings.elapsedTime()
-
-	ss, err := kem.Decapsulate(sk, kexMsg.ciphertext)
-	if err != nil {
-		return err
-	}
-
-	// derive AHS
-	// AHS <- HKDF.Extract(dHS, ss_s)
-	ahs := hs.suite.extract(ss, hs.suite.deriveSecret(hs.handshakeSecret, "derived", nil))
 	// CAHTS <- HKDF.Expand(AHS, "c ahs traffic", CH..CKC)
 	clientSecret := hs.suite.deriveSecret(ahs,
 		clientAuthenticatedHandshakeTrafficLabel, hs.transcript)
@@ -87,7 +94,7 @@ func (hs *serverHandshakeStateTLS13) readClientKEMCiphertext() error {
 	// dAHS  <- HKDF.Expand(AHS, "derived", nil)
 	hs.handshakeSecret = hs.suite.deriveSecret(ahs, "derived", nil)
 
-	err = c.config.writeKeyLog(keyLogLabelClientKEMAuthenticatedHandshake, hs.clientHello.random, clientSecret)
+	err := c.config.writeKeyLog(keyLogLabelClientKEMAuthenticatedHandshake, hs.clientHello.random, clientSecret)
 	if err != nil {
 		c.sendAlert(alertInternalError)
 		return err

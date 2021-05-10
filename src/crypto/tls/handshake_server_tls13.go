@@ -32,6 +32,8 @@ type serverHandshakeStateTLS13 struct {
 
 	keyKEMShare        bool
 	isKEMTLS           bool
+	pdkKEMTLS          bool
+	ssKEMTLS           []byte
 	isClientAuthKEMTLS bool
 
 	suite           *cipherSuiteTLS13
@@ -183,7 +185,89 @@ func (hs *serverHandshakeStateTLS13) processClientHello() error {
 	if hs.clientHello.cachedInformationCert {
 		cachedCertHash := calculateHashCachedInfo(c.config.CachedCert)
 		if bytes.Equal(cachedCertHash, hs.clientHello.cachedInformationCertHash) {
-			hs.hello.cachedInformationCert = true
+			if c.config.KEMTLSEnabled {
+				// signature_algorithms is required in TLS 1.3. See RFC 8446, Section 4.2.3.
+				if len(hs.clientHello.supportedSignatureAlgorithms) == 0 {
+					return c.sendAlert(alertMissingExtension)
+				}
+
+				certificate, err := c.config.getCertificate(clientHelloInfo(c, hs.clientHello))
+				if err != nil {
+					if err == errNoCertificates {
+						c.sendAlert(alertUnrecognizedName)
+					} else {
+						c.sendAlert(alertInternalError)
+					}
+					return err
+				}
+
+				hs.sigAlg, err = selectSignatureScheme(c.vers, certificate, hs.clientHello.supportedSignatureAlgorithms)
+				if err != nil {
+					// getCertificate returned a certificate that is unsupported or
+					// incompatible with the client's signature algorithms.
+					c.sendAlert(alertHandshakeFailure)
+					return err
+				}
+
+				hs.cert = certificate
+
+				if hs.clientHello.delegatedCredentialSupported && len(hs.clientHello.supportedSignatureAlgorithmsDC) > 0 {
+					delegatedCredentialPair, err := getDelegatedCredential(clientHelloInfo(c, hs.clientHello), hs.cert)
+					if err != nil {
+						// a Delegated Credential was not found. Fallback to the certificate.
+						return nil
+					}
+
+					if delegatedCredentialPair.DC != nil && delegatedCredentialPair.PrivateKey != nil {
+						// Even if the Delegated Credential has already been marshalled, be sure it is the correct one.
+						delegatedCredentialPair.DC.raw, err = delegatedCredentialPair.DC.marshal()
+						if err != nil {
+							// invalid Delegated Credential. Fallback to the certificate.
+							return nil
+						}
+
+						hs.sigAlg, err = selectSignatureSchemeDC(c.vers, delegatedCredentialPair.DC, hs.clientHello.supportedSignatureAlgorithmsDC)
+						if err != nil {
+							// the Delegated Credential is unsupported or
+							// incompatible with the client's signature algorithms.
+							// Fallback to the certificate.
+							return nil
+						}
+
+						hs.cert.DelegatedCredentialPrivateKey = delegatedCredentialPair.PrivateKey
+						hs.cert.DelegatedCredential = delegatedCredentialPair.DC.raw
+
+						certMsg := new(certificateMsgTLS13)
+
+						certMsg.certificate = *hs.cert
+						certMsg.scts = hs.clientHello.scts && len(hs.cert.SignedCertificateTimestamps) > 0
+						certMsg.ocspStapling = hs.clientHello.ocspStapling && len(hs.cert.OCSPStaple) > 0
+						certMsg.delegatedCredential = hs.clientHello.delegatedCredentialSupported && len(hs.cert.DelegatedCredential) > 0
+
+						certMsgRaw := certMsg.marshal()
+
+						if bytes.Equal(certMsgRaw, c.config.CachedCert) {
+							hs.hello.cachedInformationCert = true
+						}
+
+						if delegatedCredentialPair.DC.cred.expCertVerfAlgo.isKEMTLS() {
+							sk, ok1 := hs.cert.DelegatedCredentialPrivateKey.(*kem.PrivateKey)
+							if !ok1 {
+								c.sendAlert(alertInternalError)
+								return errors.New("crypto/tls: private key unexpectedly of wrong type")
+							}
+
+							ss, err := kem.Decapsulate(sk, hs.clientHello.ciphertextKEMTLS)
+							if err != nil {
+								return err
+							}
+							hs.pdkKEMTLS = true
+							hs.ssKEMTLS = ss
+							hs.hello.pdkKEMTLS = true
+						}
+					}
+				}
+			}
 		}
 	}
 
@@ -524,6 +608,10 @@ func (hs *serverHandshakeStateTLS13) pickCertificate() error {
 		return nil
 	}
 
+	if hs.pdkKEMTLS && hs.keyKEMShare {
+		return nil
+	}
+
 	// signature_algorithms is required in TLS 1.3. See RFC 8446, Section 4.2.3.
 	if len(hs.clientHello.supportedSignatureAlgorithms) == 0 {
 		return c.sendAlert(alertMissingExtension)
@@ -830,6 +918,11 @@ func (hs *serverHandshakeStateTLS13) sendServerCertificate() error {
 
 	// Only one of PSK and certificates are used at a time.
 	if hs.usingPSK {
+		return nil
+	}
+
+	if hs.pdkKEMTLS && hs.keyKEMShare {
+		hs.isKEMTLS = true
 		return nil
 	}
 

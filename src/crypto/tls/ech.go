@@ -125,7 +125,7 @@ func (c *Conn) echOfferOrGrease(helloBase *clientHelloMsg) (hello, helloInner *c
 	// copying "key_share", "random", and "sesion_id" from helloBase, setting
 	// "server_name" to be the client-facing server, and adding the
 	// "encrypted_client_hello" extension.
-	hello, _, err = c.makeClientHello(config.MinVersion)
+	hello, _, _, err = c.makeClientHello(config.MinVersion)
 	if err != nil {
 		return nil, nil, fmt.Errorf("tls: ech: %s", err)
 	}
