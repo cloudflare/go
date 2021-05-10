@@ -1779,7 +1779,7 @@ func isIA5String(s string) error {
 }
 
 func buildCertExtensions(template *Certificate, subjectIsEmpty bool, authorityKeyId []byte, subjectKeyId []byte) (ret []pkix.Extension, err error) {
-	ret = make([]pkix.Extension, 10 /* maximum number of elements. */)
+	ret = make([]pkix.Extension, 11 /* maximum number of elements. */)
 	n := 0
 
 	if template.KeyUsage != 0 &&

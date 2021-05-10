@@ -87,6 +87,18 @@ func (hs *serverHandshakeStateTLS13) readClientKEMCiphertext() error {
 	// dAHS  <- HKDF.Expand(AHS, "derived", nil)
 	hs.handshakeSecret = hs.suite.deriveSecret(ahs, "derived", nil)
 
+	err = c.config.writeKeyLog(keyLogLabelClientKEMAuthenticatedHandshake, hs.clientHello.random, clientSecret)
+	if err != nil {
+		c.sendAlert(alertInternalError)
+		return err
+	}
+
+	err = c.config.writeKeyLog(keyLogLabelServerKEMAuthenticatedHandshake, hs.clientHello.random, serverSecret)
+	if err != nil {
+		c.sendAlert(alertInternalError)
+		return err
+	}
+
 	return nil
 }
 
@@ -252,7 +264,7 @@ func (hs *serverHandshakeStateTLS13) readKEMTLSClientFinished() error {
 	clientSecret := hs.suite.deriveSecret(hs.masterSecret, clientApplicationTrafficLabel, hs.transcript)
 	c.in.setTrafficSecret(hs.suite, clientSecret)
 
-	err = c.config.writeKeyLog(keyLogLabelClientTraffic, hs.hello.random, clientSecret)
+	err = c.config.writeKeyLog(keyLogLabelClientTraffic, hs.clientHello.random, clientSecret)
 	if err != nil {
 		c.sendAlert(alertInternalError)
 		return err
@@ -277,13 +289,13 @@ func (hs *serverHandshakeStateTLS13) writeKEMTLSServerFinished() error {
 
 	hs.handshakeTimings.WriteServerFinished = hs.handshakeTimings.elapsedTime()
 
-	// TS <- HKDF.Expand(MS, "s ap traffic", CH..SF)
+	// SATS <- HKDF.Expand(MS, "s ap traffic", CH..SF)
 	hs.trafficSecret = hs.suite.deriveSecret(hs.masterSecret,
 		serverApplicationTrafficLabel, hs.transcript)
 
 	c.out.setTrafficSecret(hs.suite, hs.trafficSecret)
 
-	err := c.config.writeKeyLog(keyLogLabelServerTraffic, hs.hello.random, hs.trafficSecret)
+	err := c.config.writeKeyLog(keyLogLabelServerTraffic, hs.clientHello.random, hs.trafficSecret)
 	if err != nil {
 		c.sendAlert(alertInternalError)
 		return err
