@@ -934,10 +934,18 @@ func TestDCKEMCachedInfoHandshakeServerAuth(t *testing.T) {
 	clientConfig.CachedCert = clientState.CertificateMessage
 	clientConfig.CachedCertReq = clientState.CertificateReqMessage
 
-	usedDC, usedKEMTLS, _, _, _, err = testConnWithDC(t, clientMsg, serverMsg, clientConfig, serverConfig, "both", true, false)
+	usedDC, usedKEMTLS, _, _, _, err = testConnWithDC(t, clientMsg, serverMsg, clientConfig, serverConfig, "client", true, false)
 
 	if err != nil {
 		t.Errorf("test server and client auth with kems fails: %s", err.Error())
+	}
+
+	if usedDC != true {
+		t.Errorf("test server and client auth with kems does not succeed")
+	}
+
+	if !usedKEMTLS {
+		t.Errorf("test server and client auth with kems did not use kemtls")
 	}
 }
 
