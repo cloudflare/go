@@ -187,72 +187,70 @@ func (hs *serverHandshakeStateTLS13) processClientHello() error {
 	}
 
 	if hs.clientHello.cachedInformationCert {
-		cachedCertHash := calculateHashCachedInfo(c.config.CachedCert)
-		if bytes.Equal(cachedCertHash, hs.clientHello.cachedInformationCertHash) {
-			if c.config.KEMTLSEnabled {
-				// signature_algorithms is required in TLS 1.3. See RFC 8446, Section 4.2.3.
-				if len(hs.clientHello.supportedSignatureAlgorithms) == 0 {
-					return c.sendAlert(alertMissingExtension)
-				}
+		if c.config.KEMTLSEnabled {
+			// signature_algorithms is required in TLS 1.3. See RFC 8446, Section 4.2.3.
+			if len(hs.clientHello.supportedSignatureAlgorithms) == 0 {
+				return c.sendAlert(alertMissingExtension)
+			}
 
-				certificate, err := c.config.getCertificate(clientHelloInfo(c, hs.clientHello))
+			certificate, err := c.config.getCertificate(clientHelloInfo(c, hs.clientHello))
+			if err != nil {
+				if err == errNoCertificates {
+					c.sendAlert(alertUnrecognizedName)
+				} else {
+					c.sendAlert(alertInternalError)
+				}
+				return err
+			}
+
+			hs.sigAlg, err = selectSignatureScheme(c.vers, certificate, hs.clientHello.supportedSignatureAlgorithms)
+			if err != nil {
+				// getCertificate returned a certificate that is unsupported or
+				// incompatible with the client's signature algorithms.
+				c.sendAlert(alertHandshakeFailure)
+				return err
+			}
+
+			hs.cert = certificate
+
+			if hs.clientHello.delegatedCredentialSupported && len(hs.clientHello.supportedSignatureAlgorithmsDC) > 0 {
+				delegatedCredentialPair, err := getDelegatedCredential(clientHelloInfo(c, hs.clientHello), hs.cert)
 				if err != nil {
-					if err == errNoCertificates {
-						c.sendAlert(alertUnrecognizedName)
-					} else {
-						c.sendAlert(alertInternalError)
-					}
-					return err
+					// a Delegated Credential was not found. Fallback to the certificate.
+					return nil
 				}
 
-				hs.sigAlg, err = selectSignatureScheme(c.vers, certificate, hs.clientHello.supportedSignatureAlgorithms)
-				if err != nil {
-					// getCertificate returned a certificate that is unsupported or
-					// incompatible with the client's signature algorithms.
-					c.sendAlert(alertHandshakeFailure)
-					return err
-				}
-
-				hs.cert = certificate
-
-				if hs.clientHello.delegatedCredentialSupported && len(hs.clientHello.supportedSignatureAlgorithmsDC) > 0 {
-					delegatedCredentialPair, err := getDelegatedCredential(clientHelloInfo(c, hs.clientHello), hs.cert)
+				if delegatedCredentialPair.DC != nil && delegatedCredentialPair.PrivateKey != nil {
+					// Even if the Delegated Credential has already been marshalled, be sure it is the correct one.
+					delegatedCredentialPair.DC.raw, err = delegatedCredentialPair.DC.marshal()
 					if err != nil {
-						// a Delegated Credential was not found. Fallback to the certificate.
+						// invalid Delegated Credential. Fallback to the certificate.
 						return nil
 					}
 
-					if delegatedCredentialPair.DC != nil && delegatedCredentialPair.PrivateKey != nil {
-						// Even if the Delegated Credential has already been marshalled, be sure it is the correct one.
-						delegatedCredentialPair.DC.raw, err = delegatedCredentialPair.DC.marshal()
-						if err != nil {
-							// invalid Delegated Credential. Fallback to the certificate.
-							return nil
-						}
+					hs.sigAlg, err = selectSignatureSchemeDC(c.vers, delegatedCredentialPair.DC, hs.clientHello.supportedSignatureAlgorithmsDC)
+					if err != nil {
+						// the Delegated Credential is unsupported or
+						// incompatible with the client's signature algorithms.
+						// Fallback to the certificate.
+						return nil
+					}
 
-						hs.sigAlg, err = selectSignatureSchemeDC(c.vers, delegatedCredentialPair.DC, hs.clientHello.supportedSignatureAlgorithmsDC)
-						if err != nil {
-							// the Delegated Credential is unsupported or
-							// incompatible with the client's signature algorithms.
-							// Fallback to the certificate.
-							return nil
-						}
+					hs.cert.DelegatedCredentialPrivateKey = delegatedCredentialPair.PrivateKey
+					hs.cert.DelegatedCredential = delegatedCredentialPair.DC.raw
 
-						hs.cert.DelegatedCredentialPrivateKey = delegatedCredentialPair.PrivateKey
-						hs.cert.DelegatedCredential = delegatedCredentialPair.DC.raw
+					certMsg := new(certificateMsgTLS13)
 
-						certMsg := new(certificateMsgTLS13)
+					certMsg.certificate = *hs.cert
+					certMsg.scts = hs.clientHello.scts && len(hs.cert.SignedCertificateTimestamps) > 0
+					certMsg.ocspStapling = hs.clientHello.ocspStapling && len(hs.cert.OCSPStaple) > 0
+					certMsg.delegatedCredential = hs.clientHello.delegatedCredentialSupported && len(hs.cert.DelegatedCredential) > 0
 
-						certMsg.certificate = *hs.cert
-						certMsg.scts = hs.clientHello.scts && len(hs.cert.SignedCertificateTimestamps) > 0
-						certMsg.ocspStapling = hs.clientHello.ocspStapling && len(hs.cert.OCSPStaple) > 0
-						certMsg.delegatedCredential = hs.clientHello.delegatedCredentialSupported && len(hs.cert.DelegatedCredential) > 0
-
-						certMsgRaw := certMsg.marshal()
-
-						if bytes.Equal(certMsgRaw, c.config.CachedCert) {
-							hs.hello.cachedInformationCert = true
-						}
+					certMsgRaw := certMsg.marshal()
+					cachedCertHash := calculateHashCachedInfo(certMsgRaw)
+					if bytes.Equal(cachedCertHash, hs.clientHello.cachedInformationCertHash) {
+						fmt.Println("\n GETTING HERE?")
+						hs.hello.cachedInformationCert = true
 
 						if delegatedCredentialPair.DC.cred.expCertVerfAlgo.isKEMTLS() {
 							sk, ok1 := hs.cert.DelegatedCredentialPrivateKey.(*kem.PrivateKey)
