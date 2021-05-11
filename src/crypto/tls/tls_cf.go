@@ -67,6 +67,31 @@ type CFEvent interface {
 	Name() string
 }
 
+func experimentName(c *Conn) string {
+	// Reports the experiment number
+	exp := "exp"
+	alg := ""
+	switch true {
+	case c.didKEMTLS:
+		exp += "3"
+		alg += c.verifiedDC.algorithm.String()
+		break
+	case c.didPQTLS:
+		exp += "2"
+		alg += c.verifiedDC.algorithm.String()
+		break
+	case c.verifiedDC != nil:
+		exp += "1"
+		alg += c.verifiedDC.algorithm.String()
+		break
+	case c.verifiedDC == nil:
+		exp += "0"
+		alg = CipherSuiteName(c.cipherSuite)
+		break
+	}
+	return exp + "_" + alg
+}
+
 // CFEventTLS13ClientHandshakeTimingInfo carries intra-stack time durations for
 // TLS 1.3 client-state machine changes. It can be used for tracking metrics
 // during a connection. Some durations may be sensitive, such as the amount of
@@ -88,6 +113,8 @@ type CFEventTLS13ClientHandshakeTimingInfo struct {
 
 	WriteKEMCiphertext time.Duration
 	ReadKEMCiphertext  time.Duration
+
+	ExperimentName string
 }
 
 // Name is required by the CFEvent interface.
@@ -135,6 +162,8 @@ type CFEventTLS13ServerHandshakeTimingInfo struct {
 
 	ReadKEMCiphertext  time.Duration
 	WriteKEMCiphertext time.Duration
+
+	ExperimentName string
 }
 
 // Name is required by the CFEvent interface.

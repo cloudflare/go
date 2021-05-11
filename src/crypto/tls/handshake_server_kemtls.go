@@ -35,6 +35,7 @@ func (hs *serverHandshakeStateTLS13) handshakeKEMTLS() error {
 		return err
 	}
 
+	hs.handshakeTimings.ExperimentName = experimentName(c)
 	c.handleCFEvent(hs.handshakeTimings)
 	fmt.Printf("\n %v kemtls did kemtls? \n", c.didKEMTLS)
 	fmt.Printf("\n %v kemtls server time \n", c.config.time())
