@@ -915,7 +915,7 @@ func TestDCKEMCachedInfoHandshakeServerAuth(t *testing.T) {
 
 	initDCTest()
 
-	usedDC, usedKEMTLS, _, serverState, clientState, err := testConnWithDC(t, clientMsg, serverMsg, clientConfig, serverConfig, "client", true, false)
+	usedDC, usedKEMTLS, _, _, clientState, err := testConnWithDC(t, clientMsg, serverMsg, clientConfig, serverConfig, "client", true, false)
 
 	if err != nil {
 		t.Errorf("test server and client auth with kems fails: %s", err.Error())
@@ -929,8 +929,6 @@ func TestDCKEMCachedInfoHandshakeServerAuth(t *testing.T) {
 		t.Errorf("test server and client auth with kems did not use kemtls")
 	}
 
-	serverConfig.CachedCert = serverState.CertificateMessage
-	serverConfig.CachedCertReq = serverState.CertificateReqMessage
 	clientConfig.CachedCert = clientState.CertificateMessage
 	clientConfig.CachedCertReq = clientState.CertificateReqMessage
 

@@ -254,6 +254,7 @@ func (hs *serverHandshakeStateTLS13) readKEMTLSClientFinished() error {
 		return unexpectedMessageError(finished, msg)
 	}
 
+	fmt.Printf("\n OVER THE RAIN 8 %v \n", finished)
 	hs.handshakeTimings.ReadClientFinished = hs.handshakeTimings.elapsedTime()
 
 	if !hs.isClientAuthKEMTLS {
@@ -293,6 +294,7 @@ func (hs *serverHandshakeStateTLS13) writeKEMTLSServerFinished() error {
 		verifyData: hs.suite.finishedHashKEMTLS(hs.masterSecret, "s", hs.transcript),
 	}
 
+	fmt.Printf("\n OVER THE RAIN 9 %v \n", finished.marshal())
 	if _, err := hs.transcript.Write(finished.marshal()); err != nil {
 		return err
 	}
