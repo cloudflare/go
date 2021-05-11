@@ -4,11 +4,13 @@ import (
 	"crypto/hmac"
 	"crypto/kem"
 	"errors"
+	"fmt"
 	"sync/atomic"
 )
 
 func (hs *serverHandshakeStateTLS13) handshakeKEMTLS() error {
 	c := hs.c
+	fmt.Println("\n Testing here")
 
 	if err := hs.readClientKEMCiphertext(); err != nil {
 		return err
@@ -34,6 +36,7 @@ func (hs *serverHandshakeStateTLS13) handshakeKEMTLS() error {
 	}
 
 	c.handleCFEvent(hs.handshakeTimings)
+	fmt.Printf("\n timings %v \n", hs.handshakeTimings)
 	atomic.StoreUint32(&c.handshakeStatus, 1)
 
 	return nil
