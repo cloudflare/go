@@ -36,7 +36,9 @@ func (hs *serverHandshakeStateTLS13) handshakeKEMTLS() error {
 	}
 
 	c.handleCFEvent(hs.handshakeTimings)
-	fmt.Printf("\n timings %v \n", hs.handshakeTimings)
+	fmt.Printf("\n %v kemtls did kemtls? \n", c.didKEMTLS)
+	fmt.Printf("\n %v kemtls server time \n", c.config.time())
+	fmt.Printf("\n kemtls server timings %v \n", hs.handshakeTimings)
 	atomic.StoreUint32(&c.handshakeStatus, 1)
 
 	return nil
