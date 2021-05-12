@@ -14,33 +14,45 @@ import (
 func (hs *clientHandshakeStateTLS13) handshakeKEMTLS() error {
 	c := hs.c
 
-	if err := hs.sendClientKEMCiphertext(); err != nil {
-		return err
-	}
+	if hs.pdkKEMTLS {
+		if err := hs.processKEMTLSServerFinished(); err != nil {
+			return err
+		}
+		if err := hs.sendKEMTLSClientFinished(); err != nil {
+			return err
+		}
 
-	// Send the KEMTLS client certificate if asked for
-	if err := hs.sendKEMClientCertificate(); err != nil {
-		return err
-	}
+		if _, err := c.flush(); err != nil {
+			return err
+		}
+	} else {
+		if err := hs.sendClientKEMCiphertext(); err != nil {
+			return err
+		}
 
-	if _, err := c.flush(); err != nil {
-		return err
-	}
+		// Send the KEMTLS client certificate if asked for
+		if err := hs.sendKEMClientCertificate(); err != nil {
+			return err
+		}
 
-	if err := hs.readServerKEMCiphertext(); err != nil {
-		return err
-	}
+		if _, err := c.flush(); err != nil {
+			return err
+		}
 
-	if err := hs.sendKEMTLSClientFinished(); err != nil {
-		return err
-	}
+		if err := hs.readServerKEMCiphertext(); err != nil {
+			return err
+		}
 
-	if _, err := c.flush(); err != nil {
-		return err
-	}
+		if err := hs.sendKEMTLSClientFinished(); err != nil {
+			return err
+		}
 
-	if err := hs.processKEMTLSServerFinished(); err != nil {
-		return err
+		if _, err := c.flush(); err != nil {
+			return err
+		}
+		if err := hs.processKEMTLSServerFinished(); err != nil {
+			return err
+		}
 	}
 
 	//hs.handshakeTimings.ExperimentName = experimentName(c)

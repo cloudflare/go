@@ -10,27 +10,39 @@ import (
 func (hs *serverHandshakeStateTLS13) handshakeKEMTLS() error {
 	c := hs.c
 
-	if err := hs.readClientKEMCiphertext(); err != nil {
-		return err
-	}
-	if err := hs.readClientKEMCertificate(); err != nil {
-		return err
-	}
-	if err := hs.sendServerKEMCiphertext(); err != nil {
-		return err
-	}
-	if _, err := c.flush(); err != nil {
-		return err
-	}
-	if err := hs.readKEMTLSClientFinished(); err != nil {
-		return err
-	}
+	if hs.pdkKEMTLS {
+		if err := hs.writeKEMTLSServerFinished(); err != nil {
+			return err
+		}
+		if _, err := c.flush(); err != nil {
+			return err
+		}
+		if err := hs.readKEMTLSClientFinished(); err != nil {
+			return err
+		}
+	} else {
+		if err := hs.readClientKEMCiphertext(); err != nil {
+			return err
+		}
+		if err := hs.readClientKEMCertificate(); err != nil {
+			return err
+		}
+		if err := hs.sendServerKEMCiphertext(); err != nil {
+			return err
+		}
+		if _, err := c.flush(); err != nil {
+			return err
+		}
+		if err := hs.readKEMTLSClientFinished(); err != nil {
+			return err
+		}
 
-	if err := hs.writeKEMTLSServerFinished(); err != nil {
-		return err
-	}
-	if _, err := c.flush(); err != nil {
-		return err
+		if err := hs.writeKEMTLSServerFinished(); err != nil {
+			return err
+		}
+		if _, err := c.flush(); err != nil {
+			return err
+		}
 	}
 
 	//hs.handshakeTimings.ExperimentName = experimentName(c)
