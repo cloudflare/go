@@ -8,7 +8,6 @@ import (
 	"crypto/hmac"
 	"crypto/kem"
 	"errors"
-	"fmt"
 	"sync/atomic"
 )
 
@@ -44,11 +43,8 @@ func (hs *clientHandshakeStateTLS13) handshakeKEMTLS() error {
 		return err
 	}
 
-	hs.handshakeTimings.ExperimentName = experimentName(c)
+	//hs.handshakeTimings.ExperimentName = experimentName(c)
 	c.handleCFEvent(hs.handshakeTimings)
-	fmt.Printf("\n %v kemtls did kemtls? \n", c.didKEMTLS)
-	fmt.Printf("\n %v kemtls client time \n", c.config.time())
-	fmt.Printf("\n kemtls client timings %v \n", hs.handshakeTimings)
 	atomic.StoreUint32(&c.handshakeStatus, 1)
 
 	return nil
@@ -254,7 +250,6 @@ func (hs *clientHandshakeStateTLS13) sendKEMTLSClientFinished() error {
 		verifyData: hs.suite.finishedHashKEMTLS(hs.masterSecret, "c", hs.transcript),
 	}
 
-	fmt.Printf("\n OVER THE RAIN 7 %v \n", finished.marshal())
 	if _, err := hs.transcript.Write(finished.marshal()); err != nil {
 		return err
 	}
@@ -280,7 +275,6 @@ func (hs *clientHandshakeStateTLS13) sendKEMTLSClientFinished() error {
 
 func (hs *clientHandshakeStateTLS13) processKEMTLSServerFinished() error {
 	c := hs.c
-	fmt.Println("\n OVER THE RAIN 11")
 	msg, err := c.readHandshake()
 	if err != nil {
 		return err
@@ -291,8 +285,6 @@ func (hs *clientHandshakeStateTLS13) processKEMTLSServerFinished() error {
 		c.sendAlert(alertUnexpectedMessage)
 		return unexpectedMessageError(finished, msg)
 	}
-
-	fmt.Printf("\n OVER THE RAIN 10 %v \n", finished)
 
 	hs.handshakeTimings.ReadServerFinished = hs.handshakeTimings.elapsedTime()
 

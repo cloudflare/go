@@ -134,12 +134,9 @@ func (hs *serverHandshakeStateTLS13) handshake() error {
 		return err
 	}
 
-	hs.handshakeTimings.ExperimentName = experimentName(c)
+	//hs.handshakeTimings.ExperimentName = experimentName(c)
 	c.handleCFEvent(hs.handshakeTimings)
 
-	fmt.Printf("\n %v tls1.3 server time \n", c.config.time())
-	fmt.Printf("\n %v tls1.3 did pqtls? \n", c.didPQTLS)
-	fmt.Printf("\n tls1.3 server timings %v \n", hs.handshakeTimings)
 	atomic.StoreUint32(&c.handshakeStatus, 1)
 
 	return nil
@@ -250,7 +247,6 @@ func (hs *serverHandshakeStateTLS13) processClientHello() error {
 					certMsgRaw := certMsg.marshal()
 					cachedCertHash := calculateHashCachedInfo(certMsgRaw)
 					if bytes.Equal(cachedCertHash, hs.clientHello.cachedInformationCertHash) {
-						fmt.Println("\n GETTING HERE?")
 						hs.hello.cachedInformationCert = true
 
 						if delegatedCredentialPair.DC.cred.expCertVerfAlgo.isKEMTLS() {

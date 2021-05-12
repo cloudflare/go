@@ -384,7 +384,6 @@ func (hc *halfConn) decrypt(record []byte) ([]byte, recordType, error) {
 			c.XORKeyStream(payload, payload)
 		case aead:
 			if len(payload) < explicitNonceLen {
-				fmt.Println("\n WHY I AM HERE? 4")
 				return nil, 0, alertBadRecordMAC
 			}
 			nonce := payload[:explicitNonceLen]
@@ -406,14 +405,12 @@ func (hc *halfConn) decrypt(record []byte) ([]byte, recordType, error) {
 			var err error
 			plaintext, err = c.Open(payload[:0], nonce, payload, additionalData)
 			if err != nil {
-				fmt.Println("\n WHY I AM HERE?")
 				return nil, 0, alertBadRecordMAC
 			}
 		case cbcMode:
 			blockSize := c.BlockSize()
 			minPayload := explicitNonceLen + roundUp(hc.mac.Size()+1, blockSize)
 			if len(payload)%blockSize != 0 || len(payload) < minPayload {
-				fmt.Println("\n WHY I AM HERE? 1")
 				return nil, 0, alertBadRecordMAC
 			}
 
@@ -460,7 +457,6 @@ func (hc *halfConn) decrypt(record []byte) ([]byte, recordType, error) {
 	if hc.mac != nil {
 		macSize := hc.mac.Size()
 		if len(payload) < macSize {
-			fmt.Println("\n WHY I AM HERE? 2")
 			return nil, 0, alertBadRecordMAC
 		}
 
@@ -480,7 +476,6 @@ func (hc *halfConn) decrypt(record []byte) ([]byte, recordType, error) {
 		// See also the logic at the end of extractPadding.
 		macAndPaddingGood := subtle.ConstantTimeCompare(localMAC, remoteMAC) & int(paddingGood)
 		if macAndPaddingGood != 1 {
-			fmt.Println("\n WHY I AM HERE? 3")
 			return nil, 0, alertBadRecordMAC
 		}
 
@@ -704,7 +699,6 @@ func (c *Conn) readRecordOrCCS(expectChangeCipherSpec bool) error {
 	record := c.rawInput.Next(recordHeaderLen + n)
 	data, typ, err := c.in.decrypt(record)
 	if err != nil {
-		fmt.Println("\n FAILING HERE?")
 		return c.in.setErrorLocked(c.sendAlert(err.(alert)))
 	}
 	if len(data) > maxPlaintext {
@@ -1059,7 +1053,6 @@ func (c *Conn) writeRecord(typ recordType, data []byte) (int, error) {
 func (c *Conn) readHandshake() (interface{}, error) {
 	for c.hand.Len() < 4 {
 		if err := c.readRecord(); err != nil {
-			fmt.Println("\n ERROR ")
 			return nil, err
 		}
 	}
