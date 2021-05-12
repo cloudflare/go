@@ -88,6 +88,8 @@ func experimentName(c *Conn) string {
 		exp += "0"
 		alg = CipherSuiteName(c.cipherSuite)
 		break
+	default:
+		break
 	}
 	return exp + "_" + alg
 }
@@ -127,6 +129,10 @@ func (e CFEventTLS13ClientHandshakeTimingInfo) elapsedTime() time.Duration {
 		return 0
 	}
 	return e.timer().Sub(e.start)
+}
+
+func (e *CFEventTLS13ClientHandshakeTimingInfo) reset() {
+	e.start = e.timer()
 }
 
 func createTLS13ClientHandshakeTimingInfo(timerFunc func() time.Time) CFEventTLS13ClientHandshakeTimingInfo {
