@@ -352,6 +352,9 @@ func (c *Conn) clientHandshake() (err error) {
 		return err
 	}
 
+	// Client already received the serverHello
+	handshakeTimings.reset()
+
 	// If we are negotiating a protocol version that's lower than what we
 	// support, check for the server downgrade canaries.
 	// See RFC 8446, Section 4.1.3.
