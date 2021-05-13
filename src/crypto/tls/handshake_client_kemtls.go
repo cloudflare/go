@@ -25,6 +25,7 @@ func (hs *clientHandshakeStateTLS13) handshakeKEMTLS() error {
 		if _, err := c.flush(); err != nil {
 			return err
 		}
+		hs.handshakeTimings.reset()
 	} else {
 		if err := hs.sendClientKEMCiphertext(); err != nil {
 			return err
@@ -35,11 +36,13 @@ func (hs *clientHandshakeStateTLS13) handshakeKEMTLS() error {
 			return err
 		}
 
-		if _, err := c.flush(); err != nil {
-			return err
+		if hs.certReq != nil {
+			if _, err := c.flush(); err != nil {
+				return err
+			}
+			// second round for KEMTLS
+			hs.handshakeTimings.reset()
 		}
-		// second round for KEMTLS
-		hs.handshakeTimings.reset()
 
 		if err := hs.readServerKEMCiphertext(); err != nil {
 			return err
@@ -60,6 +63,7 @@ func (hs *clientHandshakeStateTLS13) handshakeKEMTLS() error {
 	}
 
 	// hs.handshakeTimings.ExperimentName = experimentName(c)
+	hs.handshakeTimings.finish()
 	c.handleCFEvent(hs.handshakeTimings)
 	atomic.StoreUint32(&c.handshakeStatus, 1)
 
@@ -272,6 +276,7 @@ func (hs *clientHandshakeStateTLS13) sendKEMTLSClientFinished() error {
 	if _, err := c.writeRecord(recordTypeHandshake, finished.marshal()); err != nil {
 		return err
 	}
+
 	hs.handshakeTimings.WriteClientFinished = hs.handshakeTimings.elapsedTime()
 
 	// CATS <- HKDF.Expand(MS, "c ap traffic", CH..CF)

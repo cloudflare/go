@@ -125,14 +125,16 @@ func (hs *serverHandshakeStateTLS13) handshake() error {
 	if err := hs.sendServerFinished(); err != nil {
 		return err
 	}
-	// Note that at this point we could start sending application data without
-	// waiting for the client's second flight, but the application might not
-	// expect the lack of replay protection of the ClientHello parameters.
-	if _, err := c.flush(); err != nil {
-		return err
+	if !hs.pdkKEMTLS {
+		// Note that at this point we could start sending application data without
+		// waiting for the client's second flight, but the application might not
+		// expect the lack of replay protection of the ClientHello parameters.
+		if _, err := c.flush(); err != nil {
+			return err
+		}
+		// second round of TLS1.3, thrid round for KEMTLS and fourth round for mKEMTLS
+		hs.handshakeTimings.reset()
 	}
-	// second round of TLS1.3, thrid round for KEMTLS and fourth round for mKEMTLS
-	hs.handshakeTimings.reset()
 
 	if err := hs.readClientCertificate(); err != nil {
 		return err
