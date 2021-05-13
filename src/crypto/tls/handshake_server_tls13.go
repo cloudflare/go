@@ -129,6 +129,8 @@ func (hs *serverHandshakeStateTLS13) handshake() error {
 	if _, err := c.flush(); err != nil {
 		return err
 	}
+	// this is round 2 of server
+	hs.handshakeTimings.reset()
 	if err := hs.readClientCertificate(); err != nil {
 		return err
 	}
@@ -136,7 +138,8 @@ func (hs *serverHandshakeStateTLS13) handshake() error {
 		return err
 	}
 
-	//hs.handshakeTimings.ExperimentName = experimentName(c)
+	// hs.handshakeTimings.ExperimentName = experimentName(c)
+	hs.handshakeTimings.finish()
 	c.handleCFEvent(hs.handshakeTimings)
 
 	atomic.StoreUint32(&c.handshakeStatus, 1)
