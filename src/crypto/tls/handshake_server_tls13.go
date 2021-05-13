@@ -116,6 +116,8 @@ func (hs *serverHandshakeStateTLS13) handshake() error {
 			if _, err := c.flush(); err != nil {
 				return err
 			}
+			// second round of sending for KEMTLS
+			hs.handshakeTimings.reset()
 		}
 
 		return hs.handshakeKEMTLS()
@@ -129,8 +131,9 @@ func (hs *serverHandshakeStateTLS13) handshake() error {
 	if _, err := c.flush(); err != nil {
 		return err
 	}
-	// this is round 2 of server
+	// second round of TLS1.3, thrid round for KEMTLS and fourth round for mKEMTLS
 	hs.handshakeTimings.reset()
+
 	if err := hs.readClientCertificate(); err != nil {
 		return err
 	}
@@ -138,7 +141,7 @@ func (hs *serverHandshakeStateTLS13) handshake() error {
 		return err
 	}
 
-	// hs.handshakeTimings.ExperimentName = experimentName(c)
+	//hs.handshakeTimings.ExperimentName = experimentName(c)
 	hs.handshakeTimings.finish()
 	c.handleCFEvent(hs.handshakeTimings)
 

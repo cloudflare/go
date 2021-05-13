@@ -38,6 +38,8 @@ func (hs *clientHandshakeStateTLS13) handshakeKEMTLS() error {
 		if _, err := c.flush(); err != nil {
 			return err
 		}
+		// second round for KEMTLS
+		hs.handshakeTimings.reset()
 
 		if err := hs.readServerKEMCiphertext(); err != nil {
 			return err
@@ -50,13 +52,14 @@ func (hs *clientHandshakeStateTLS13) handshakeKEMTLS() error {
 		if _, err := c.flush(); err != nil {
 			return err
 		}
+		// thrid round for KEMTLS
+		hs.handshakeTimings.reset()
 		if err := hs.processKEMTLSServerFinished(); err != nil {
 			return err
 		}
 	}
 
 	// hs.handshakeTimings.ExperimentName = experimentName(c)
-	hs.handshakeTimings.finish()
 	c.handleCFEvent(hs.handshakeTimings)
 	atomic.StoreUint32(&c.handshakeStatus, 1)
 
