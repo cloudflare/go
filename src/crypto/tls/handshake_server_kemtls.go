@@ -4,6 +4,7 @@ import (
 	"crypto/hmac"
 	"crypto/kem"
 	"errors"
+	"fmt"
 	"sync/atomic"
 )
 
@@ -50,6 +51,7 @@ func (hs *serverHandshakeStateTLS13) handshakeKEMTLS() error {
 	// hs.handshakeTimings.ExperimentName = experimentName(c)
 	hs.handshakeTimings.finish()
 	c.handleCFEvent(hs.handshakeTimings)
+	fmt.Printf("\n server kemtls %+v \n", hs.handshakeTimings)
 	atomic.StoreUint32(&c.handshakeStatus, 1)
 
 	return nil

@@ -169,6 +169,7 @@ func (hs *clientHandshakeStateTLS13) handshake() error {
 	// hs.handshakeTimings.ExperimentName = experimentName(c)
 	hs.handshakeTimings.finish()
 	c.handleCFEvent(hs.handshakeTimings)
+	fmt.Printf("\n client 1.3 %+v \n", hs.handshakeTimings)
 	atomic.StoreUint32(&c.handshakeStatus, 1)
 
 	return nil
