@@ -1158,6 +1158,7 @@ func (hs *serverHandshakeStateTLS13) readClientCertificate() error {
 	}
 
 	if !hs.requestClientCert() {
+		fmt.Println("\n GETTING HERE 1")
 		// Make sure the connection is still being verified whether or not
 		// the server requested a client certificate.
 		if c.config.VerifyConnection != nil {
@@ -1169,6 +1170,7 @@ func (hs *serverHandshakeStateTLS13) readClientCertificate() error {
 		return nil
 	}
 
+	fmt.Println("\n GETTING HERE 2")
 	// If we requested a client certificate, then the client must send a
 	// certificate message. If it's empty, no CertificateVerify is sent.
 
