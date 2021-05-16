@@ -78,6 +78,8 @@ func (hs *clientHandshakeStateTLS13) sendClientKEMCiphertext() error {
 	var ok bool
 	var ahs []byte
 
+	hs.handshakeTimings.WriteKEMCiphertext = hs.handshakeTimings.elapsedTime()
+	fmt.Printf("\n %v \n", hs.handshakeTimings.WriteKEMCiphertext)
 	if !(hs.pdkKEMTLS && hs.keyKEMShare) {
 		if c.verifiedDC != nil && c.verifiedDC.cred.expCertVerfAlgo.isKEMTLS() {
 			pk, ok = c.verifiedDC.cred.publicKey.(*kem.PublicKey)

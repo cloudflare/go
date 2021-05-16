@@ -132,8 +132,13 @@ func (hs *serverHandshakeStateTLS13) handshake() error {
 		if _, err := c.flush(); err != nil {
 			return err
 		}
+
+		fmt.Println("\n RESETTING?")
+		fmt.Printf("\n RESETTING? %v", hs.handshakeTimings.elapsedTime())
+
 		// second round of TLS1.3, thrid round for KEMTLS and fourth round for mKEMTLS
 		hs.handshakeTimings.reset()
+		fmt.Printf("\n RESETTING? %v", hs.handshakeTimings.elapsedTime())
 	}
 
 	if err := hs.readClientCertificate(); err != nil {

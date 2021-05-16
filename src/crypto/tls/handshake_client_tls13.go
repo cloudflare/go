@@ -732,6 +732,8 @@ func (hs *clientHandshakeStateTLS13) readServerCertificate() error {
 			}
 		}
 
+		hs.handshakeTimings.WriteKEMCiphertext = hs.handshakeTimings.elapsedTime()
+		fmt.Printf("\n %v \n", hs.handshakeTimings.WriteKEMCiphertext)
 		if hs.keyKEMShare {
 			hs.isKEMTLS = true
 			hs.handshakeTimings.ReadCertificateVerify = hs.handshakeTimings.elapsedTime()
