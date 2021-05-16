@@ -1162,11 +1162,13 @@ func (hs *serverHandshakeStateTLS13) readClientCertificate() error {
 		// Make sure the connection is still being verified whether or not
 		// the server requested a client certificate.
 		if c.config.VerifyConnection != nil {
+			fmt.Printf("\n WHY 4 %v \n", hs.handshakeTimings.elapsedTime())
 			if err := c.config.VerifyConnection(c.connectionStateLocked()); err != nil {
 				c.sendAlert(alertBadCertificate)
 				return err
 			}
 		}
+		fmt.Printf("\n WHY 3 %v \n", hs.handshakeTimings.elapsedTime())
 		return nil
 	}
 
@@ -1265,6 +1267,7 @@ func (hs *serverHandshakeStateTLS13) readClientFinished() error {
 		return nil
 	}
 
+	fmt.Printf("\n WHY 1 %v \n", hs.handshakeTimings.elapsedTime())
 	msg, err := c.readHandshake()
 	if err != nil {
 		return err
@@ -1276,6 +1279,7 @@ func (hs *serverHandshakeStateTLS13) readClientFinished() error {
 		return unexpectedMessageError(finished, msg)
 	}
 
+	fmt.Printf("\n WHY 2 %v \n", hs.handshakeTimings.elapsedTime())
 	if !hmac.Equal(hs.clientFinished, finished.verifyData) {
 		c.sendAlert(alertDecryptError)
 		return errors.New("tls: invalid client finished hash")
