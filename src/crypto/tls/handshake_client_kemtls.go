@@ -78,8 +78,6 @@ func (hs *clientHandshakeStateTLS13) sendClientKEMCiphertext() error {
 	var ok bool
 	var ahs []byte
 
-	hs.handshakeTimings.WriteKEMCiphertext = hs.handshakeTimings.elapsedTime()
-	fmt.Printf("\n %v \n", hs.handshakeTimings.WriteKEMCiphertext)
 	if !(hs.pdkKEMTLS && hs.keyKEMShare) {
 		if c.verifiedDC != nil && c.verifiedDC.cred.expCertVerfAlgo.isKEMTLS() {
 			pk, ok = c.verifiedDC.cred.publicKey.(*kem.PublicKey)
@@ -113,8 +111,8 @@ func (hs *clientHandshakeStateTLS13) sendClientKEMCiphertext() error {
 		if err != nil {
 			return err
 		}
-
 		hs.handshakeTimings.WriteKEMCiphertext = hs.handshakeTimings.elapsedTime()
+		fmt.Printf("\n %v \n", hs.handshakeTimings.WriteKEMCiphertext)
 
 		// AHS <- HKDF.Extract(dHS, ss_s)
 		ahs = hs.suite.extract(ss, hs.suite.deriveSecret(hs.handshakeSecret, "derived", nil))
