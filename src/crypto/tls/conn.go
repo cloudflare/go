@@ -1051,23 +1051,28 @@ func (c *Conn) writeRecord(typ recordType, data []byte) (int, error) {
 // readHandshake reads the next handshake message from
 // the record layer.
 func (c *Conn) readHandshake() (interface{}, error) {
+	fmt.Printf("\n %v 1 \n", time.Now().String())
+
 	for c.hand.Len() < 4 {
 		if err := c.readRecord(); err != nil {
 			return nil, err
 		}
 	}
 
+	fmt.Printf("\n %v 2 \n", time.Now().String())
 	data := c.hand.Bytes()
 	n := int(data[1])<<16 | int(data[2])<<8 | int(data[3])
 	if n > maxHandshake {
 		c.sendAlertLocked(alertInternalError)
 		return nil, c.in.setErrorLocked(fmt.Errorf("tls: handshake message of length %d bytes exceeds maximum of %d bytes", n, maxHandshake))
 	}
+	fmt.Printf("\n %v 3 \n", time.Now().String())
 	for c.hand.Len() < 4+n {
 		if err := c.readRecord(); err != nil {
 			return nil, err
 		}
 	}
+	fmt.Printf("\n %v 4 \n", time.Now().String())
 	data = c.hand.Next(4 + n)
 	var m handshakeMessage
 	switch data[0] {
@@ -1126,6 +1131,7 @@ func (c *Conn) readHandshake() (interface{}, error) {
 	// so pass in a fresh copy that won't be overwritten.
 	data = append([]byte(nil), data...)
 
+	fmt.Printf("\n %s 5 \n", time.Now().String())
 	if !m.unmarshal(data) {
 		return nil, c.in.setErrorLocked(c.sendAlert(alertUnexpectedMessage))
 	}
