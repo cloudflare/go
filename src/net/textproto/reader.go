@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"net/cf"
 	"strconv"
 	"strings"
 	"sync"
@@ -481,6 +482,17 @@ func (r *Reader) ReadDotLines() ([]string, error) {
 //	}
 //
 func (r *Reader) ReadMIMEHeader() (MIMEHeader, error) {
+	return r.CFReadMIMEHeader(nil)
+}
+
+// CFReadMIMEHeader is like ReadMIMEHeader except that it takes an optional
+// net/cf.HeaderProcessor as input. If set, this interface is called at various
+// points of processing the request header.
+//
+// NOTE: The "CF" prefix denotes the fact that this method was added in order to
+// support a Cloudflare-internal use case. It may or may not be useful for
+// upstream Go.
+func (r *Reader) CFReadMIMEHeader(p cf.HeaderProcessor) (MIMEHeader, error) {
 	// Avoid lots of small slice allocations later by allocating one
 	// large one ahead of time which we'll cut up into smaller
 	// slices. If this isn't big enough later, we allocate small ones.
@@ -507,6 +519,10 @@ func (r *Reader) ReadMIMEHeader() (MIMEHeader, error) {
 			return m, err
 		}
 
+		if p != nil {
+			p.HTTP1RawHeader(kv)
+		}
+
 		// Key ends at first colon.
 		i := bytes.IndexByte(kv, ':')
 		if i < 0 {
@@ -527,6 +543,10 @@ func (r *Reader) ReadMIMEHeader() (MIMEHeader, error) {
 			i++
 		}
 		value := string(kv[i:])
+
+		if p != nil {
+			p.Header(key, value)
+		}
 
 		vv := m[key]
 		if vv == nil && len(strs) > 0 {

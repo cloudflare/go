@@ -34,6 +34,7 @@ import (
 	"math"
 	mathrand "math/rand"
 	"net"
+	"net/cf"
 	"net/http/httptrace"
 	"net/textproto"
 	"net/url"
@@ -5578,6 +5579,14 @@ func (sc *http2serverConn) newWriterAndRequest(st *http2stream, f *http2MetaHead
 		return nil, nil, http2streamError(f.StreamID, http2ErrCodeProtocol)
 	}
 
+	if newP := sc.hs.CFNewHeaderProcessor; newP != nil {
+		p := newP(true /* isHTTP2 */)
+		for _, hf := range f.Fields {
+			p.Header(hf.Name, hf.Value)
+		}
+		rp.cfHeaderProcessor = p
+	}
+
 	rp.header = make(Header)
 	for _, hf := range f.RegularFields() {
 		rp.header.Add(sc.canonicalHeader(hf.Name), hf.Value)
@@ -5611,6 +5620,8 @@ type http2requestParam struct {
 	method                  string
 	scheme, authority, path string
 	header                  Header
+
+	cfHeaderProcessor cf.HeaderProcessor
 }
 
 func (sc *http2serverConn) newWriterAndRequestNoBody(st *http2stream, rp http2requestParam) (*http2responseWriter, *Request, error) {
@@ -5683,6 +5694,11 @@ func (sc *http2serverConn) newWriterAndRequestNoBody(st *http2stream, rp http2re
 		Trailer:    trailer,
 	}
 	req = req.WithContext(st.ctx)
+
+	if p := rp.cfHeaderProcessor; p != nil {
+		k := cf.HeaderProcessorContextKey("cf-header-processor")
+		req.ctx = context.WithValue(req.ctx, k, p)
+	}
 
 	rws := http2responseWriterStatePool.Get().(*http2responseWriterState)
 	bwSave := rws.bw

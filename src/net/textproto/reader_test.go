@@ -389,3 +389,43 @@ func BenchmarkUncommon(b *testing.B) {
 		}
 	}
 }
+
+func TestCFReadHeader(t *testing.T) {
+	p := new(testHeaderProcessor)
+	r := reader("my-key: Value 1  \r\nlong-kEy:    Even \n Longer Value\r\nmy-KEY: Value 2\r\n\n")
+	m, err := r.CFReadMIMEHeader(p)
+	want := MIMEHeader{
+		"My-Key":   {"Value 1", "Value 2"},
+		"Long-Key": {"Even Longer Value"},
+	}
+	if !reflect.DeepEqual(m, want) || err != nil {
+		t.Fatalf("CFReadMIMEHeader: %v, %v; want %v", m, err, want)
+	}
+
+	wantHeaderCt := 3
+	if p.headerCt != wantHeaderCt {
+		t.Fatalf("CFReadMIMEHeader recorded unexpected number of headers: got %d; want %d", p.headerCt, wantHeaderCt)
+	}
+
+	wantHeaders := []string{"my-key: Value 1", "long-kEy:    Even Longer Value", "my-KEY: Value 2"}
+	if !reflect.DeepEqual(p.headers, wantHeaders) {
+		t.Fatalf("Test processor failed to record raw headers: got %v; want %v", p.headers, wantHeaders)
+	}
+}
+
+type testHeaderProcessor struct {
+	headerCt int // number of times Header() was invoked
+	headers  []string
+}
+
+func (p *testHeaderProcessor) HTTP1RequestLine(_ string) {
+	// no-op
+}
+
+func (p *testHeaderProcessor) HTTP1RawHeader(header []byte) {
+	p.headers = append(p.headers, string(header))
+}
+
+func (p *testHeaderProcessor) Header(_, _ string) {
+	p.headerCt++
+}
