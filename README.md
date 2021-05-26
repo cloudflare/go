@@ -3,8 +3,8 @@
 Go is an open source programming language that makes it easy to build simple,
 reliable, and efficient software.
 
-![Gopher image](doc/gopher/fiveyears.jpg)
-*Gopher image by [Renee French][rf], licensed under [Creative Commons 3.0 Attributions license][cc3-by].*
+![Gopher image](https://golang.org/doc/gopher/fiveyears.jpg)
+_Gopher image by [Renee French][rf], licensed under [Creative Commons 3.0 Attributions license][cc3-by]._
 
 Our canonical Git repository is located at https://go.googlesource.com/go.
 There is a mirror of the repository at https://github.com/golang/go.
