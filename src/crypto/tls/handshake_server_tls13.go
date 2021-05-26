@@ -133,12 +133,8 @@ func (hs *serverHandshakeStateTLS13) handshake() error {
 			return err
 		}
 
-		fmt.Println("\n RESETTING?")
-		fmt.Printf("\n RESETTING? %v", hs.handshakeTimings.elapsedTime())
-
 		// second round of TLS1.3, thrid round for KEMTLS and fourth round for mKEMTLS
 		hs.handshakeTimings.reset()
-		fmt.Printf("\n RESETTING? %v", hs.handshakeTimings.elapsedTime())
 	}
 
 	if err := hs.readClientCertificate(); err != nil {
@@ -151,7 +147,6 @@ func (hs *serverHandshakeStateTLS13) handshake() error {
 	//hs.handshakeTimings.ExperimentName = experimentName(c)
 	hs.handshakeTimings.finish()
 	c.handleCFEvent(hs.handshakeTimings)
-	fmt.Printf("\n server 1.3 %+v \n", hs.handshakeTimings)
 
 	atomic.StoreUint32(&c.handshakeStatus, 1)
 
@@ -1158,21 +1153,17 @@ func (hs *serverHandshakeStateTLS13) readClientCertificate() error {
 	}
 
 	if !hs.requestClientCert() {
-		fmt.Println("\n GETTING HERE 1")
 		// Make sure the connection is still being verified whether or not
 		// the server requested a client certificate.
 		if c.config.VerifyConnection != nil {
-			fmt.Printf("\n WHY 4 %v \n", hs.handshakeTimings.elapsedTime())
 			if err := c.config.VerifyConnection(c.connectionStateLocked()); err != nil {
 				c.sendAlert(alertBadCertificate)
 				return err
 			}
 		}
-		fmt.Printf("\n WHY 3 %v \n", hs.handshakeTimings.elapsedTime())
 		return nil
 	}
 
-	fmt.Println("\n GETTING HERE 2")
 	// If we requested a client certificate, then the client must send a
 	// certificate message. If it's empty, no CertificateVerify is sent.
 
@@ -1267,7 +1258,6 @@ func (hs *serverHandshakeStateTLS13) readClientFinished() error {
 		return nil
 	}
 
-	fmt.Printf("\n WHY 1 %v \n", hs.handshakeTimings.elapsedTime())
 	msg, err := c.readHandshake()
 	if err != nil {
 		return err
@@ -1279,7 +1269,6 @@ func (hs *serverHandshakeStateTLS13) readClientFinished() error {
 		return unexpectedMessageError(finished, msg)
 	}
 
-	fmt.Printf("\n WHY 2 %v \n", hs.handshakeTimings.elapsedTime())
 	if !hmac.Equal(hs.clientFinished, finished.verifyData) {
 		c.sendAlert(alertDecryptError)
 		return errors.New("tls: invalid client finished hash")
