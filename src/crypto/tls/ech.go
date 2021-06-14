@@ -14,20 +14,25 @@ import (
 
 const (
 	// Constants for TLS operations
-	echAcceptConfirmationLabel = "ech accept confirmation"
+	echAcceptConfLabel    = "ech accept confirmation"
+	echAcceptConfHRRLabel = "hrr ech accept confirmation"
 
 	// Constants for HPKE operations
 	echHpkeInfoSetup = "tls ech"
+
+	// When sent in the ClientHello, the first byte of the payload of the ECH
+	// extension indicates whether the message is the ClientHelloOuter or
+	// ClientHelloInner.
+	echClientHelloOuterVariant uint8 = 0
+	echClientHelloInnerVariant uint8 = 1
+)
+
+var (
+	zeros = [8]byte{}
 )
 
 // TODO(cjpatton): "[When offering ECH, the client] MUST NOT offer to resume any
 // session for TLS 1.2 and below [in ClientHelloInner]."
-//
-// TODO(cjpatton): "[When offering ECH, the client] MUST NOT include the
-// "pre_shared_key" extension [in ClientHelloOuter]." (This is a "don't stick
-// out" issue.)
-//
-// TODO(cjpatton): Implement client-side padding.
 func (c *Conn) echOfferOrGrease(helloBase *clientHelloMsg) (hello, helloInner *clientHelloMsg, err error) {
 	config := c.config
 
@@ -51,7 +56,6 @@ func (c *Conn) echOfferOrGrease(helloBase *clientHelloMsg) (hello, helloInner *c
 
 		// Grease ECH.
 		helloBase.ech = c.ech.dummy
-		helloBase.echIsOuter = true
 		c.ech.offered = false
 		c.ech.greased = true
 		helloBase.raw = nil
@@ -86,7 +90,7 @@ func (c *Conn) echOfferOrGrease(helloBase *clientHelloMsg) (hello, helloInner *c
 	helloInner = new(clientHelloMsg)
 	*helloInner = *helloBase
 	helloInner.random = c.ech.innerRandom
-	helloInner.echIsInner = true
+	helloInner.ech = []byte{echClientHelloInnerVariant}
 
 	// Ensure that only TLS 1.3 and above are offered.
 	if v := helloInner.supportedVersions; len(v) == 0 || v[len(v)-1] < VersionTLS13 {
@@ -133,22 +137,23 @@ func (c *Conn) echOfferOrGrease(helloBase *clientHelloMsg) (hello, helloInner *c
 	hello.random = helloBase.random
 	hello.sessionId = helloBase.sessionId
 	hello.serverName = hostnameInSNI(c.ech.publicName)
-	hello.echIsOuter = true
-	if testingECHOuterIsInner {
-		hello.echIsInner = true
-	}
 
 	// ClientECH, the payload of the "encrypted_client_hello" extension.
-	var ech echClient
-	_, kdfId, aeadId := c.ech.sealer.Suite().Params()
-	ech.handle.suite.kdfId = uint16(kdfId)
-	ech.handle.suite.aeadId = uint16(aeadId)
+	var ech echClientOuter
+	_, kdf, aead := c.ech.sealer.Suite().Params()
+	ech.handle.suite.kdfId = uint16(kdf)
+	ech.handle.suite.aeadId = uint16(aead)
 	ech.handle.configId = echConfig.configId
 	ech.handle.enc = enc // Empty after HRR
-	helloOuterAad := echEncodeClientHelloOuterAAD(hello.marshal(), ech.handle.marshal())
+
+	// ClientHelloOuterAAD
+	hello.ech = ech.marshal()
+	helloOuterAad := echEncodeClientHelloOuterAAD(hello.marshal(),
+		aead.CipherLen(uint(len(encodedHelloInner))))
 	if helloOuterAad == nil {
 		return nil, nil, errors.New("tls: ech: encoding of ClientHelloOuterAAD failed")
 	}
+
 	ech.payload, err = c.ech.sealer.Seal(encodedHelloInner, helloOuterAad)
 	if err != nil {
 		return nil, nil, fmt.Errorf("tls: ech: seal failed: %s", err)
@@ -156,6 +161,7 @@ func (c *Conn) echOfferOrGrease(helloBase *clientHelloMsg) (hello, helloInner *c
 	if testingECHTriggerPayloadDecryptError {
 		ech.payload[0] ^= 0xff // Inauthentic ciphertext
 	}
+	ech.raw = nil
 	hello.ech = ech.marshal()
 
 	// Offer ECH.
@@ -174,20 +180,22 @@ func (c *Conn) echAcceptOrReject(hello *clientHelloMsg) (*clientHelloMsg, error)
 		return hello, nil
 	}
 
-	if hello.echIsInner {
-		if hello.echIsOuter {
-			c.sendAlert(alertIllegalParameter)
-			return hello, errors.New("ech: hello marked as inner and outer")
-		}
-		if len(hello.ech) > 0 {
-			c.sendAlert(alertIllegalParameter)
-			return hello, errors.New("ech_is_inner: got non-empty payload")
-		}
-		// Bypass ECH and continue as backend server.
-		return hello, nil
-	}
+	if len(hello.ech) > 0 { // The ECH extension is present
+		switch hello.ech[0] {
+		case echClientHelloInnerVariant: // inner handshake
+			if len(hello.ech) > 1 {
+				c.sendAlert(alertIllegalParameter)
+				return nil, errors.New("ech: inner handshake has non-empty payload")
+			}
 
-	if !hello.echIsOuter {
+			// Bypass ECH and continue as backend server.
+			return hello, nil
+		case echClientHelloOuterVariant: // outer handshake
+		default:
+			c.sendAlert(alertIllegalParameter)
+			return nil, errors.New("ech: inner handshake has non-empty payload")
+		}
+	} else {
 		if c.ech.offered {
 			// This occurs if the server accepted prior to HRR, but the client
 			// failed to send the ECH extension in the second ClientHelloOuter. This
@@ -196,6 +204,7 @@ func (c *Conn) echAcceptOrReject(hello *clientHelloMsg) (*clientHelloMsg, error)
 			c.sendAlert(alertMissingExtension)
 			return nil, errors.New("ech: hrr: bypass after offer")
 		}
+
 		// Bypass ECH.
 		return hello, nil
 	}
@@ -209,7 +218,7 @@ func (c *Conn) echAcceptOrReject(hello *clientHelloMsg) (*clientHelloMsg, error)
 	}
 
 	// Parse ClientECH.
-	ech, err := echUnmarshalClient(hello.ech)
+	ech, err := echUnmarshalClientOuter(hello.ech)
 	if err != nil {
 		c.sendAlert(alertIllegalParameter)
 		return nil, fmt.Errorf("ech: failed to parse extension: %s", err)
@@ -218,7 +227,8 @@ func (c *Conn) echAcceptOrReject(hello *clientHelloMsg) (*clientHelloMsg, error)
 		(ech.handle.suite != c.ech.suite ||
 			ech.handle.configId != c.ech.configId ||
 			len(ech.handle.enc) > 0) {
-		// The context handle shouldn't change across HRR.
+		// The cipher suite and config id don't change across HRR. The
+		// encapsulated key field must be empty after HRR.
 		c.sendAlert(alertIllegalParameter)
 		return nil, errors.New("ech: hrr: illegal handle in second hello")
 	}
@@ -287,14 +297,14 @@ func (c *Conn) echAcceptOrReject(hello *clientHelloMsg) (*clientHelloMsg, error)
 
 	// EncodedClientHelloInner, the plaintext corresponding to
 	// ClientECH.payload.
-	helloOuterAad := echEncodeClientHelloOuterAAD(hello.marshal(), ech.handle.marshal())
-	if helloOuterAad == nil {
+	rawHelloOuterAad := echEncodeClientHelloOuterAAD(hello.marshal(), uint(len(ech.payload)))
+	if rawHelloOuterAad == nil {
 		// This occurs if the ClientHelloOuter is malformed. This values was
 		// already parsed into `hello`, so this should not happen.
 		c.sendAlert(alertInternalError)
 		return nil, fmt.Errorf("ech: failed to encode ClientHelloOuterAAD")
 	}
-	rawEncodedHelloInner, err := c.ech.opener.Open(ech.payload, helloOuterAad)
+	rawEncodedHelloInner, err := c.ech.opener.Open(ech.payload, rawHelloOuterAad)
 	if err != nil {
 		if c.hrrTriggered && c.ech.accepted {
 			// Don't reject after accept, as this would result in processing the
@@ -321,15 +331,35 @@ func (c *Conn) echAcceptOrReject(hello *clientHelloMsg) (*clientHelloMsg, error)
 		return nil, fmt.Errorf("ech: failed to parse ClientHelloInner")
 	}
 
+	// Check for a well-formed ECH extension.
+	if len(helloInner.ech) != 1 ||
+		helloInner.ech[0] != echClientHelloInnerVariant {
+		c.sendAlert(alertIllegalParameter)
+		return nil, fmt.Errorf("ech: ClientHelloInner does not have a well-formed ECH extension")
+	}
+
+	// Check that the client did not offer TLS 1.2 or below in the inner
+	// handshake.
+	helloInnerSupportsTLS12OrBelow := len(helloInner.supportedVersions) == 0
+	for _, v := range helloInner.supportedVersions {
+		if v < VersionTLS13 {
+			helloInnerSupportsTLS12OrBelow = true
+		}
+	}
+	if helloInnerSupportsTLS12OrBelow {
+		c.sendAlert(alertIllegalParameter)
+		return nil, errors.New("ech: ClientHelloInner offers TLS 1.2 or below")
+	}
+
 	// Accept ECH.
 	c.ech.offered = true
 	c.ech.accepted = true
 	return helloInner, nil
 }
 
-// echClient represents a ClientECH structure, the payload of the client's
-// "encrypted_client_hello" extension.
-type echClient struct {
+// echClientOuter represents a ClientECH structure, the payload of the client's
+// "encrypted_client_hello" extension that appears in the outer handshake.
+type echClientOuter struct {
 	raw []byte
 
 	// Parsed from raw
@@ -337,19 +367,28 @@ type echClient struct {
 	payload []byte
 }
 
-// echUnmarshalClient parses a ClientECH structure. The caller provides the ECH
-// version indicated by the client.
-func echUnmarshalClient(raw []byte) (*echClient, error) {
-	// Parse the payload as a ClientECH structure.
-	ech := new(echClient)
+// echUnmarshalClientOuter parses a ClientECH structure. The caller provides the
+// ECH version indicated by the client.
+func echUnmarshalClientOuter(raw []byte) (*echClientOuter, error) {
+	s := cryptobyte.String(raw)
+	ech := new(echClientOuter)
 	ech.raw = raw
 
+	// Make sure this is the outer handshake.
+	var variant uint8
+	if !s.ReadUint8(&variant) {
+		return nil, fmt.Errorf("error parsing ClientECH.type")
+	}
+	if variant != echClientHelloOuterVariant {
+		return nil, fmt.Errorf("unexpected ClientECH.type (want outer (0))")
+	}
+
 	// Parse the context handle.
-	s := cryptobyte.String(raw)
 	if !echReadContextHandle(&s, &ech.handle) {
 		return nil, fmt.Errorf("error parsing context handle")
 	}
-	ech.handle.raw = raw[:len(raw)-len(s)]
+	endOfContextHandle := len(raw) - len(s)
+	ech.handle.raw = raw[1:endOfContextHandle]
 
 	// Parse the payload.
 	var t cryptobyte.String
@@ -361,11 +400,12 @@ func echUnmarshalClient(raw []byte) (*echClient, error) {
 	return ech, nil
 }
 
-func (ech *echClient) marshal() []byte {
+func (ech *echClientOuter) marshal() []byte {
 	if ech.raw != nil {
 		return ech.raw
 	}
 	var b cryptobyte.Builder
+	b.AddUint8(echClientHelloOuterVariant)
 	b.AddBytes(ech.handle.marshal())
 	b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
 		b.AddBytes(ech.payload)
@@ -436,7 +476,7 @@ func echGenerateDummyExt(rand io.Reader) ([]byte, error) {
 		return nil, fmt.Errorf("tls: grease ech: failed to create sender: %s", err)
 	}
 
-	var ech echClient
+	var ech echClientOuter
 	ech.handle.suite.kdfId = uint16(kdf)
 	ech.handle.suite.aeadId = uint16(aead)
 	randomByte := make([]byte, 1)
@@ -643,8 +683,8 @@ func echDecodeClientHelloInner(encodedData, outerData, outerSessionId []byte) []
 					}
 					handledOuterExtensions = true
 
-					// Read the set of outer extension code points.
-					outer := make(map[uint16]bool)
+					// Read the referenced outer extensions.
+					referencedExts := make([]uint16, 0, 10)
 					var outerExtData cryptobyte.String
 					if !extData.ReadUint8LengthPrefixed(&outerExtData) ||
 						len(outerExtData)%2 != 0 ||
@@ -656,31 +696,27 @@ func echDecodeClientHelloInner(encodedData, outerData, outerSessionId []byte) []
 							ext == extensionECH {
 							panic(cryptobyte.BuildError{Err: errIllegalParameter})
 						}
-						// Mark outer extension as not yet incorporated.
-						outer[ext] = false
+						referencedExts = append(referencedExts, ext)
 					}
 
 					// Add the outer extensions from the ClientHelloOuter into the
 					// ClientHelloInner.
-					if !processClientHelloExtensions(outerData, func(ext uint16, extData cryptobyte.String) bool {
-						if _, ok := outer[ext]; ok {
+					outerCt := 0
+					r := processClientHelloExtensions(outerData, func(ext uint16, extData cryptobyte.String) bool {
+						if outerCt < len(referencedExts) && ext == referencedExts[outerCt] {
+							outerCt++
 							b.AddUint16(ext)
 							b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
 								b.AddBytes(extData)
 							})
-							// Mark outer extension as incorporated.
-							outer[ext] = true
 						}
 						return true
-					}) {
-						panic(cryptobyte.BuildError{Err: errIllegalParameter})
-					}
+					})
 
-					// Ensure that all outer extensions have been incorporated.
-					for _, incorporated := range outer {
-						if !incorporated {
-							panic(cryptobyte.BuildError{Err: errIllegalParameter})
-						}
+					// Ensure that all outer extensions have been incorporated
+					// exactly once, and in the correct order.
+					if !r || outerCt != len(referencedExts) {
+						panic(cryptobyte.BuildError{Err: errIllegalParameter})
 					}
 				} else {
 					b.AddUint16(ext)
@@ -703,9 +739,9 @@ func echDecodeClientHelloInner(encodedData, outerData, outerSessionId []byte) []
 }
 
 // echEncodeClientHelloOuterAAD interprets outerData as ClientHelloOuter and
-// handleData as an ECH context handle and maps these to a ClientHelloOuterAAD.
-// Returns nil if parsing outerData fails.
-func echEncodeClientHelloOuterAAD(outerData, handleData []byte) []byte {
+// constructs a ClientHelloOuterAAD. The output doesn't have the 4-byte prefix
+// that indicates the handshake message type and its length.
+func echEncodeClientHelloOuterAAD(outerData []byte, payloadLen uint) []byte {
 	var (
 		errIllegalParameter      = errors.New("illegal parameter")
 		msgType                  uint8
@@ -742,37 +778,43 @@ func echEncodeClientHelloOuterAAD(outerData, handleData []byte) []byte {
 		return nil
 	}
 
-	b.AddBytes(handleData)
-	b.AddUint24LengthPrefixed(func(b *cryptobyte.Builder) {
-		b.AddUint16(legacyVersion)
-		b.AddBytes(random)
-		b.AddUint8LengthPrefixed(func(b *cryptobyte.Builder) {
-			b.AddBytes(legacySessionId)
-		})
-		b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
-			b.AddBytes(cipherSuites)
-		})
-		b.AddUint8LengthPrefixed(func(b *cryptobyte.Builder) {
-			b.AddBytes(legacyCompressionMethods)
-		})
-		b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
-			for !extensions.Empty() {
-				var ext uint16
-				var extData cryptobyte.String
-				if !extensions.ReadUint16(&ext) ||
-					!extensions.ReadUint16LengthPrefixed(&extData) {
+	b.AddUint16(legacyVersion)
+	b.AddBytes(random)
+	b.AddUint8LengthPrefixed(func(b *cryptobyte.Builder) {
+		b.AddBytes(legacySessionId)
+	})
+	b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
+		b.AddBytes(cipherSuites)
+	})
+	b.AddUint8LengthPrefixed(func(b *cryptobyte.Builder) {
+		b.AddBytes(legacyCompressionMethods)
+	})
+	b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
+		for !extensions.Empty() {
+			var ext uint16
+			var extData cryptobyte.String
+			if !extensions.ReadUint16(&ext) ||
+				!extensions.ReadUint16LengthPrefixed(&extData) {
+				panic(cryptobyte.BuildError{Err: errIllegalParameter})
+			}
+
+			// If this is the ECH extension and the payload is the outer variant
+			// of ClientECH, then replace the payloadLen 0 bytes.
+			if ext == extensionECH {
+				ech, err := echUnmarshalClientOuter(extData)
+				if err != nil {
 					panic(cryptobyte.BuildError{Err: errIllegalParameter})
 				}
-
-				// Copy all extensions except for ECH.
-				if ext != extensionECH {
-					b.AddUint16(ext)
-					b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
-						b.AddBytes(extData)
-					})
-				}
+				ech.payload = make([]byte, payloadLen)
+				ech.raw = nil
+				extData = ech.marshal()
 			}
-		})
+
+			b.AddUint16(ext)
+			b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
+				b.AddBytes(extData)
+			})
+		}
 	})
 
 	outerAadData, err := b.Bytes()
@@ -785,60 +827,78 @@ func echEncodeClientHelloOuterAAD(outerData, handleData []byte) []byte {
 	return outerAadData
 }
 
-// echEncodeServerHelloConf interprets data as a ServerHello message and encodes
-// it as a ServerHelloConf. Returns nil if parsing data fails.
-func echEncodeServerHelloConf(data []byte) []byte {
+// echEncodeAcceptConfHelloRetryRequest interprets data as a ServerHello message
+// and replaces the payload of the ECH extension with 8 zero bytes. The output
+// includes the 4-byte prefix that indicates the message type and its length.
+func echEncodeAcceptConfHelloRetryRequest(data []byte) []byte {
 	var (
-		msgType                 uint8
-		legacyVersion           uint16
-		random                  []byte
-		legacySessionId         cryptobyte.String
-		cipherSuite             uint16
-		legacyCompressionMethod uint8
-		extensions              cryptobyte.String
-		s                       cryptobyte.String
-		b                       cryptobyte.Builder
+		errIllegalParameter = errors.New("illegal parameter")
+		vers                uint16
+		random              []byte
+		sessionId           []byte
+		cipherSuite         uint16
+		compressionMethod   uint8
+		s                   cryptobyte.String
+		b                   cryptobyte.Builder
 	)
 
-	u := cryptobyte.String(data)
-	if !u.ReadUint8(&msgType) ||
-		!u.ReadUint24LengthPrefixed(&s) || !u.Empty() {
-		return nil
-	}
-
-	if !s.ReadUint16(&legacyVersion) ||
-		!s.ReadBytes(&random, 32) ||
-		!s.ReadUint8LengthPrefixed(&legacySessionId) ||
+	s = cryptobyte.String(data)
+	if !s.Skip(4) || // message type and uint24 length field
+		!s.ReadUint16(&vers) || !s.ReadBytes(&random, 32) ||
+		!readUint8LengthPrefixed(&s, &sessionId) ||
 		!s.ReadUint16(&cipherSuite) ||
-		!s.ReadUint8(&legacyCompressionMethod) {
+		!s.ReadUint8(&compressionMethod) {
 		return nil
 	}
 
 	if s.Empty() {
-		// Extensions field must be present in TLS 1.3.
+		// ServerHello is optionally followed by extension data
 		return nil
 	}
 
+	var extensions cryptobyte.String
 	if !s.ReadUint16LengthPrefixed(&extensions) || !s.Empty() {
 		return nil
 	}
 
-	b.AddUint8(msgType)
+	b.AddUint8(typeServerHello)
 	b.AddUint24LengthPrefixed(func(b *cryptobyte.Builder) {
-		b.AddUint16(legacyVersion)
-		b.AddBytes(random[:24])
-		b.AddBytes([]byte{0, 0, 0, 0, 0, 0, 0, 0})
+		b.AddUint16(vers)
+		b.AddBytes(random)
 		b.AddUint8LengthPrefixed(func(b *cryptobyte.Builder) {
-			b.AddBytes(legacySessionId)
+			b.AddBytes(sessionId)
 		})
 		b.AddUint16(cipherSuite)
-		b.AddUint8(legacyCompressionMethod)
+		b.AddUint8(compressionMethod)
 		b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
-			b.AddBytes(extensions)
+			for !extensions.Empty() {
+				var extension uint16
+				var extData cryptobyte.String
+				if !extensions.ReadUint16(&extension) ||
+					!extensions.ReadUint16LengthPrefixed(&extData) {
+					panic(cryptobyte.BuildError{Err: errIllegalParameter})
+				}
+
+				b.AddUint16(extension)
+				b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
+					if extension == extensionECH {
+						b.AddBytes(zeros[:8])
+					} else {
+						b.AddBytes(extData)
+					}
+				})
+			}
 		})
 	})
 
-	return b.BytesOrPanic()
+	encodedData, err := b.Bytes()
+	if err == errIllegalParameter {
+		return nil // Input malformed
+	} else if err != nil {
+		panic(err) // Host encountered internal error
+	}
+
+	return encodedData
 }
 
 // processClientHelloExtensions interprets data as a ClientHello and applies a
@@ -901,6 +961,39 @@ func splitClientHelloExtensions(data []byte) ([]byte, []byte) {
 	return data[:len(data)-len(s)], s
 }
 
+// TODO(cjpatton): draft-ietf-tls-esni-11, Section 4 mandates:
+//
+//   Clients MUST ignore any "ECHConfig" structure whose public_name is
+//   not parsable as a dot-separated sequence of LDH labels, as defined
+//   in [RFC5890], Section 2.3.1 or which begins or end with an ASCII
+//   dot.
+//
+//   Clients SHOULD ignore the "ECHConfig" if it contains an encoded
+//   IPv4 address.  To determine if a public_name value is an IPv4
+//   address, clients can invoke the IPv4 parser algorithm in
+//   [WHATWG-IPV4].  It returns a value when the input is an IPv4
+//   address.
+//
+//   See Section 6.1.4.3 for how the client interprets and validates
+//   the public_name.
+//
+// TODO(cjpatton): draft-ietf-tls-esni-11, Section 4.1 mandates:
+//
+//   ECH configuration extensions are used to provide room for additional
+//   functionality as needed.  See Section 12 for guidance on which types
+//   of extensions are appropriate for this structure.
+//
+//   The format is as defined in [RFC8446], Section 4.2.  The same
+//   interpretation rules apply: extensions MAY appear in any order, but
+//   there MUST NOT be more than one extension of the same type in the
+//   extensions block.  An extension can be tagged as mandatory by using
+//   an extension type codepoint with the high order bit set to 1.  A
+//   client that receives a mandatory extension they do not understand
+//   MUST reject the "ECHConfig" content.
+//
+//   Clients MUST parse the extension list and check for unsupported
+//   mandatory extensions.  If an unsupported mandatory extension is
+//   present, clients MUST ignore the "ECHConfig".
 func (c *Config) echSelectConfig() *ECHConfig {
 	for _, echConfig := range c.ClientECHConfigs {
 		if _, err := echConfig.selectSuite(); err == nil &&
