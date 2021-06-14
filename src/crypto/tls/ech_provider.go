@@ -21,8 +21,8 @@ type ECHProvider interface {
 	// Section 5.2.)
 	//
 	// handle encodes the parameters of the client's "encrypted_client_hello"
-	// extension that are needed to construct the context. In
-	// draft-ietf-tls-esni-10, these are the ECH cipher suite, the identity of
+	// extension that are needed to construct the context. Since
+	// draft-ietf-tls-esni-10 these are the ECH cipher suite, the identity of
 	// the ECH configuration, and the encapsulated key.
 	//
 	// version is the version of ECH indicated by the client.
@@ -127,7 +127,7 @@ func (keySet *EXP_ECHKeySet) GetDecryptionContext(rawHandle []byte, version uint
 	res.RetryConfigs = keySet.configs
 
 	// Ensure we know how to proceed, i.e., the caller has indicated a supported
-	// version of ECH. Currently only draft-ietf-tls-esni-10 is supported.
+	// version of ECH. Currently only draft-ietf-tls-esni-11 is supported.
 	if version != extensionECH {
 		res.Status = ECHProviderAbort
 		res.Alert = uint8(alertInternalError)
@@ -204,7 +204,7 @@ func (keySet *EXP_ECHKeySet) GetDecryptionContext(rawHandle []byte, version uint
 //
 // struct {
 //     opaque sk<0..2^16-1>;
-//     ECHConfig config<0..2^16>; // draft-ietf-tls-esni-10
+//     ECHConfig config<0..2^16>; // draft-ietf-tls-esni-11
 // } ECHKey;
 type EXP_ECHKey struct {
 	sk     kem.PrivateKey

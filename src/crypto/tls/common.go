@@ -103,9 +103,8 @@ const (
 	extensionSignatureAlgorithmsCert uint16 = 50
 	extensionKeyShare                uint16 = 51
 	extensionRenegotiationInfo       uint16 = 0xff01
-	extensionECH                     uint16 = 0xfe0a // draft-ietf-tls-esni-10
-	extensionECHIsInner              uint16 = 0xda09 // draft-ietf-tls-esni-10
-	extensionECHOuterExtensions      uint16 = 0xfd00 // draft-ietf-tls-esni-10
+	extensionECH                     uint16 = 0xfe0b // draft-ietf-tls-esni-11
+	extensionECHOuterExtensions      uint16 = 0xfd00 // draft-ietf-tls-esni-11
 )
 
 // TLS signaling cipher suite values
@@ -262,10 +261,6 @@ var testingECHOuterExtNone bool
 // "outer_extension" extension in the wrong order when offering the ECH
 // extension.
 var testingECHOuterExtIncorrectOrder bool
-
-// testingECHOuterIsInner causes the client to send the "ech_is_inner" extension
-// in the ClientHelloOuter.
-var testingECHOuterIsInner bool
 
 // testingECHOuterExtIllegal causes the client to send in its
 // "outer_extension" extension the codepoint for the ECH extension.
