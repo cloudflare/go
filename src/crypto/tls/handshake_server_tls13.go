@@ -43,6 +43,10 @@ type serverHandshakeStateTLS13 struct {
 	handshakeTimings CFEventTLS13ServerHandshakeTimingInfo
 }
 
+func (hs *serverHandshakeStateTLS13) echIsInner() bool {
+	return len(hs.clientHello.ech) == 1 && hs.clientHello.ech[0] == echClientHelloInnerVariant
+}
+
 // processDelegatedCredentialFromClient unmarshals the DelegatedCredential
 // offered by the client (if present) and validates it using the peer's
 // certificate.
@@ -170,13 +174,6 @@ func (hs *serverHandshakeStateTLS13) processClientHello() error {
 	if _, err := io.ReadFull(c.config.rand(), hs.hello.random); err != nil {
 		c.sendAlert(alertInternalError)
 		return err
-	}
-
-	if hs.clientHello.echIsInner {
-		// If confirming ECH acceptance, then clear the last 8 bytes of the
-		// ServerHello.random in preparation for computing the confirmation
-		// hint.
-		copy(hs.hello.random[24:], []byte{0, 0, 0, 0, 0, 0, 0, 0})
 	}
 
 	if len(hs.clientHello.secureRenegotiation) != 0 {
@@ -572,6 +569,27 @@ func (hs *serverHandshakeStateTLS13) doHelloRetryRequest(selectedGroup CurveID) 
 		selectedGroup:     selectedGroup,
 	}
 
+	// Confirm ECH acceptance.
+	if hs.echIsInner() {
+		echAcceptConfHRRTranscript := cloneHash(hs.transcript, hs.suite.hash)
+		if echAcceptConfHRRTranscript == nil {
+			c.sendAlert(alertInternalError)
+			return errors.New("tls: internal error: failed to clone hash")
+		}
+
+		helloRetryRequest.ech = zeros[:8]
+		echAcceptConfHRR := helloRetryRequest.marshal()
+		echAcceptConfHRRTranscript.Write(echAcceptConfHRR)
+		echAcceptConfHRRSignal := hs.suite.expandLabel(
+			hs.suite.extract(hs.clientHello.random, nil),
+			echAcceptConfHRRLabel,
+			echAcceptConfHRRTranscript.Sum(nil),
+			8)
+
+		helloRetryRequest.ech = echAcceptConfHRRSignal
+		helloRetryRequest.raw = nil
+	}
+
 	hs.transcript.Write(helloRetryRequest.marshal())
 	if _, err := c.writeRecord(recordTypeHandshake, helloRetryRequest.marshal()); err != nil {
 		return err
@@ -684,25 +702,29 @@ func illegalClientHelloChange(ch, ch1 *clientHelloMsg) bool {
 func (hs *serverHandshakeStateTLS13) sendServerParameters() error {
 	c := hs.c
 
-	earlySecret := hs.earlySecret
-	if earlySecret == nil {
-		earlySecret = hs.suite.extract(nil, nil)
-	}
-	hs.handshakeSecret = hs.suite.extract(hs.sharedKey,
-		hs.suite.deriveSecret(earlySecret, "derived", nil))
-
 	// Confirm ECH acceptance.
-	if hs.clientHello.echIsInner {
-		confTranscript := cloneHash(hs.transcript, hs.suite.hash)
-		if confTranscript == nil {
+	if hs.echIsInner() {
+		// Clear the last 8 bytes of the ServerHello.random in preparation for
+		// computing the confirmation hint.
+		copy(hs.hello.random[24:], zeros[:8])
+
+		// Set the last 8 bytes of ServerHello.random to a string derived from
+		// the inner handshake.
+		echAcceptConfTranscript := cloneHash(hs.transcript, hs.suite.hash)
+		if echAcceptConfTranscript == nil {
 			c.sendAlert(alertInternalError)
 			return errors.New("tls: internal error: failed to clone hash")
 		}
-		confTranscript.Write(hs.clientHello.marshal())
-		confTranscript.Write(hs.hello.marshal())
-		conf := hs.suite.deriveSecret(hs.handshakeSecret,
-			echAcceptConfirmationLabel, confTranscript)
-		copy(hs.hello.random[24:], conf[:8])
+		echAcceptConfTranscript.Write(hs.clientHello.marshal())
+		echAcceptConfTranscript.Write(hs.hello.marshal())
+
+		echAcceptConf := hs.suite.expandLabel(
+			hs.suite.extract(hs.clientHello.random, nil),
+			echAcceptConfLabel,
+			echAcceptConfTranscript.Sum(nil),
+			8)
+
+		copy(hs.hello.random[24:], echAcceptConf)
 		hs.hello.raw = nil
 	}
 
@@ -717,6 +739,13 @@ func (hs *serverHandshakeStateTLS13) sendServerParameters() error {
 	if err := hs.sendDummyChangeCipherSpec(); err != nil {
 		return err
 	}
+
+	earlySecret := hs.earlySecret
+	if earlySecret == nil {
+		earlySecret = hs.suite.extract(nil, nil)
+	}
+	hs.handshakeSecret = hs.suite.extract(hs.sharedKey,
+		hs.suite.deriveSecret(earlySecret, "derived", nil))
 
 	clientSecret := hs.suite.deriveSecret(hs.handshakeSecret,
 		clientHandshakeTrafficLabel, hs.transcript)

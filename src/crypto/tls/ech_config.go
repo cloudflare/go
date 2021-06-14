@@ -25,7 +25,7 @@ type ECHConfig struct {
 	rawPublicKey      []byte
 	kemId             uint16
 	suites            []hpkeSymmetricCipherSuite
-	maxNameLen        uint16
+	maxNameLen        uint8
 	ignoredExtensions []byte
 }
 
@@ -107,8 +107,8 @@ func readConfigContents(contents *cryptobyte.String, config *ECHConfig) bool {
 		config.suites = append(config.suites, hpkeSymmetricCipherSuite{kdfId, aeadId})
 	}
 
-	if !contents.ReadUint16(&config.maxNameLen) ||
-		!contents.ReadUint16LengthPrefixed(&t) ||
+	if !contents.ReadUint8(&config.maxNameLen) ||
+		!contents.ReadUint8LengthPrefixed(&t) ||
 		!t.ReadBytes(&config.rawPublicName, len(t)) ||
 		!contents.ReadUint16LengthPrefixed(&t) ||
 		!t.ReadBytes(&config.ignoredExtensions, len(t)) ||
