@@ -90,7 +90,7 @@ Fy/vytRwyjhHuX9ntc5ArCpwbAmY+oW/4w==
 
 // The ECH keys used by the client-facing server.
 const echTestKeys = `-----BEGIN ECH KEYS-----
-ACDhS0q2cTU1Qzi6hPM4BQ/HLnbEUZyWdY2GbmS0DVkumgBI/goARAAAIAAgi1Tu
+ACDhS0q2cTU1Qzi6hPM4BQ/HLnbEUZyWdY2GbmS0DVkumgBI/goARAwAIAAgi1Tu
 jWJ236k1VAMeRnysKbDigxLpDs/AGdEowK8KiBkABAABAAEAAAATY2xvdWRmbGFy
 ZS1lc25pLmNvbQAAACBmNj/zQe6OT/MR/MM39G6kwMJCJEXpdvTAkbdHErlgXwBI
 /goARAEAIAAgZ1Ru1uyGX6N9HYs5/pAE3KwUXRDBHD0Bdna8oP4uVEwABAABAAEA
@@ -108,7 +108,7 @@ AAATY2xvdWRmbGFyZS1lc25pLmNvbQAA
 
 // The sequence of ECH configurations corresponding to echTestKeys.
 const echTestConfigs = `-----BEGIN ECH CONFIGS-----
-AJD+CgBEAAAgACCLVO6NYnbfqTVUAx5GfKwpsOKDEukOz8AZ0SjArwqIGQAEAAEA
+AJD+CgBEDAAgACCLVO6NYnbfqTVUAx5GfKwpsOKDEukOz8AZ0SjArwqIGQAEAAEA
 AQAAABNjbG91ZGZsYXJlLWVzbmkuY29tAAD+CgBEAQAgACBnVG7W7IZfo30dizn+
 kATcrBRdEMEcPQF2dryg/i5UTAAEAAEAAQAAABNjbG91ZGZsYXJlLWVzbmkuY29t
 AAA=
@@ -912,16 +912,17 @@ func TestECHProvider(t *testing.T) {
 	p := echTestLoadKeySet(echTestKeys)
 	t.Run("ok", func(t *testing.T) {
 		handle := []byte{
-			0, 1, 0, 1, 0, 0, 32, 40, 52, 167, 167, 21, 125, 151, 32, 250, 255, 1,
+			0, 1, 0, 1, 12, 0, 32, 40, 52, 167, 167, 21, 125, 151, 32, 250, 255, 1,
 			125, 206, 103, 62, 96, 189, 112, 126, 48, 221, 41, 198, 146, 100, 149,
 			29, 133, 103, 87, 87, 78,
 		}
 		context := []byte{
-			1, 0, 32, 0, 1, 0, 1, 32, 36, 168, 201, 89, 6, 5, 216, 41, 55, 71, 51,
-			165, 58, 92, 20, 212, 13, 84, 72, 119, 247, 120, 50, 63, 21, 145, 190,
-			153, 201, 60, 38, 185, 16, 73, 40, 109, 39, 98, 199, 188, 154, 135, 218,
-			81, 43, 179, 83, 22, 108, 12, 225, 52, 73, 49, 74, 108, 22, 100, 11, 244,
-			38, 198, 12, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+			1, 0, 32, 0, 1, 0, 1, 32, 129, 80, 17, 132, 239, 31, 114, 89, 23,
+			187, 164, 23, 163, 219, 188, 112, 106, 218, 216, 137, 91, 120, 65,
+			45, 245, 194, 159, 217, 145, 92, 80, 183, 16, 181, 208, 237, 170,
+			45, 26, 143, 238, 42, 39, 113, 20, 212, 136, 191, 198, 12, 187, 77,
+			142, 221, 127, 135, 192, 139, 29, 241, 196, 206, 12, 0, 0, 0, 0, 0,
+			0, 0, 0, 0, 0, 0, 0,
 		}
 		testECHProvider(t, p, handle, extensionECH, ECHProviderResult{
 			Status:       ECHProviderSuccess,
