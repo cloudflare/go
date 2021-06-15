@@ -222,6 +222,7 @@ func (c *Conn) echAcceptOrReject(hello *clientHelloMsg) (*clientHelloMsg, error)
 		c.sendAlert(alertIllegalParameter)
 		return nil, errors.New("ech: hrr: illegal handle in second hello")
 	}
+	c.ech.configId = ech.handle.configId
 	c.ech.suite = ech.handle.suite
 
 	// Ask the ECH provider for the HPKE context.
