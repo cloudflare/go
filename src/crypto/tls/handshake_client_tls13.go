@@ -22,7 +22,6 @@ type clientHandshakeStateTLS13 struct {
 	serverHello *serverHelloMsg
 	hello       *clientHelloMsg
 	helloInner  *clientHelloMsg
-	helloBase   *clientHelloMsg
 	ecdheParams ecdheParameters
 
 	session     *ClientSessionState
@@ -104,13 +103,9 @@ func (hs *clientHandshakeStateTLS13) handshake() error {
 	hs.transcript = hs.suite.hash.New()
 	hs.transcript.Write(hs.hello.marshal())
 
-	// When offering ECH, we don't decide if ECH was accepted until the
-	// ServerHello is processed. This means we don't know at this point if the
-	// server used the ClientHelloOuter or the ClientHelloInner.
-	//
-	// TODO(cjpatton): Starting with draft-ietf-tls-esni-11, there is an
-	// explicit signal of acceptance in HRR. Refactor the client so that we
-	// don't need to compute the transcript for both handshakes.
+	// When offering ECH, we don't know whether ECH was accepted or rejected
+	// until we get the server's response. Compute the transcript of both the
+	// inner and outer handshake until we know.
 	if c.ech.offered {
 		hs.transcriptInner = hs.suite.hash.New()
 		hs.transcriptInner.Write(hs.helloInner.marshal())
@@ -268,7 +263,6 @@ func (hs *clientHandshakeStateTLS13) sendDummyChangeCipherSpec() error {
 // resends hs.hello, and reads the new ServerHello into hs.serverHello.
 func (hs *clientHandshakeStateTLS13) processHelloRetryRequest() error {
 	c := hs.c
-	c.hrrTriggered = true
 
 	// The first ClientHello gets double-hashed into the transcript upon a
 	// HelloRetryRequest. (The idea is that the server might offload transcript
@@ -279,6 +273,10 @@ func (hs *clientHandshakeStateTLS13) processHelloRetryRequest() error {
 	hs.transcript.Write(chHash)
 	hs.transcript.Write(hs.serverHello.marshal())
 
+	// Determine which ClientHello message was consumed by the server. If ECH
+	// was offered, this may be the ClientHelloInner or ClientHelloOuter.
+	hello := hs.hello
+	isInner := false
 	if c.ech.offered {
 		chHash = hs.transcriptInner.Sum(nil)
 		hs.transcriptInner.Reset()
@@ -301,20 +299,9 @@ func (hs *clientHandshakeStateTLS13) processHelloRetryRequest() error {
 				echAcceptConfHRRTranscript.Sum(nil),
 				8)
 
-			// If this is a test, then assert the client and server have
-			// computed the acceptance signal correctly.
-			//
-			// TODO(cjpatton): Remove this assertion and use the acceptance
-			// signal to decide if we're using the inner or outer handshake.
-			// Prior to draft-ietf-tls-esni-11, there was no explicit signal of
-			// ECH acceptance after HRR. To address this ambiguity, the client
-			// is designed to ensure that any HRR-sensitive parameters match
-			// in inner and outer CH. This leads to a complicated state machine,
-			// which we can simplify if we use this signal as intended.
-			if subtle.ConstantTimeCompare(hs.serverHello.ech, echAcceptConfHRRSignal) != 1 {
-				if testingTriggerHRR {
-					panic("hrr ech acceptance signal mismatch")
-				}
+			if subtle.ConstantTimeCompare(hs.serverHello.ech, echAcceptConfHRRSignal) == 1 {
+				hello = hs.helloInner
+				isInner = true
 			}
 		}
 
@@ -330,7 +317,7 @@ func (hs *clientHandshakeStateTLS13) processHelloRetryRequest() error {
 	}
 
 	if hs.serverHello.cookie != nil {
-		hs.helloBase.cookie = hs.serverHello.cookie
+		hello.cookie = hs.serverHello.cookie
 	}
 
 	if hs.serverHello.serverShare.group != 0 {
@@ -343,7 +330,7 @@ func (hs *clientHandshakeStateTLS13) processHelloRetryRequest() error {
 	// share for it this time.
 	if curveID := hs.serverHello.selectedGroup; curveID != 0 {
 		curveOK := false
-		for _, id := range hs.helloBase.supportedCurves {
+		for _, id := range hello.supportedCurves {
 			if id == curveID {
 				curveOK = true
 				break
@@ -367,11 +354,11 @@ func (hs *clientHandshakeStateTLS13) processHelloRetryRequest() error {
 			return err
 		}
 		hs.ecdheParams = params
-		hs.helloBase.keyShares = []keyShare{{group: curveID, data: params.PublicKey()}}
+		hello.keyShares = []keyShare{{group: curveID, data: params.PublicKey()}}
 	}
 
-	hs.helloBase.raw = nil
-	if len(hs.helloBase.pskIdentities) > 0 {
+	hello.raw = nil
+	if len(hello.pskIdentities) > 0 {
 		pskSuite := cipherSuiteTLS13ByID(hs.session.cipherSuite)
 		if pskSuite == nil {
 			return c.sendAlert(alertInternalError)
@@ -379,40 +366,68 @@ func (hs *clientHandshakeStateTLS13) processHelloRetryRequest() error {
 		if pskSuite.hash == hs.suite.hash {
 			// Update binders and obfuscated_ticket_age.
 			ticketAge := uint32(c.config.time().Sub(hs.session.receivedAt) / time.Millisecond)
-			hs.helloBase.pskIdentities[0].obfuscatedTicketAge = ticketAge + hs.session.ageAdd
+			hello.pskIdentities[0].obfuscatedTicketAge = ticketAge + hs.session.ageAdd
 
 			transcript := hs.suite.hash.New()
 			transcript.Write([]byte{typeMessageHash, 0, 0, uint8(len(chHash))})
 			transcript.Write(chHash)
 			transcript.Write(hs.serverHello.marshal())
-			transcript.Write(hs.helloBase.marshalWithoutBinders())
+			transcript.Write(hello.marshalWithoutBinders())
 			pskBinders := [][]byte{hs.suite.finishedHash(hs.binderKey, transcript)}
-			hs.helloBase.updateBinders(pskBinders)
+			hello.updateBinders(pskBinders)
 		} else {
 			// Server selected a cipher suite incompatible with the PSK.
-			hs.helloBase.pskIdentities = nil
-			hs.helloBase.pskBinders = nil
+			hello.pskIdentities = nil
+			hello.pskBinders = nil
 		}
 	}
 
-	var err error
-	hs.hello, hs.helloInner, err = c.echOfferOrGrease(hs.helloBase)
-	if err != nil {
-		return err
+	if isInner {
+		hs.helloInner = hello
+		hs.transcriptInner.Write(hs.helloInner.marshal())
+		if err := c.echUpdateClientHelloOuter(hs.hello, hs.helloInner, nil); err != nil {
+			return err
+		}
+	} else {
+		hs.hello = hello
 	}
 
 	if testingECHIllegalHandleAfterHRR {
-		// Triggers a server abort, since the "config_id" and "enc" fields are
-		// expected to be empty after HRR.
-		ech, err := echUnmarshalClientOuter(hs.hello.ech)
-		if err != nil {
-			return err
-		}
-		ech.raw = nil
-		ech.handle.raw = nil
-		ech.handle.configId = uint8(0)
-		ech.handle.enc = []byte{1, 2, 3, 4}
+		hs.hello.raw = nil
+
+		// Change the cipher suite and config id and set an encapsulated key in
+		// the updated ClientHello. This will trigger a server abort because the
+		// cipher suite and config id are supposed to match the previous
+		// ClientHello and the encapsulated key is supposed to be empty.
+		var ech echClientOuter
+		_, kdf, aead := c.ech.sealer.Suite().Params()
+		ech.handle.suite.kdfId = uint16(kdf) ^ 0xff
+		ech.handle.suite.aeadId = uint16(aead) ^ 0xff
+		ech.handle.configId = c.ech.configId ^ 0xff
+		ech.handle.enc = []byte{1, 2, 3, 4, 5}
+		ech.payload = []byte{1, 2, 3, 4, 5}
 		hs.hello.ech = ech.marshal()
+	}
+
+	if testingECHTriggerBypassAfterHRR {
+		hs.hello.raw = nil
+
+		// Don't send the ECH extension in the updated ClientHello. This will
+		// trigger a server abort, since this is illegal.
+		hs.hello.ech = nil
+	}
+
+	if testingECHTriggerBypassBeforeHRR {
+		hs.hello.raw = nil
+
+		// Send a dummy ECH extension in the updated ClientHello. This will
+		// trigger a server abort, since no ECH extension was sent in the
+		// previous ClientHello.
+		var err error
+		hs.hello.ech, err = echGenerateGreaseExt(c.config.rand())
+		if err != nil {
+			return fmt.Errorf("tls: ech: failed to generate grease ECH: %s", err)
+		}
 	}
 
 	if _, err := c.writeRecord(recordTypeHandshake, hs.hello.marshal()); err != nil {
@@ -436,9 +451,6 @@ func (hs *clientHandshakeStateTLS13) processHelloRetryRequest() error {
 	}
 
 	hs.transcript.Write(hs.hello.marshal())
-	if c.ech.offered {
-		hs.transcriptInner.Write(hs.helloInner.marshal())
-	}
 	return nil
 }
 
