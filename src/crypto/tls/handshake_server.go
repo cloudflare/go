@@ -142,7 +142,7 @@ func (c *Conn) readClientHello() (*clientHelloMsg, error) {
 	// or GetCertifciate(). Hence, it is not currently possible to reject ECH if
 	// we don't recognize the inner SNI. This may or may not be desirable in the
 	// future.
-	clientHello, err = c.echAcceptOrReject(clientHello)
+	clientHello, err = c.echAcceptOrReject(clientHello, false) // afterHRR == false
 	if err != nil {
 		return nil, fmt.Errorf("tls: %s", err) // Alert sent.
 	}

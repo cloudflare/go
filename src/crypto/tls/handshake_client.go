@@ -226,7 +226,6 @@ func (c *Conn) clientHandshake() (err error) {
 			serverHello:      serverHello,
 			hello:            hello,
 			helloInner:       helloInner,
-			helloBase:        helloBase,
 			ecdheParams:      ecdheParams,
 			session:          session,
 			earlySecret:      earlySecret,

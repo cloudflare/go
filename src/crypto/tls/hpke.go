@@ -12,9 +12,17 @@ import (
 // The mandatory-to-implement HPKE cipher suite for use with the ECH extension.
 var defaultHPKESuite hpke.Suite
 
-const (
-	defaultHPKESuiteTagLen int = 16 // AEAD_AES128GCM
-)
+func init() {
+	var err error
+	defaultHPKESuite, err = hpkeAssembleSuite(
+		uint16(hpke.KEM_X25519_HKDF_SHA256),
+		uint16(hpke.KDF_HKDF_SHA256),
+		uint16(hpke.AEAD_AES128GCM),
+	)
+	if err != nil {
+		panic(fmt.Sprintf("hpke: mandatory-to-implement cipher suite not supported: %s", err))
+	}
+}
 
 func hpkeAssembleSuite(kemId, kdfId, aeadId uint16) (hpke.Suite, error) {
 	kem := hpke.KEM(kemId)
@@ -30,16 +38,4 @@ func hpkeAssembleSuite(kemId, kdfId, aeadId uint16) (hpke.Suite, error) {
 		return hpke.Suite{}, errors.New("AEAD is not supported")
 	}
 	return hpke.NewSuite(kem, kdf, aead), nil
-}
-
-func init() {
-	var err error
-	defaultHPKESuite, err = hpkeAssembleSuite(
-		uint16(hpke.KEM_X25519_HKDF_SHA256),
-		uint16(hpke.KDF_HKDF_SHA256),
-		uint16(hpke.AEAD_AES128GCM),
-	)
-	if err != nil {
-		panic(fmt.Sprintf("hpke: mandatory-to-implement cipher suite not supported: %s", err))
-	}
 }
