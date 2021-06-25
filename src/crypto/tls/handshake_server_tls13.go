@@ -549,7 +549,6 @@ func (hs *serverHandshakeStateTLS13) sendDummyChangeCipherSpec() error {
 
 func (hs *serverHandshakeStateTLS13) doHelloRetryRequest(selectedGroup CurveID) error {
 	c := hs.c
-	c.hrrTriggered = true
 
 	// The first ClientHello gets double-hashed into the transcript upon a
 	// HelloRetryRequest. See RFC 8446, Section 4.4.1.
@@ -610,7 +609,7 @@ func (hs *serverHandshakeStateTLS13) doHelloRetryRequest(selectedGroup CurveID) 
 		return unexpectedMessageError(clientHello, msg)
 	}
 
-	clientHello, err = c.echAcceptOrReject(clientHello)
+	clientHello, err = c.echAcceptOrReject(clientHello, true) // afterHRR == true
 	if err != nil {
 		return fmt.Errorf("tls: %s", err) // Alert sent
 	}
