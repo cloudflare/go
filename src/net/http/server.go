@@ -963,7 +963,7 @@ func (c *conn) readRequest(ctx context.Context) (w *response, err error) {
 		peek, _ := c.bufr.Peek(4) // ReadRequest will get err below
 		c.bufr.Discard(numLeadingCRorLF(peek))
 	}
-	req, err := readRequest(c.bufr, keepHostHeader)
+	req, err := readRequest(c.bufr, keepHostHeader, c.server.CFRecordRequestLines)
 	if err != nil {
 		if c.r.hitReadLimit() {
 			return nil, errTooLarge
@@ -2617,6 +2617,14 @@ type Server struct {
 	// is derived from the base context and has a ServerContextKey
 	// value.
 	ConnContext func(ctx context.Context, c net.Conn) context.Context
+
+	// CFRecordRequestLines, if set, populates Request.CFRequestLines when
+	// parsing a request.
+	//
+	// NOTE(cjpatton): The "CF" prefix denotes that this feture is used for a
+	// Cloudflare-internal use case. It may or may not be useful for upstream
+	// Goo.
+	CFRecordRequestLines bool
 
 	inShutdown atomicBool // true when when server is in shutdown
 

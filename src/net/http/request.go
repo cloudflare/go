@@ -315,6 +315,14 @@ type Request struct {
 	// redirects.
 	Response *Response
 
+	// CFHeaderLines represents the headers in a way that allows them to be
+	// re-constructed (almost) as they appeared on the wire.
+	//
+	// NOTE(cjpatton): The "CF" prefix denotes the fact that this parameter is
+	// used for a Cloudflare-internal purpose. It may or may not be useful for
+	// upstream Go.
+	CFHeaderLines []textproto.CFHeaderLine
+
 	// ctx is either the client or server context. It should only
 	// be modified via copying the whole Request using WithContext.
 	// It is unexported to prevent people from using Context wrong
@@ -1009,16 +1017,27 @@ func putTextprotoReader(r *textproto.Reader) {
 // requests and handle them via the Handler interface. ReadRequest
 // only supports HTTP/1.x requests. For HTTP/2, use golang.org/x/net/http2.
 func ReadRequest(b *bufio.Reader) (*Request, error) {
-	return readRequest(b, deleteHostHeader)
+	return readRequest(b, deleteHostHeader, cfRecordRequestLines)
 }
 
-// Constants for readRequest's deleteHostHeader parameter.
+// CFReadRequest is like ReadRequest except that it sets CFHeaderLines in the
+// request.
+//
+// NOTE(cjpatton): The "CF" prefix denotes the fact that this parameter is used
+// for a Cloudflare-internal purpose. It may or may not be useful for upstream
+// Go.
+func CFReadRequest(b *bufio.Reader) (*Request, error) {
+	return readRequest(b, deleteHostHeader, true)
+}
+
+// Constants for readRequest's flags.
 const (
-	deleteHostHeader = true
-	keepHostHeader   = false
+	deleteHostHeader     = true
+	keepHostHeader       = false
+	cfRecordRequestLines = false
 )
 
-func readRequest(b *bufio.Reader, deleteHostHeader bool) (req *Request, err error) {
+func readRequest(b *bufio.Reader, deleteHostHeader, cfRecordRequestLines bool) (req *Request, err error) {
 	tp := newTextprotoReader(b)
 	req = new(Request)
 
@@ -1071,11 +1090,12 @@ func readRequest(b *bufio.Reader, deleteHostHeader bool) (req *Request, err erro
 	}
 
 	// Subsequent lines: Key: value.
-	mimeHeader, err := tp.ReadMIMEHeader()
+	mimeHeader, orderedHeader, err := tp.CFReadMIMEHeader(cfRecordRequestLines)
 	if err != nil {
 		return nil, err
 	}
 	req.Header = Header(mimeHeader)
+	req.CFHeaderLines = orderedHeader
 
 	// RFC 7230, section 5.3: Must treat
 	//	GET /index.html HTTP/1.1
