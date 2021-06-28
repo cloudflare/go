@@ -481,6 +481,14 @@ func (r *Reader) ReadDotLines() ([]string, error) {
 //	}
 //
 func (r *Reader) ReadMIMEHeader() (MIMEHeader, error) {
+	header, _, err := r.CFReadMIMEHeader(false /* recordRequestLines */)
+	return header, err
+}
+
+// CFReadMIMEHeader is like ReadMIMEHeader except that, if recordRequestLines is
+// set, it returns a []CFHeaderLine that preserves certain features of the
+// request headers as they appeared on the wire.
+func (r *Reader) CFReadMIMEHeader(recordRequestLines bool) (MIMEHeader, []CFHeaderLine, error) {
 	// Avoid lots of small slice allocations later by allocating one
 	// large one ahead of time which we'll cut up into smaller
 	// slices. If this isn't big enough later, we allocate small ones.
@@ -491,26 +499,40 @@ func (r *Reader) ReadMIMEHeader() (MIMEHeader, error) {
 	}
 
 	m := make(MIMEHeader, hint)
+	var ordered []CFHeaderLine
+	if recordRequestLines {
+		ordered = make([]CFHeaderLine, 0, hint)
+	}
 
 	// The first line cannot start with a leading space.
 	if buf, err := r.R.Peek(1); err == nil && (buf[0] == ' ' || buf[0] == '\t') {
 		line, err := r.readLineSlice()
 		if err != nil {
-			return m, err
+			return m, ordered, err
 		}
-		return m, ProtocolError("malformed MIME header initial line: " + string(line))
+		return m, ordered, ProtocolError("malformed MIME header initial line: " + string(line))
 	}
 
 	for {
+		var (
+			rawKey           string
+			colonPos         int
+			spacesAfterColon int
+		)
+
 		kv, err := r.readContinuedLineSlice(mustHaveFieldNameColon)
 		if len(kv) == 0 {
-			return m, err
+			return m, ordered, err
 		}
 
 		// Key ends at first colon.
 		i := bytes.IndexByte(kv, ':')
 		if i < 0 {
-			return m, ProtocolError("malformed MIME header line: " + string(kv))
+			return m, ordered, ProtocolError("malformed MIME header line: " + string(kv))
+		}
+		if recordRequestLines {
+			rawKey = string(kv[:i])
+			colonPos = i
 		}
 		key := canonicalMIMEHeaderKey(kv[:i])
 
@@ -525,6 +547,9 @@ func (r *Reader) ReadMIMEHeader() (MIMEHeader, error) {
 		i++ // skip colon
 		for i < len(kv) && (kv[i] == ' ' || kv[i] == '\t') {
 			i++
+		}
+		if recordRequestLines {
+			spacesAfterColon = i - colonPos - 1
 		}
 		value := string(kv[i:])
 
@@ -541,8 +566,16 @@ func (r *Reader) ReadMIMEHeader() (MIMEHeader, error) {
 			m[key] = append(vv, value)
 		}
 
+		if recordRequestLines {
+			ordered = append(ordered, CFHeaderLine{
+				Name:                  rawKey,
+				Value:                 value,
+				HTTP1SpacesAfterColon: spacesAfterColon,
+			})
+		}
+
 		if err != nil {
-			return m, err
+			return m, ordered, err
 		}
 	}
 }
