@@ -5578,6 +5578,17 @@ func (sc *http2serverConn) newWriterAndRequest(st *http2stream, f *http2MetaHead
 		return nil, nil, http2streamError(f.StreamID, http2ErrCodeProtocol)
 	}
 
+	if sc.hs.CFRecordRequestLines {
+		rp.orderedHeader = make([]textproto.CFHeaderLine, 0, len(f.Fields))
+		for _, hf := range f.Fields {
+			rp.orderedHeader = append(rp.orderedHeader, textproto.CFHeaderLine{
+				Name:                  hf.Name,
+				Value:                 hf.Value,
+				HTTP1SpacesAfterColon: -1,
+			})
+		}
+	}
+
 	rp.header = make(Header)
 	for _, hf := range f.RegularFields() {
 		rp.header.Add(sc.canonicalHeader(hf.Name), hf.Value)
@@ -5611,6 +5622,7 @@ type http2requestParam struct {
 	method                  string
 	scheme, authority, path string
 	header                  Header
+	orderedHeader           []textproto.CFHeaderLine
 }
 
 func (sc *http2serverConn) newWriterAndRequestNoBody(st *http2stream, rp http2requestParam) (*http2responseWriter, *Request, error) {
@@ -5681,6 +5693,8 @@ func (sc *http2serverConn) newWriterAndRequestNoBody(st *http2stream, rp http2re
 		Host:       rp.authority,
 		Body:       body,
 		Trailer:    trailer,
+
+		CFHeaderLines: rp.orderedHeader,
 	}
 	req = req.WithContext(st.ctx)
 
