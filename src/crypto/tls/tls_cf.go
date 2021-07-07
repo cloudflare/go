@@ -7,7 +7,9 @@ import (
 	circlPki "circl/pki"
 	circlSign "circl/sign"
 
+	"circl/sign/ed448"
 	"circl/sign/eddilithium3"
+	"circl/sign/eddilithium4"
 	"time"
 )
 
@@ -30,6 +32,8 @@ var circlSchemes = [...]struct {
 	scheme  circlSign.Scheme
 }{
 	{signatureEdDilithium3, eddilithium3.Scheme()},
+	{signatureEdDilithium4, eddilithium4.Scheme()},
+	{signatureEd448, ed448.Scheme()},
 }
 
 func circlSchemeBySigType(sigType uint8) circlSign.Scheme {
@@ -63,6 +67,33 @@ type CFEvent interface {
 	Name() string
 }
 
+func experimentName(c *Conn) string {
+	// Reports the experiment number
+	exp := "exp"
+	alg := ""
+	switch true {
+	case c.didKEMTLS:
+		exp += "3"
+		alg += c.verifiedDC.algorithm.String()
+		break
+	case c.didPQTLS:
+		exp += "2"
+		alg += c.verifiedDC.algorithm.String()
+		break
+	case c.verifiedDC != nil:
+		exp += "1"
+		alg += c.verifiedDC.algorithm.String()
+		break
+	case c.verifiedDC == nil:
+		exp += "0"
+		alg = CipherSuiteName(c.cipherSuite)
+		break
+	default:
+		break
+	}
+	return exp + "_" + alg
+}
+
 // CFEventTLS13ClientHandshakeTimingInfo carries intra-stack time durations for
 // TLS 1.3 client-state machine changes. It can be used for tracking metrics
 // during a connection. Some durations may be sensitive, such as the amount of
@@ -71,15 +102,23 @@ type CFEvent interface {
 type CFEventTLS13ClientHandshakeTimingInfo struct {
 	timer                   func() time.Time
 	start                   time.Time
+	total                   time.Time
 	WriteClientHello        time.Duration
 	ProcessServerHello      time.Duration
 	ReadEncryptedExtensions time.Duration
 	ReadCertificate         time.Duration
 	ReadCertificateVerify   time.Duration
-	ReadServerFinished      time.Duration
-	WriteCertificate        time.Duration
-	WriteCertificateVerify  time.Duration
-	WriteClientFinished     time.Duration
+
+	ReadServerFinished     time.Duration
+	WriteCertificate       time.Duration
+	WriteCertificateVerify time.Duration
+	WriteClientFinished    time.Duration
+
+	WriteKEMCiphertext time.Duration
+	ReadKEMCiphertext  time.Duration
+	FullProtocol       time.Duration
+
+	ExperimentName string
 }
 
 // Name is required by the CFEvent interface.
@@ -94,15 +133,24 @@ func (e CFEventTLS13ClientHandshakeTimingInfo) elapsedTime() time.Duration {
 	return e.timer().Sub(e.start)
 }
 
+func (e *CFEventTLS13ClientHandshakeTimingInfo) reset() {
+	e.start = e.timer()
+}
+
+func (e *CFEventTLS13ClientHandshakeTimingInfo) finish() {
+	e.FullProtocol = e.timer().Sub(e.total)
+}
+
 func createTLS13ClientHandshakeTimingInfo(timerFunc func() time.Time) CFEventTLS13ClientHandshakeTimingInfo {
 	timer := time.Now
 	if timerFunc != nil {
 		timer = timerFunc
 	}
-
+	now := timer()
 	return CFEventTLS13ClientHandshakeTimingInfo{
 		timer: timer,
-		start: timer(),
+		start: now,
+		total: now,
 	}
 }
 
@@ -114,15 +162,23 @@ func createTLS13ClientHandshakeTimingInfo(timerFunc func() time.Time) CFEventTLS
 type CFEventTLS13ServerHandshakeTimingInfo struct {
 	timer                    func() time.Time
 	start                    time.Time
+	total                    time.Time
 	ProcessClientHello       time.Duration
 	WriteServerHello         time.Duration
 	WriteEncryptedExtensions time.Duration
 	WriteCertificate         time.Duration
 	WriteCertificateVerify   time.Duration
-	WriteServerFinished      time.Duration
-	ReadCertificate          time.Duration
-	ReadCertificateVerify    time.Duration
-	ReadClientFinished       time.Duration
+
+	WriteServerFinished   time.Duration
+	ReadCertificate       time.Duration
+	ReadCertificateVerify time.Duration
+	ReadClientFinished    time.Duration
+
+	ReadKEMCiphertext  time.Duration
+	WriteKEMCiphertext time.Duration
+	FullProtocol       time.Duration
+
+	ExperimentName string
 }
 
 // Name is required by the CFEvent interface.
@@ -137,15 +193,24 @@ func (e CFEventTLS13ServerHandshakeTimingInfo) elapsedTime() time.Duration {
 	return e.timer().Sub(e.start)
 }
 
+func (e *CFEventTLS13ServerHandshakeTimingInfo) reset() {
+	e.start = e.timer()
+}
+
+func (e *CFEventTLS13ServerHandshakeTimingInfo) finish() {
+	e.FullProtocol = e.timer().Sub(e.total)
+}
+
 func createTLS13ServerHandshakeTimingInfo(timerFunc func() time.Time) CFEventTLS13ServerHandshakeTimingInfo {
 	timer := time.Now
 	if timerFunc != nil {
 		timer = timerFunc
 	}
-
+	now := timer()
 	return CFEventTLS13ServerHandshakeTimingInfo{
 		timer: timer,
-		start: timer(),
+		start: now,
+		total: now,
 	}
 }
 

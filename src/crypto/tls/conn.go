@@ -55,6 +55,12 @@ type Conn struct {
 	// verifiedDC contains the Delegated Credential sent by the peer (if advertised
 	// and correctly processed), which has been verified against the leaf certificate.
 	verifiedDC *DelegatedCredential
+	// didPQTLS states that the connection was established by using PQTLS.
+	didPQTLS bool
+	// didKEMTLS states that the connection was established by using KEMTLS.
+	didKEMTLS bool
+	// didClientAuthentication states that the connection used client authentication.
+	didClientAuthentication bool
 	// serverName contains the server name indicated by the client, if any.
 	serverName string
 	// secureRenegotiation is true if the server echoed the secure
@@ -90,6 +96,14 @@ type Conn struct {
 	// channel-binding.
 	clientFinished [12]byte
 	serverFinished [12]byte
+
+	// certificateMessage contain the Certificate message sent
+	// by the server in the most recent handshake.
+	// certificateMessageReq contain the Certificate Request message sent
+	// by the server in the most recent handshake.
+	// This is retained to be used as cached information for a new handshake.
+	certificateMessage    []byte
+	certificateReqMessage []byte
 
 	// clientProtocol is the negotiated ALPN protocol.
 	clientProtocol string
@@ -1481,6 +1495,11 @@ func (c *Conn) connectionStateLocked() ConnectionState {
 	if c.verifiedDC != nil {
 		state.VerifiedDC = true
 	}
+	state.DidClientAuthentication = c.didClientAuthentication
+	state.DidKEMTLS = c.didKEMTLS
+	state.DidPQTLS = c.didPQTLS
+	state.CertificateMessage = c.certificateMessage
+	state.CertificateReqMessage = c.certificateReqMessage
 	state.SignedCertificateTimestamps = c.scts
 	state.OCSPResponse = c.ocspResponse
 	state.ECHAccepted = c.ech.accepted

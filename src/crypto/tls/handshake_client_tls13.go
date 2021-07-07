@@ -8,7 +8,9 @@ import (
 	"bytes"
 	"crypto"
 	"crypto/hmac"
+	"crypto/kem"
 	"crypto/rsa"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"hash"
@@ -22,18 +24,27 @@ type clientHandshakeStateTLS13 struct {
 	hello       *clientHelloMsg
 	helloInner  *clientHelloMsg
 	helloBase   *clientHelloMsg
-	ecdheParams ecdheParameters
+	keyShare    []clientKeySharePrivate
 
 	session     *ClientSessionState
 	earlySecret []byte
 	binderKey   []byte
 
-	certReq         *certificateRequestMsgTLS13
-	usingPSK        bool
-	sentDummyCCS    bool
+	certReq      *certificateRequestMsgTLS13
+	usingPSK     bool
+	sentDummyCCS bool
+
+	keyKEMShare        bool
+	isKEMTLS           bool
+	pdkKEMTLS          bool
+	ssKEMTLS           []byte
+	isClientAuthKEMTLS bool
+	certKEMTLS         *Certificate // only for KEMTLS
+
 	suite           *cipherSuiteTLS13
 	transcript      hash.Hash
 	transcriptInner hash.Hash
+	handshakeSecret []byte
 	masterSecret    []byte
 	trafficSecret   []byte // client_application_traffic_secret_0
 
@@ -92,7 +103,7 @@ func (hs *clientHandshakeStateTLS13) handshake() error {
 	}
 
 	// Consistency check on the presence of a keyShare and its parameters.
-	if hs.ecdheParams == nil || len(hs.hello.keyShares) != 1 {
+	if hs.keyShare == nil || len(hs.hello.keyShares) != len(hs.keyShare) {
 		return c.sendAlert(alertInternalError)
 	}
 
@@ -136,6 +147,9 @@ func (hs *clientHandshakeStateTLS13) handshake() error {
 	if err := hs.readServerCertificate(); err != nil {
 		return err
 	}
+	if hs.isKEMTLS {
+		return hs.handshakeKEMTLS()
+	}
 	if err := hs.readServerFinished(); err != nil {
 		return err
 	}
@@ -152,6 +166,8 @@ func (hs *clientHandshakeStateTLS13) handshake() error {
 		return err
 	}
 
+	// hs.handshakeTimings.ExperimentName = experimentName(c)
+	hs.handshakeTimings.finish()
 	c.handleCFEvent(hs.handshakeTimings)
 	atomic.StoreUint32(&c.handshakeStatus, 1)
 
@@ -280,21 +296,48 @@ func (hs *clientHandshakeStateTLS13) processHelloRetryRequest() error {
 			c.sendAlert(alertIllegalParameter)
 			return errors.New("tls: server selected unsupported group")
 		}
-		if hs.ecdheParams.CurveID() == curveID {
-			c.sendAlert(alertIllegalParameter)
-			return errors.New("tls: server sent an unnecessary HelloRetryRequest key_share")
+
+		for _, keyShare := range hs.keyShare {
+			if ecdheParams, ok := keyShare.(ecdheParameters); ok {
+				if ecdheParams.CurveID() == curveID {
+					c.sendAlert(alertIllegalParameter)
+					return errors.New("tls: server sent an unnecessary HelloRetryRequest key_share")
+				}
+			} else if c.config.KEMTLSEnabled || c.config.PQTLSEnabled {
+				if kemShare, ok := keyShare.(*kem.PrivateKey); ok {
+					if CurveID(kemShare.KEMId) == curveID {
+						c.sendAlert(alertIllegalParameter)
+						return errors.New("tls: server sent an unnecessary HelloRetryRequest key_share")
+					}
+				}
+			} else {
+				return errors.New("tls: server sent an unnecessary HelloRetryRequest key_share")
+			}
+
 		}
-		if _, ok := curveForCurveID(curveID); curveID != X25519 && !ok {
-			c.sendAlert(alertInternalError)
-			return errors.New("tls: CurvePreferences includes unsupported curve")
+
+		if curveID.isKEM() && (c.config.KEMTLSEnabled || c.config.PQTLSEnabled) {
+			kemID := kem.ID(curveID)
+			pk, sk, err := kem.GenerateKey(c.config.rand(), kemID)
+			if err != nil {
+				c.sendAlert(alertInternalError)
+				return errors.New("tls: CurvePreferences includes unsupported kem")
+			}
+			hs.keyShare = []clientKeySharePrivate{sk}
+			hs.helloBase.keyShares = []keyShare{{group: CurveID(pk.KEMId), data: pk.PublicKey}}
+		} else {
+			if _, ok := curveForCurveID(curveID); (curveID != X25519 && !curveID.isKEM()) && !ok {
+				c.sendAlert(alertInternalError)
+				return errors.New("tls: CurvePreferences includes unsupported curve")
+			}
+			params, err := generateECDHEParameters(c.config.rand(), curveID)
+			if err != nil {
+				c.sendAlert(alertInternalError)
+				return err
+			}
+			hs.keyShare = []clientKeySharePrivate{params}
+			hs.helloBase.keyShares = []keyShare{{group: curveID, data: params.PublicKey()}}
 		}
-		params, err := generateECDHEParameters(c.config.rand(), curveID)
-		if err != nil {
-			c.sendAlert(alertInternalError)
-			return err
-		}
-		hs.ecdheParams = params
-		hs.helloBase.keyShares = []keyShare{{group: curveID, data: params.PublicKey()}}
 	}
 
 	hs.helloBase.raw = nil
@@ -395,7 +438,28 @@ func (hs *clientHandshakeStateTLS13) processServerHello() error {
 		c.sendAlert(alertIllegalParameter)
 		return errors.New("tls: server did not send a key share")
 	}
-	if hs.serverHello.serverShare.group != hs.ecdheParams.CurveID() {
+
+	if hs.serverHello.pdkKEMTLS && !hs.hello.pdkKEMTLS {
+		return errors.New("tls: server using pre-shared KEMTLS and client not")
+	}
+
+	var found bool
+	for _, keyShare := range hs.keyShare {
+		if ecdheParams, ok := keyShare.(ecdheParameters); ok {
+			if hs.serverHello.serverShare.group == ecdheParams.CurveID() {
+				found = true
+			}
+		} else if c.config.KEMTLSEnabled || c.config.PQTLSEnabled {
+			kemShare := keyShare.(*kem.PrivateKey)
+			if CurveID(kemShare.KEMId) == hs.serverHello.serverShare.group {
+				found = true
+			}
+		} else {
+			found = false
+		}
+	}
+
+	if !found {
 		c.sendAlert(alertIllegalParameter)
 		return errors.New("tls: server selected unsupported group")
 	}
@@ -433,17 +497,28 @@ func (hs *clientHandshakeStateTLS13) processServerHello() error {
 func (hs *clientHandshakeStateTLS13) establishHandshakeKeys() error {
 	c := hs.c
 
-	sharedKey := hs.ecdheParams.SharedKey(hs.serverHello.serverShare.data)
-	if sharedKey == nil {
-		c.sendAlert(alertIllegalParameter)
-		return errors.New("tls: invalid server key share")
+	var sharedKey []byte
+	for _, keyShare := range hs.keyShare {
+		if params, ok := keyShare.(ecdheParameters); ok && params.CurveID() == hs.serverHello.serverShare.group {
+			sharedKey = params.SharedKey(hs.serverHello.serverShare.data)
+		} else if c.config.KEMTLSEnabled || c.config.PQTLSEnabled {
+			if kemPrivate, ok := keyShare.(*kem.PrivateKey); ok && kemPrivate.KEMId == kem.ID(hs.serverHello.serverShare.group) {
+				var err error
+				sharedKey, err = kem.Decapsulate(kemPrivate, hs.serverHello.serverShare.data)
+				if err != nil {
+					c.sendAlert(alertInternalError)
+					return err
+				}
+				hs.keyKEMShare = true
+			}
+		}
 	}
 
 	earlySecret := hs.earlySecret
 	if !hs.usingPSK {
 		earlySecret = hs.suite.extract(nil, nil)
 	}
-	handshakeSecret := hs.suite.extract(sharedKey,
+	hs.handshakeSecret = hs.suite.extract(sharedKey,
 		hs.suite.deriveSecret(earlySecret, "derived", nil))
 
 	// If ECH was offered, then determine if it was accepted.
@@ -459,7 +534,7 @@ func (hs *clientHandshakeStateTLS13) establishHandshakeKeys() error {
 			return errors.New("tls: internal error: failed to encode ServerHelloConf")
 		}
 		confTranscript.Write(serverHelloConf)
-		conf := hs.suite.deriveSecret(handshakeSecret,
+		conf := hs.suite.deriveSecret(hs.handshakeSecret,
 			echAcceptConfirmationLabel, confTranscript)
 		if bytes.Equal(hs.serverHello.random[24:], conf[:8]) {
 			c.ech.accepted = true
@@ -477,10 +552,10 @@ func (hs *clientHandshakeStateTLS13) establishHandshakeKeys() error {
 	// to resolve ALPN here as well.
 	c.serverName = hs.hello.serverName
 
-	clientSecret := hs.suite.deriveSecret(handshakeSecret,
+	clientSecret := hs.suite.deriveSecret(hs.handshakeSecret,
 		clientHandshakeTrafficLabel, hs.transcript)
 	c.out.setTrafficSecret(hs.suite, clientSecret)
-	serverSecret := hs.suite.deriveSecret(handshakeSecret,
+	serverSecret := hs.suite.deriveSecret(hs.handshakeSecret,
 		serverHandshakeTrafficLabel, hs.transcript)
 	c.in.setTrafficSecret(hs.suite, serverSecret)
 
@@ -494,9 +569,6 @@ func (hs *clientHandshakeStateTLS13) establishHandshakeKeys() error {
 		c.sendAlert(alertInternalError)
 		return err
 	}
-
-	hs.masterSecret = hs.suite.extract(nil,
-		hs.suite.deriveSecret(handshakeSecret, "derived", nil))
 
 	return nil
 }
@@ -544,8 +616,55 @@ func (hs *clientHandshakeStateTLS13) readServerParameters() error {
 	return nil
 }
 
+func isKEMTLSAuthUsed(peerCertificate *x509.Certificate, cert Certificate) bool {
+	if cert.DelegatedCredential != nil {
+		dCred, err := unmarshalDelegatedCredential(cert.DelegatedCredential)
+		if err != nil {
+			return false
+		}
+
+		if dCred.cred.expCertVerfAlgo.isKEMTLS() {
+			return true
+		}
+	}
+
+	if kemPriv, ok := peerCertificate.PublicKey.(*kem.PublicKey); ok {
+		if kemPriv.KEMId == kem.SIKEp434 || kemPriv.KEMId == kem.Kyber512 {
+			return true
+		}
+	}
+
+	return false
+}
+
+func isPQTLSAuthUsed(peerCertificate *x509.Certificate, cert Certificate) bool {
+	if cert.DelegatedCredential != nil {
+		dCred, err := unmarshalDelegatedCredential(cert.DelegatedCredential)
+		if err != nil {
+			return false
+		}
+
+		if dCred.cred.expCertVerfAlgo.isPQTLS() {
+			return true
+		}
+	}
+
+	if kemPriv, ok := peerCertificate.PublicKey.(*kem.PublicKey); ok {
+		if kemPriv.KEMId == kem.SIKEp434 || kemPriv.KEMId == kem.Kyber512 {
+			return true
+		}
+	}
+
+	return false
+}
+
 func (hs *clientHandshakeStateTLS13) readServerCertificate() error {
 	c := hs.c
+
+	if hs.pdkKEMTLS && hs.keyKEMShare {
+		hs.isKEMTLS = true
+		return nil
+	}
 
 	// Either a PSK or a certificate is always used, but not both.
 	// See RFC 8446, Section 4.1.1.
@@ -599,58 +718,86 @@ func (hs *clientHandshakeStateTLS13) readServerCertificate() error {
 		return err
 	}
 
-	msg, err = c.readHandshake()
-	if err != nil {
-		return err
-	}
-
-	certVerify, ok := msg.(*certificateVerifyMsg)
-	if !ok {
-		c.sendAlert(alertUnexpectedMessage)
-		return unexpectedMessageError(certVerify, msg)
-	}
-
-	// See RFC 8446, Section 4.4.3.
-	if !isSupportedSignatureAlgorithm(certVerify.signatureAlgorithm, supportedSignatureAlgorithms) {
-		c.sendAlert(alertIllegalParameter)
-		return errors.New("tls: certificate used with invalid signature algorithm")
-	}
-
-	sigType, sigHash, err := typeAndHashFromSignatureScheme(certVerify.signatureAlgorithm)
-	if err != nil {
-		return c.sendAlert(alertInternalError)
-	}
-	if sigType == signaturePKCS1v15 || sigHash == crypto.SHA1 {
-		c.sendAlert(alertIllegalParameter)
-		return errors.New("tls: certificate used with invalid signature algorithm")
-	}
-	if certMsg.delegatedCredential {
-		if err := hs.processDelegatedCredentialFromServer(certMsg.certificate.DelegatedCredential, certVerify); err != nil {
-			return err // alert sent
+	if isPQTLSAuthUsed(c.peerCertificates[0], certMsg.certificate) {
+		if hs.keyKEMShare {
+			c.didPQTLS = true
 		}
 	}
 
-	pk := c.peerCertificates[0].PublicKey
-	if c.verifiedDC != nil {
-		pk = c.verifiedDC.cred.publicKey
+	if isKEMTLSAuthUsed(c.peerCertificates[0], certMsg.certificate) {
+		if certMsg.delegatedCredential {
+			if err := hs.processDelegatedCredentialFromServer(certMsg.certificate.DelegatedCredential, nil); err != nil {
+				return err
+			}
+		}
+
+		if hs.keyKEMShare {
+			hs.isKEMTLS = true
+			hs.handshakeTimings.ReadCertificateVerify = hs.handshakeTimings.elapsedTime()
+		} else {
+			c.sendAlert(alertInternalError)
+			return errors.New("tls: received a KEM certificate without using KEMTLS")
+		}
+	} else {
+		msg, err = c.readHandshake()
+		if err != nil {
+			return err
+		}
+
+		certVerify, ok := msg.(*certificateVerifyMsg)
+		if !ok {
+			c.sendAlert(alertUnexpectedMessage)
+			return unexpectedMessageError(certVerify, msg)
+		}
+
+		// See RFC 8446, Section 4.4.3.
+		if !isSupportedSignatureAlgorithm(certVerify.signatureAlgorithm, supportedSignatureAlgorithms) {
+			c.sendAlert(alertIllegalParameter)
+			return errors.New("tls: certificate used with invalid signature algorithm")
+		}
+
+		sigType, sigHash, err := typeAndHashFromSignatureScheme(certVerify.signatureAlgorithm)
+		if err != nil {
+			return c.sendAlert(alertInternalError)
+		}
+		if sigType == signaturePKCS1v15 || sigHash == crypto.SHA1 {
+			c.sendAlert(alertIllegalParameter)
+			return errors.New("tls: certificate used with invalid signature algorithm")
+		}
+		if certMsg.delegatedCredential {
+			if err := hs.processDelegatedCredentialFromServer(certMsg.certificate.DelegatedCredential, certVerify); err != nil {
+				return err // alert sent
+			}
+		}
+
+		pk := c.peerCertificates[0].PublicKey
+		if c.verifiedDC != nil {
+			pk = c.verifiedDC.cred.publicKey
+		}
+
+		signed := signedMessage(sigHash, serverSignatureContext, hs.transcript)
+		if err := verifyHandshakeSignature(sigType, pk,
+			sigHash, signed, certVerify.signature); err != nil {
+			c.sendAlert(alertDecryptError)
+			return errors.New("tls: invalid signature by the server certificate: " + err.Error())
+		}
+
+		hs.transcript.Write(certVerify.marshal())
+
+		hs.handshakeTimings.ReadCertificateVerify = hs.handshakeTimings.elapsedTime()
 	}
 
-	signed := signedMessage(sigHash, serverSignatureContext, hs.transcript)
-	if err := verifyHandshakeSignature(sigType, pk,
-		sigHash, signed, certVerify.signature); err != nil {
-		c.sendAlert(alertDecryptError)
-		return errors.New("tls: invalid signature by the server certificate: " + err.Error())
-	}
-
-	hs.transcript.Write(certVerify.marshal())
-
-	hs.handshakeTimings.ReadCertificateVerify = hs.handshakeTimings.elapsedTime()
+	c.certificateMessage = certMsg.marshal()
 
 	return nil
 }
 
 func (hs *clientHandshakeStateTLS13) readServerFinished() error {
 	c := hs.c
+
+	if hs.isKEMTLS == true {
+		return nil
+	}
 
 	msg, err := c.readHandshake()
 	if err != nil {
@@ -675,6 +822,8 @@ func (hs *clientHandshakeStateTLS13) readServerFinished() error {
 
 	// Derive secrets that take context through the server Finished.
 
+	hs.masterSecret = hs.suite.extract(nil,
+		hs.suite.deriveSecret(hs.handshakeSecret, "derived", nil))
 	hs.trafficSecret = hs.suite.deriveSecret(hs.masterSecret,
 		clientApplicationTrafficLabel, hs.transcript)
 	serverSecret := hs.suite.deriveSecret(hs.masterSecret,
@@ -742,7 +891,7 @@ func getClientDelegatedCredential(cri *CertificateRequestInfo, cert *Certificate
 func (hs *clientHandshakeStateTLS13) sendClientCertificate() error {
 	c := hs.c
 
-	if hs.certReq == nil {
+	if hs.certReq == nil || hs.isKEMTLS == true {
 		return nil
 	}
 
@@ -793,6 +942,7 @@ func (hs *clientHandshakeStateTLS13) sendClientCertificate() error {
 	suppSigAlgo := hs.certReq.supportedSignatureAlgorithms
 	sigAlgorithm, err = selectSignatureScheme(c.vers, cert, suppSigAlgo)
 	if err != nil {
+
 		// getClientCertificate returned a certificate incompatible with the
 		// CertificateRequestInfo supported signature algorithms.
 		c.sendAlert(alertHandshakeFailure)
@@ -807,7 +957,7 @@ func (hs *clientHandshakeStateTLS13) sendClientCertificate() error {
 			// CertificateRequestInfo supported signature algorithms.
 			cert.DelegatedCredential = nil
 		} else {
-			cert.PrivateKey = dcPair.PrivateKey
+			cert.DelegatedCredentialPrivateKey = dcPair.PrivateKey
 		}
 	}
 
@@ -823,11 +973,24 @@ func (hs *clientHandshakeStateTLS13) sendClientCertificate() error {
 	if sigType == signatureRSAPSS {
 		signOpts = &rsa.PSSOptions{SaltLength: rsa.PSSSaltLengthEqualsHash, Hash: sigHash}
 	}
-	sig, err := cert.PrivateKey.(crypto.Signer).Sign(c.config.rand(), signed, signOpts)
-	if err != nil {
-		c.sendAlert(alertInternalError)
-		return errors.New("tls: failed to sign handshake: " + err.Error())
+
+	var sig []byte
+	if len(cert.DelegatedCredential) > 0 {
+		var err error
+		sig, err = cert.DelegatedCredentialPrivateKey.(crypto.Signer).Sign(c.config.rand(), signed, signOpts)
+		if err != nil {
+			c.sendAlert(alertInternalError)
+			return errors.New("tls: failed to sign handshake: " + err.Error())
+		}
+	} else {
+		var err error
+		sig, err = cert.PrivateKey.(crypto.Signer).Sign(c.config.rand(), signed, signOpts)
+		if err != nil {
+			c.sendAlert(alertInternalError)
+			return errors.New("tls: failed to sign handshake: " + err.Error())
+		}
 	}
+
 	certVerifyMsg.signature = sig
 
 	hs.transcript.Write(certVerifyMsg.marshal())
@@ -835,13 +998,20 @@ func (hs *clientHandshakeStateTLS13) sendClientCertificate() error {
 		return err
 	}
 
+	c.didClientAuthentication = true
 	hs.handshakeTimings.WriteCertificateVerify = hs.handshakeTimings.elapsedTime()
+
+	c.certificateReqMessage = hs.certReq.marshal()
 
 	return nil
 }
 
 func (hs *clientHandshakeStateTLS13) sendClientFinished() error {
 	c := hs.c
+
+	if hs.isKEMTLS == true {
+		return nil
+	}
 
 	finished := &finishedMsg{
 		verifyData: hs.suite.finishedHash(c.out.trafficSecret, hs.transcript),

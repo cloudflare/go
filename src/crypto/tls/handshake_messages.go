@@ -85,6 +85,12 @@ type clientHelloMsg struct {
 	secureRenegotiationSupported     bool
 	secureRenegotiation              []byte
 	delegatedCredentialSupported     bool
+	cachedInformationCert            bool
+	cachedInformationCertHash        []byte
+	cachedInformationCertReq         bool
+	cachedInformationCertReqHash     []byte
+	pdkKEMTLS                        bool
+	ciphertextKEMTLS                 []byte
 	alpnProtocols                    []string
 	scts                             bool
 	supportedVersions                []uint16
@@ -229,6 +235,26 @@ func (m *clientHelloMsg) marshal() []byte {
 						})
 					})
 				}
+			}
+			if m.cachedInformationCert {
+				// RFC: https://tools.ietf.org/html/rfc6066
+				b.AddUint16(extensionCachedInfo)
+				b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
+					b.AddUint8(1) // CachedInformationType: cert
+					addBytesWithLength(b, m.cachedInformationCertHash, 32)
+					if m.cachedInformationCertReq {
+						b.AddUint8(2) // CachedInformationType: cert_req
+						addBytesWithLength(b, m.cachedInformationCertReqHash, 32)
+					}
+				})
+			}
+			if m.pdkKEMTLS {
+				b.AddUint16(extensionPDKKEMTLS)
+				b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
+					b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
+						b.AddBytes(m.ciphertextKEMTLS)
+					})
+				})
 			}
 			if len(m.alpnProtocols) > 0 {
 				// RFC 7301, Section 3.1
@@ -579,6 +605,33 @@ func (m *clientHelloMsg) unmarshal(data []byte) bool {
 					m.supportedSignatureAlgorithmsDC, SignatureScheme(sigAndAlg))
 			}
 			m.delegatedCredentialSupported = true
+		case extensionCachedInfo:
+			// RFC 7924, Section 4
+			var cachedType uint8
+			if extData.ReadUint8(&cachedType) {
+				if extData.ReadBytes(&m.cachedInformationCertHash, 32) {
+					m.cachedInformationCert = true
+				}
+			} else {
+				return false
+			}
+
+			if !extData.Empty() {
+				if extData.ReadUint8(&cachedType) {
+					if extData.ReadBytes(&m.cachedInformationCertReqHash, 32) {
+						m.cachedInformationCertReq = true
+					}
+				} else {
+					return false
+				}
+			}
+		case extensionPDKKEMTLS:
+			// RFC 8446, Section 4.2.2
+			if !readUint16LengthPrefixed(&extData, &m.ciphertextKEMTLS) ||
+				len(m.ciphertextKEMTLS) == 0 {
+				return false
+			}
+			m.pdkKEMTLS = true
 		case extensionKeyShare:
 			// RFC 8446, Section 4.2.8
 			var clientShares cryptobyte.String
@@ -663,6 +716,9 @@ type serverHelloMsg struct {
 	selectedIdentityPresent      bool
 	selectedIdentity             uint16
 	supportedPoints              []uint8
+	cachedInformationCert        bool
+	cachedInformationCertReq     bool
+	pdkKEMTLS                    bool
 
 	// HelloRetryRequest extensions
 	cookie        []byte
@@ -771,6 +827,20 @@ func (m *serverHelloMsg) marshal() []byte {
 						b.AddBytes(m.supportedPoints)
 					})
 				})
+			}
+			if m.cachedInformationCert {
+				// RFC: https://tools.ietf.org/html/rfc6066
+				b.AddUint16(extensionCachedInfo)
+				b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
+					b.AddUint8(1) // CachedInformationType: cert
+					if m.cachedInformationCertReq {
+						b.AddUint8(2) // CachedInformationType: cert_req
+					}
+				})
+			}
+			if m.pdkKEMTLS {
+				b.AddUint16(extensionPDKKEMTLS)
+				b.AddUint16(0) // empty extension_data
 			}
 
 			extensionsPresent = len(b.BytesOrPanic()) > 2
@@ -882,6 +952,24 @@ func (m *serverHelloMsg) unmarshal(data []byte) bool {
 				len(m.supportedPoints) == 0 {
 				return false
 			}
+		case extensionCachedInfo:
+			// RFC 7924, Section 4
+			var cachedType uint8
+			if extData.ReadUint8(&cachedType) {
+				m.cachedInformationCert = true
+			} else {
+				return false
+			}
+
+			if !extData.Empty() {
+				if extData.ReadUint8(&cachedType) {
+					m.cachedInformationCertReq = true
+				} else {
+					return false
+				}
+			}
+		case extensionPDKKEMTLS:
+			m.pdkKEMTLS = true
 		default:
 			// Ignore unknown extensions.
 			continue

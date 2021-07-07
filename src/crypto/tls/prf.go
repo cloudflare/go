@@ -281,3 +281,9 @@ func ekmFromMasterSecret(version uint16, suite *cipherSuite, masterSecret, clien
 		return keyMaterial, nil
 	}
 }
+
+func calculateHashCachedInfo(cachedInfo []byte) []byte {
+	h := crypto.SHA256.New()
+	h.Write(cachedInfo)
+	return h.Sum(nil)
+}

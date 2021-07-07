@@ -18,51 +18,44 @@ func _() {
 	_ = x[ECDSAWithP384AndSHA384-1283]
 	_ = x[ECDSAWithP521AndSHA512-1539]
 	_ = x[Ed25519-2055]
+	_ = x[Ed448-2056]
 	_ = x[PKCS1WithSHA1-513]
 	_ = x[ECDSAWithSHA1-515]
+	_ = x[KEMTLSWithSIKEp434-65024]
+	_ = x[KEMTLSWithKyber512-65025]
+	_ = x[PQTLSWithDilithium3-65121]
+	_ = x[PQTLSWithDilithium4-65122]
 }
 
-const (
-	_SignatureScheme_name_0 = "PKCS1WithSHA1"
-	_SignatureScheme_name_1 = "ECDSAWithSHA1"
-	_SignatureScheme_name_2 = "PKCS1WithSHA256"
-	_SignatureScheme_name_3 = "ECDSAWithP256AndSHA256"
-	_SignatureScheme_name_4 = "PKCS1WithSHA384"
-	_SignatureScheme_name_5 = "ECDSAWithP384AndSHA384"
-	_SignatureScheme_name_6 = "PKCS1WithSHA512"
-	_SignatureScheme_name_7 = "ECDSAWithP521AndSHA512"
-	_SignatureScheme_name_8 = "PSSWithSHA256PSSWithSHA384PSSWithSHA512Ed25519"
-)
+const _SignatureScheme_name = "PKCS1WithSHA1ECDSAWithSHA1PKCS1WithSHA256ECDSAWithP256AndSHA256PKCS1WithSHA384ECDSAWithP384AndSHA384PKCS1WithSHA512ECDSAWithP521AndSHA512PSSWithSHA256PSSWithSHA384PSSWithSHA512Ed25519Ed448KEMTLSWithSIKEp434KEMTLSWithKyber512PQTLSWithDilithium3PQTLSWithDilithium4"
 
-var (
-	_SignatureScheme_index_8 = [...]uint8{0, 13, 26, 39, 46}
-)
+var _SignatureScheme_map = map[SignatureScheme]string{
+	513:   _SignatureScheme_name[0:13],
+	515:   _SignatureScheme_name[13:26],
+	1025:  _SignatureScheme_name[26:41],
+	1027:  _SignatureScheme_name[41:63],
+	1281:  _SignatureScheme_name[63:78],
+	1283:  _SignatureScheme_name[78:100],
+	1537:  _SignatureScheme_name[100:115],
+	1539:  _SignatureScheme_name[115:137],
+	2052:  _SignatureScheme_name[137:150],
+	2053:  _SignatureScheme_name[150:163],
+	2054:  _SignatureScheme_name[163:176],
+	2055:  _SignatureScheme_name[176:183],
+	2056:  _SignatureScheme_name[183:188],
+	65024: _SignatureScheme_name[188:206],
+	65025: _SignatureScheme_name[206:224],
+	65121: _SignatureScheme_name[224:243],
+	65122: _SignatureScheme_name[243:262],
+}
 
 func (i SignatureScheme) String() string {
-	switch {
-	case i == 513:
-		return _SignatureScheme_name_0
-	case i == 515:
-		return _SignatureScheme_name_1
-	case i == 1025:
-		return _SignatureScheme_name_2
-	case i == 1027:
-		return _SignatureScheme_name_3
-	case i == 1281:
-		return _SignatureScheme_name_4
-	case i == 1283:
-		return _SignatureScheme_name_5
-	case i == 1537:
-		return _SignatureScheme_name_6
-	case i == 1539:
-		return _SignatureScheme_name_7
-	case 2052 <= i && i <= 2055:
-		i -= 2052
-		return _SignatureScheme_name_8[_SignatureScheme_index_8[i]:_SignatureScheme_index_8[i+1]]
-	default:
-		return "SignatureScheme(" + strconv.FormatInt(int64(i), 10) + ")"
+	if str, ok := _SignatureScheme_map[i]; ok {
+		return str
 	}
+	return "SignatureScheme(" + strconv.FormatInt(int64(i), 10) + ")"
 }
+
 func _() {
 	// An "invalid array index" compiler error signifies that the constant values have changed.
 	// Re-run the stringer command to generate them again.

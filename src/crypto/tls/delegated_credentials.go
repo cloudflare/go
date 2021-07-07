@@ -20,12 +20,15 @@ import (
 	"crypto/ecdsa"
 	"crypto/ed25519"
 	"crypto/elliptic"
+	"crypto/kem"
 	"crypto/rand"
 	"crypto/x509"
 	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
+
+	"circl/sign/schemes"
 	"time"
 
 	"golang.org/x/crypto/cryptobyte"
@@ -126,7 +129,9 @@ func (cred *credential) marshalPublicKeyInfo() ([]byte, error) {
 	case ECDSAWithP256AndSHA256,
 		ECDSAWithP384AndSHA384,
 		ECDSAWithP521AndSHA512,
-		Ed25519:
+		Ed25519, Ed448,
+		KEMTLSWithSIKEp434, KEMTLSWithKyber512,
+		PQTLSWithDilithium3, PQTLSWithDilithium4:
 		rawPub, err := x509.MarshalPKIXPublicKey(cred.publicKey)
 		if err != nil {
 			return nil, err
@@ -364,6 +369,34 @@ func NewDelegatedCredential(cert *Certificate, pubAlgo SignatureScheme, validTim
 		if err != nil {
 			return nil, nil, err
 		}
+	case Ed448:
+		scheme := schemes.ByName("Ed448")
+		pubK, privK, err = scheme.GenerateKey()
+		if err != nil {
+			return nil, nil, err
+		}
+	case KEMTLSWithSIKEp434:
+		pubK, privK, err = kem.GenerateKey(rand.Reader, kem.SIKEp434)
+		if err != nil {
+			return nil, nil, err
+		}
+	case KEMTLSWithKyber512:
+		pubK, privK, err = kem.GenerateKey(rand.Reader, kem.Kyber512)
+		if err != nil {
+			return nil, nil, err
+		}
+	case PQTLSWithDilithium3:
+		scheme := schemes.ByName("Ed25519-Dilithium3")
+		pubK, privK, err = scheme.GenerateKey()
+		if err != nil {
+			return nil, nil, err
+		}
+	case PQTLSWithDilithium4:
+		scheme := schemes.ByName("Ed448-Dilithium4")
+		pubK, privK, err = scheme.GenerateKey()
+		if err != nil {
+			return nil, nil, err
+		}
 	default:
 		return nil, nil, fmt.Errorf("tls: unsupported algorithm for Delegated Credential: %T", pubAlgo)
 	}
@@ -417,8 +450,10 @@ func (dc *DelegatedCredential) Validate(cert *x509.Certificate, isClient bool, n
 		return false
 	}
 
-	if dc.cred.expCertVerfAlgo != certVerifyMsg.signatureAlgorithm {
-		return false
+	if certVerifyMsg != nil { // could be nil in the kemtls case
+		if dc.cred.expCertVerfAlgo != certVerifyMsg.signatureAlgorithm {
+			return false
+		}
 	}
 
 	if !isValidForDelegation(cert) {

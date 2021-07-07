@@ -13,6 +13,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/ed25519"
 	"crypto/elliptic"
+	"crypto/kem"
 	"crypto/rsa"
 	"errors"
 	"fmt"
@@ -118,6 +119,14 @@ func typeAndHashFromSignatureScheme(signatureAlgorithm SignatureScheme) (sigType
 		sigType = signatureECDSA
 	case Ed25519:
 		sigType = signatureEd25519
+	case Ed448:
+		sigType = signatureEd448
+	case KEMTLSWithSIKEp434, KEMTLSWithKyber512:
+		sigType = authKEMTLS
+	case PQTLSWithDilithium3:
+		sigType = signatureEdDilithium3
+	case PQTLSWithDilithium4:
+		sigType = signatureEdDilithium4
 	default:
 		scheme := circlPki.SchemeByTLSID(uint(signatureAlgorithm))
 		if scheme == nil {
@@ -138,7 +147,11 @@ func typeAndHashFromSignatureScheme(signatureAlgorithm SignatureScheme) (sigType
 		hash = crypto.SHA384
 	case PKCS1WithSHA512, PSSWithSHA512, ECDSAWithP521AndSHA512:
 		hash = crypto.SHA512
-	case Ed25519:
+	case Ed25519, Ed448:
+		hash = directSigning
+	case KEMTLSWithSIKEp434, KEMTLSWithKyber512:
+		hash = directSigning
+	case PQTLSWithDilithium3, PQTLSWithDilithium4:
 		hash = directSigning
 	default:
 		scheme := circlPki.SchemeByTLSID(uint(signatureAlgorithm))
@@ -267,9 +280,22 @@ func signatureSchemesForCertificate(version uint16, cert *Certificate) []Signatu
 // This function must be kept in sync with supportedSignatureAlgorithmsDC.
 func signatureSchemeForDelegatedCredential(version uint16, dc *DelegatedCredential) []SignatureScheme {
 	pub := dc.cred.publicKey
-
 	var sigAlgs []SignatureScheme
+
 	switch pub.(type) {
+	case *kem.PublicKey:
+		pk, ok := pub.(*kem.PublicKey)
+		if !ok {
+			return nil
+		}
+		switch pk.KEMId {
+		case kem.SIKEp434:
+			sigAlgs = []SignatureScheme{KEMTLSWithSIKEp434}
+		case kem.Kyber512:
+			sigAlgs = []SignatureScheme{KEMTLSWithKyber512}
+		default:
+			return nil
+		}
 	case *ecdsa.PublicKey:
 		pk, ok := pub.(*ecdsa.PublicKey)
 		if !ok {

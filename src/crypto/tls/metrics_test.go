@@ -19,24 +19,27 @@ type testTimingInfo struct {
 
 func (t testTimingInfo) isMonotonicallyIncreasing() bool {
 	serverIsMonotonicallyIncreasing :=
-		t.serverTimingInfo.ProcessClientHello < t.serverTimingInfo.WriteServerHello &&
+		0 < t.serverTimingInfo.ProcessClientHello &&
+			t.serverTimingInfo.ProcessClientHello < t.serverTimingInfo.WriteServerHello &&
 			t.serverTimingInfo.WriteServerHello < t.serverTimingInfo.WriteEncryptedExtensions &&
 			t.serverTimingInfo.WriteEncryptedExtensions < t.serverTimingInfo.WriteCertificate &&
 			t.serverTimingInfo.WriteCertificate < t.serverTimingInfo.WriteCertificateVerify &&
 			t.serverTimingInfo.WriteCertificateVerify < t.serverTimingInfo.WriteServerFinished &&
-			t.serverTimingInfo.WriteServerFinished < t.serverTimingInfo.ReadCertificate &&
+			0 < t.serverTimingInfo.ReadCertificate &&
 			t.serverTimingInfo.ReadCertificate < t.serverTimingInfo.ReadCertificateVerify &&
-			t.serverTimingInfo.ReadCertificateVerify < t.serverTimingInfo.ReadClientFinished
+			t.serverTimingInfo.ReadCertificateVerify < t.serverTimingInfo.ReadClientFinished &&
+			t.serverTimingInfo.ReadClientFinished < t.serverTimingInfo.FullProtocol
 
 	clientIsMonotonicallyIncreasing :=
-		t.clientTimingInfo.WriteClientHello < t.clientTimingInfo.ProcessServerHello &&
+		0 < t.clientTimingInfo.WriteClientHello &&
 			t.clientTimingInfo.ProcessServerHello < t.clientTimingInfo.ReadEncryptedExtensions &&
 			t.clientTimingInfo.ReadEncryptedExtensions < t.clientTimingInfo.ReadCertificate &&
 			t.clientTimingInfo.ReadCertificate < t.clientTimingInfo.ReadCertificateVerify &&
 			t.clientTimingInfo.ReadCertificateVerify < t.clientTimingInfo.ReadServerFinished &&
 			t.clientTimingInfo.ReadServerFinished < t.clientTimingInfo.WriteCertificate &&
 			t.clientTimingInfo.WriteCertificate < t.clientTimingInfo.WriteCertificateVerify &&
-			t.clientTimingInfo.WriteCertificateVerify < t.clientTimingInfo.WriteClientFinished
+			t.clientTimingInfo.WriteCertificateVerify < t.clientTimingInfo.WriteClientFinished &&
+			t.clientTimingInfo.WriteClientFinished < t.clientTimingInfo.FullProtocol
 
 	return (serverIsMonotonicallyIncreasing && clientIsMonotonicallyIncreasing)
 }

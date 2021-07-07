@@ -11,6 +11,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/ed25519"
 	"crypto/elliptic"
+	"crypto/kem"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha512"
@@ -92,6 +93,7 @@ const (
 	extensionSignatureAlgorithms     uint16 = 13
 	extensionALPN                    uint16 = 16
 	extensionSCT                     uint16 = 18
+	extensionCachedInfo              uint16 = 25
 	extensionDelegatedCredentials    uint16 = 34
 	extensionSessionTicket           uint16 = 35
 	extensionPreSharedKey            uint16 = 41
@@ -106,6 +108,7 @@ const (
 	extensionECH                     uint16 = 0xfe0a // draft-ietf-tls-esni-10
 	extensionECHIsInner              uint16 = 0xda09 // draft-ietf-tls-esni-10
 	extensionECHOuterExtensions      uint16 = 0xfd00 // draft-ietf-tls-esni-10
+	extensionPDKKEMTLS               uint16 = 0xfd01 // arbitraly chosen
 )
 
 // TLS signaling cipher suite values
@@ -125,7 +128,17 @@ const (
 	CurveP384 CurveID = 24
 	CurveP521 CurveID = 25
 	X25519    CurveID = 29
+	SIKEp434  CurveID = CurveID(kem.SIKEp434)
+	Kyber512  CurveID = CurveID(kem.Kyber512)
 )
+
+func (curve CurveID) isKEM() bool {
+	switch curve {
+	case SIKEp434, Kyber512:
+		return true
+	}
+	return false
+}
 
 // TLS 1.3 Key Share. See RFC 8446, Section 4.2.8.
 type keyShare struct {
@@ -170,7 +183,10 @@ const (
 	signatureRSAPSS
 	signatureECDSA
 	signatureEd25519
+	signatureEd448
 	signatureEdDilithium3
+	signatureEdDilithium4
+	authKEMTLS // for the KEMTLS
 )
 
 // directSigning is a standard Hash value that signals that no pre-hashing
@@ -203,8 +219,19 @@ var supportedSignatureAlgorithms = []SignatureScheme{
 var supportedSignatureAlgorithmsDC = []SignatureScheme{
 	ECDSAWithP256AndSHA256,
 	Ed25519,
+	Ed448,
 	ECDSAWithP384AndSHA384,
 	ECDSAWithP521AndSHA512,
+
+	// authentication algorithms for KEMTLS. They are restricted for usage with Delegated
+	// Credentials.
+	KEMTLSWithKyber512,
+	KEMTLSWithSIKEp434,
+
+	// authentication algorithms for PQTLS. They are restricted for usage with Delegated
+	// Credentials.
+	PQTLSWithDilithium3,
+	PQTLSWithDilithium4,
 }
 
 // helloRetryRequestRandom is set as the Random value of a ServerHello
@@ -321,6 +348,21 @@ type ConnectionState struct {
 	// and correctly processed), which has been verified against the leaf certificate,
 	// has been used.
 	VerifiedDC bool
+
+	// DidClientAuthentiation states that the connection used client authentication.
+	DidClientAuthentication bool
+
+	// DidKEMTLS states that the connection was established by using KEMTLS.
+	DidKEMTLS bool
+
+	// DidPQTLS states that the connection was established by using PQTLS.
+	DidPQTLS bool
+
+	// CertificateMessage contains the server's Certificate Message.
+	CertificateMessage []byte
+
+	// CertificateReqMessage contains the server's Certificate Request Message.
+	CertificateReqMessage []byte
 
 	// SignedCertificateTimestamps is a list of SCTs provided by the peer
 	// through the TLS handshake for the leaf certificate, if any.
@@ -462,11 +504,40 @@ const (
 
 	// EdDSA algorithms.
 	Ed25519 SignatureScheme = 0x0807
+	Ed448   SignatureScheme = 0x0808
 
 	// Legacy signature and hash algorithms for TLS 1.2.
 	PKCS1WithSHA1 SignatureScheme = 0x0201
 	ECDSAWithSHA1 SignatureScheme = 0x0203
+
+	// KEMTLS algorithms for the Post-Quantum Cryptography experiment.
+	// NOTE: Do not use outside of the experiment.
+	KEMTLSWithSIKEp434 SignatureScheme = 0xfe00
+	KEMTLSWithKyber512 SignatureScheme = 0xfe01
+
+	// PQTLS algorithms for the Post-Quantum Cryptography experiment.
+	// NOTE: Do not use outside of the experiment.
+	PQTLSWithDilithium3 SignatureScheme = 0xfe61
+	PQTLSWithDilithium4 SignatureScheme = 0xfe62
 )
+
+func (scheme SignatureScheme) isKEMTLS() bool {
+	switch scheme {
+	case KEMTLSWithSIKEp434, KEMTLSWithKyber512:
+		return true
+	default:
+		return false
+	}
+}
+
+func (scheme SignatureScheme) isPQTLS() bool {
+	switch scheme {
+	case PQTLSWithDilithium3, PQTLSWithDilithium4:
+		return true
+	default:
+		return false
+	}
+}
 
 // ClientHelloInfo contains information from a ClientHello message in order to
 // guide application logic in the GetCertificate and GetConfigForClient callbacks.
@@ -520,6 +591,12 @@ type ClientHelloInfo struct {
 	// to negotiate the Delegated Credential extension.
 	SupportsDelegatedCredential bool
 
+	// CachedInformationCert is true if the client has the server's certificate
+	// message cached for the cached information extension.
+	CachedInformationCert bool
+	// CachedInformationCertReq is true if the client has the server's certificate
+	// request message cached for the cached information extension.
+	CachedInformationCertReq bool
 	// Conn is the underlying net.Conn for the connection. Do not read
 	// from, or write to, this connection; that will cause the TLS
 	// connection to fail.
@@ -597,6 +674,8 @@ type Config struct {
 	// If Rand is nil, TLS uses the cryptographic random reader in package
 	// crypto/rand.
 	// The Reader must be safe for use by multiple goroutines.
+	// NOTE: it also provides a source of randomness for kemtls encapsulation
+	// mechanisms.
 	Rand io.Reader
 
 	// Time returns the current time as the number of seconds since the epoch.
@@ -824,6 +903,22 @@ type Config struct {
 	// See https://tools.ietf.org/html/draft-ietf-tls-subcerts.
 	SupportDelegatedCredential bool
 
+	// KEMTLSEnabled is true if the client or server is willing
+	// to start a KEMTLS handshake based on TLS 1.3.
+	KEMTLSEnabled bool
+
+	// PQTLSEnabled is true if the client or server is willing
+	// to start a PQTLS handshake (PQ KEMs for confidentiality and PQ Signatures for
+	// authentication based on TLS 1.3.
+	PQTLSEnabled bool
+
+	// CachedCert corresponds to a cached server's Certificate message by the
+	// client. If filled, it will be used by the cached information extension.
+	CachedCert []byte
+	// CachedCertReq corresponds to a cached server's Certificate Request message
+	// by the client. If filled, it will be used by the cached information extension.
+	CachedCertReq []byte
+
 	// mutex protects sessionTicketKeys and autoSessionTicketKeys.
 	mutex sync.RWMutex
 	// sessionTicketKeys contains zero or more ticket keys. If set, it means the
@@ -914,6 +1009,10 @@ func (c *Config) Clone() *Config {
 		Renegotiation:               c.Renegotiation,
 		KeyLogWriter:                c.KeyLogWriter,
 		SupportDelegatedCredential:  c.SupportDelegatedCredential,
+		KEMTLSEnabled:               c.KEMTLSEnabled,
+		PQTLSEnabled:                c.PQTLSEnabled,
+		CachedCert:                  c.CachedCert,
+		CachedCertReq:               c.CachedCertReq,
 		ECHEnabled:                  c.ECHEnabled,
 		ClientECHConfigs:            c.ClientECHConfigs,
 		ServerECHProvider:           c.ServerECHProvider,
@@ -1135,9 +1234,14 @@ func supportedVersionsFromMax(maxVersion uint16) []uint16 {
 }
 
 var defaultCurvePreferences = []CurveID{X25519, CurveP256, CurveP384, CurveP521}
+var defaultKEMPreferences = []CurveID{Kyber512, SIKEp434, X25519, CurveP256, CurveP384, CurveP521}
 
 func (c *Config) curvePreferences() []CurveID {
 	if c == nil || len(c.CurvePreferences) == 0 {
+		if c.KEMTLSEnabled || c.PQTLSEnabled {
+			return defaultKEMPreferences
+		}
+
 		return defaultCurvePreferences
 	}
 	return c.CurvePreferences
@@ -1433,11 +1537,13 @@ func (c *Config) BuildNameToCertificate() {
 }
 
 const (
-	keyLogLabelTLS12           = "CLIENT_RANDOM"
-	keyLogLabelClientHandshake = "CLIENT_HANDSHAKE_TRAFFIC_SECRET"
-	keyLogLabelServerHandshake = "SERVER_HANDSHAKE_TRAFFIC_SECRET"
-	keyLogLabelClientTraffic   = "CLIENT_TRAFFIC_SECRET_0"
-	keyLogLabelServerTraffic   = "SERVER_TRAFFIC_SECRET_0"
+	keyLogLabelTLS12                           = "CLIENT_RANDOM"
+	keyLogLabelClientHandshake                 = "CLIENT_HANDSHAKE_TRAFFIC_SECRET"
+	keyLogLabelServerHandshake                 = "SERVER_HANDSHAKE_TRAFFIC_SECRET"
+	keyLogLabelClientKEMAuthenticatedHandshake = "CLIENT_AUTHENTICATED_HANDSHAKE_TRAFFIC_SECRET"
+	keyLogLabelServerKEMAuthenticatedHandshake = "SERVER_AUTHENTICATED_HANDSHAKE_TRAFFIC_SECRET"
+	keyLogLabelClientTraffic                   = "CLIENT_TRAFFIC_SECRET_0"
+	keyLogLabelServerTraffic                   = "SERVER_TRAFFIC_SECRET_0"
 )
 
 func (c *Config) writeKeyLog(label string, clientRandom, secret []byte) error {
@@ -1495,6 +1601,11 @@ type Certificate struct {
 	// NOTE: Do not fill this field, as it will be filled depending on
 	// the provided list of delegated credentials.
 	DelegatedCredential []byte
+	// DelegatedCredentialPrivateKey contains the private key corresponding to the public key in
+	// the Delegated Credential.
+	// NOTE: Do not fill this field, as it will be filled depending on
+	// the provided list of delegated credentials.
+	DelegatedCredentialPrivateKey crypto.PrivateKey
 	// Leaf is the parsed form of the leaf certificate, which may be initialized
 	// using x509.ParseCertificate to reduce per-handshake processing. If nil,
 	// the leaf certificate will be parsed as needed.

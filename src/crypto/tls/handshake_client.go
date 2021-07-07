@@ -9,6 +9,7 @@ import (
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/ed25519"
+	"crypto/kem"
 	"crypto/rsa"
 	"crypto/subtle"
 	"crypto/x509"
@@ -34,27 +35,63 @@ type clientHandshakeState struct {
 	session      *ClientSessionState
 }
 
-func (c *Conn) makeClientHello(minVersion uint16) (*clientHelloMsg, ecdheParameters, error) {
+// processCachedDelegatedCredentialFromServer unmarshals the cached DelegatedCredential
+// offered by the server (if present) and validates it using the peer's
+// certificate.
+func processCachedDelegatedCredentialFromServer(c *Conn, dcSupport bool, rawDC []byte, certVerifyMsg *certificateVerifyMsg) error {
+	var dc *DelegatedCredential
+	var err error
+	if rawDC != nil {
+		// Assert that support for the DC extension was indicated by the client.
+		if !dcSupport {
+			return errors.New("tls: got Delegated Credential extension without indication")
+		}
+
+		dc, err = unmarshalDelegatedCredential(rawDC)
+		if err != nil {
+			return fmt.Errorf("tls: Delegated Credential: %s", err)
+		}
+
+		if !isSupportedSignatureAlgorithm(dc.cred.expCertVerfAlgo, supportedSignatureAlgorithmsDC) {
+			return errors.New("tls: Delegated Credential used with invalid signature algorithm")
+		}
+	}
+
+	if dc != nil {
+		if !dc.Validate(c.peerCertificates[0], false, c.config.time(), certVerifyMsg) {
+			return errors.New("tls: invalid Delegated Credential")
+		}
+	}
+
+	c.verifiedDC = dc
+
+	return nil
+}
+
+// defines the private part to the handshake keyshares
+type clientKeySharePrivate interface{}
+
+func (c *Conn) makeClientHello(minVersion uint16) (*clientHelloMsg, []clientKeySharePrivate, []byte, error) {
 	config := c.config
 	if len(config.ServerName) == 0 && !config.InsecureSkipVerify {
-		return nil, nil, errors.New("tls: either ServerName or InsecureSkipVerify must be specified in the tls.Config")
+		return nil, nil, nil, errors.New("tls: either ServerName or InsecureSkipVerify must be specified in the tls.Config")
 	}
 
 	nextProtosLength := 0
 	for _, proto := range config.NextProtos {
 		if l := len(proto); l == 0 || l > 255 {
-			return nil, nil, errors.New("tls: invalid NextProtos value")
+			return nil, nil, nil, errors.New("tls: invalid NextProtos value")
 		} else {
 			nextProtosLength += 1 + l
 		}
 	}
 	if nextProtosLength > 0xffff {
-		return nil, nil, errors.New("tls: NextProtos values too large")
+		return nil, nil, nil, errors.New("tls: NextProtos values too large")
 	}
 
 	supportedVersions := config.supportedVersionsFromMin(minVersion)
 	if len(supportedVersions) == 0 {
-		return nil, nil, errors.New("tls: no supported versions satisfy MinVersion and MaxVersion")
+		return nil, nil, nil, errors.New("tls: no supported versions satisfy MinVersion and MaxVersion")
 	}
 
 	clientHelloVersion := config.maxSupportedVersion()
@@ -63,6 +100,64 @@ func (c *Conn) makeClientHello(minVersion uint16) (*clientHelloMsg, ecdheParamet
 	// to negotiate versions now. See RFC 8446, Section 4.2.1.
 	if clientHelloVersion > VersionTLS12 {
 		clientHelloVersion = VersionTLS12
+	}
+
+	var cachedCert, cachedCertReq, pdkKEMTLS bool
+	var ciphertextKEMTLS, sharedSecret []byte
+	var cachedCertHash, cachedCertReqHash []byte
+	if len(config.CachedCert) > 0 {
+		cachedCert = true
+		cachedCertHash = calculateHashCachedInfo(config.CachedCert)
+
+		if config.KEMTLSEnabled {
+			certMsg := new(certificateMsgTLS13)
+			data := append([]byte(nil), config.CachedCert...)
+
+			if !certMsg.unmarshal(data) {
+				return nil, nil, nil, errors.New("tls: wrong cached certificates message")
+			}
+
+			if len(certMsg.certificate.Certificate) == 0 {
+				c.sendAlert(alertDecodeError)
+				return nil, nil, nil, errors.New("tls: wrong cached certificates message")
+			}
+			// do we need to write this?
+			//hs.transcript.Write(certMsg.marshal())
+
+			c.scts = certMsg.certificate.SignedCertificateTimestamps
+			c.ocspResponse = certMsg.certificate.OCSPStaple
+
+			if err := c.verifyServerCertificate(certMsg.certificate.Certificate); err != nil {
+				return nil, nil, nil, err
+			}
+
+			if isKEMTLSAuthUsed(c.peerCertificates[0], certMsg.certificate) {
+				if certMsg.delegatedCredential {
+					if err := processCachedDelegatedCredentialFromServer(c, config.SupportDelegatedCredential, certMsg.certificate.DelegatedCredential, nil); err != nil {
+						return nil, nil, nil, err
+					}
+				}
+				pk, ok := c.verifiedDC.cred.publicKey.(*kem.PublicKey)
+				if !ok {
+					return nil, nil, nil, errors.New("tls: invalid key")
+				}
+
+				var err error
+				var ct []byte
+				sharedSecret, ct, err = kem.Encapsulate(c.config.rand(), pk)
+				if err != nil {
+					return nil, nil, nil, err
+				}
+
+				pdkKEMTLS = true
+				ciphertextKEMTLS = ct
+			}
+		}
+	}
+
+	if len(config.CachedCertReq) > 0 {
+		cachedCertReq = true
+		cachedCertReqHash = calculateHashCachedInfo(config.CachedCertReq)
 	}
 
 	hello := &clientHelloMsg{
@@ -78,6 +173,12 @@ func (c *Conn) makeClientHello(minVersion uint16) (*clientHelloMsg, ecdheParamet
 		secureRenegotiationSupported: true,
 		alpnProtocols:                config.NextProtos,
 		supportedVersions:            supportedVersions,
+		cachedInformationCert:        cachedCert,
+		cachedInformationCertHash:    cachedCertHash,
+		cachedInformationCertReq:     cachedCertReq,
+		cachedInformationCertReqHash: cachedCertReqHash,
+		pdkKEMTLS:                    pdkKEMTLS,
+		ciphertextKEMTLS:             ciphertextKEMTLS,
 	}
 
 	if c.handshakes > 0 {
@@ -104,14 +205,14 @@ func (c *Conn) makeClientHello(minVersion uint16) (*clientHelloMsg, ecdheParamet
 
 	_, err := io.ReadFull(config.rand(), hello.random)
 	if err != nil {
-		return nil, nil, errors.New("tls: short read from Rand: " + err.Error())
+		return nil, nil, nil, errors.New("tls: short read from Rand: " + err.Error())
 	}
 
 	// A random session ID is used to detect when the server accepted a ticket
 	// and is resuming a session (see RFC 5077). In TLS 1.3, it's always set as
 	// a compatibility measure (see RFC 8446, Section 4.1.2).
 	if _, err := io.ReadFull(config.rand(), hello.sessionId); err != nil {
-		return nil, nil, errors.New("tls: short read from Rand: " + err.Error())
+		return nil, nil, nil, errors.New("tls: short read from Rand: " + err.Error())
 	}
 
 	if hello.vers >= VersionTLS12 {
@@ -119,23 +220,66 @@ func (c *Conn) makeClientHello(minVersion uint16) (*clientHelloMsg, ecdheParamet
 	}
 
 	var params ecdheParameters
+	var keyShares []keyShare
+	var keySharePrivates []clientKeySharePrivate
+
 	if hello.supportedVersions[0] == VersionTLS13 {
 		hello.cipherSuites = append(hello.cipherSuites, defaultCipherSuitesTLS13()...)
 
-		curveID := config.curvePreferences()[0]
-		if _, ok := curveForCurveID(curveID); curveID != X25519 && !ok {
-			return nil, nil, errors.New("tls: CurvePreferences includes unsupported curve")
+		if !config.KEMTLSEnabled && !config.PQTLSEnabled {
+			curveID := config.curvePreferences()[0]
+			if _, ok := curveForCurveID(curveID); curveID != X25519 && !ok {
+				return nil, nil, nil, errors.New("tls: CurvePreferences includes unsupported curve")
+			}
+			params, err = generateECDHEParameters(config.rand(), curveID)
+			if err != nil {
+				return nil, nil, nil, err
+			}
+			keyShares = append(keyShares, keyShare{group: curveID, data: params.PublicKey()})
+			keySharePrivates = append(keySharePrivates, params)
+			// TODO: add EXP name
+		} else if config.KEMTLSEnabled || config.PQTLSEnabled {
+			var haveECDHE, haveKEM bool
+
+			// loop over supported curves and kems until there is a KEM and an ECDHE curve
+			for _, curveID := range config.curvePreferences() {
+				if _, ok := curveForCurveID(curveID); curveID != X25519 && !curveID.isKEM() && !ok {
+					return nil, nil, nil, errors.New("tls: CurvePreferences includes unsupported curve")
+				}
+
+				if !curveID.isKEM() && !haveECDHE {
+					params, err = generateECDHEParameters(config.rand(), curveID)
+					if err != nil {
+						return nil, nil, nil, err
+					}
+
+					keyShares = append(keyShares, keyShare{group: curveID, data: params.PublicKey()})
+					keySharePrivates = append(keySharePrivates, params)
+					haveECDHE = true
+				} else if curveID.isKEM() && !haveKEM {
+					kemID := kem.ID(curveID)
+					pk, sk, err := kem.GenerateKey(config.rand(), kemID)
+					if err != nil {
+						return nil, nil, nil, err
+					}
+
+					keyShares = append(keyShares, keyShare{group: curveID, data: pk.PublicKey})
+					keySharePrivates = append(keySharePrivates, sk)
+					haveKEM = true
+				}
+
+				if haveECDHE && haveKEM {
+					break
+				}
+			}
 		}
-		params, err = generateECDHEParameters(config.rand(), curveID)
-		if err != nil {
-			return nil, nil, err
-		}
-		hello.keyShares = []keyShare{{group: curveID, data: params.PublicKey()}}
+
+		hello.keyShares = keyShares
 		hello.delegatedCredentialSupported = config.SupportDelegatedCredential
 		hello.supportedSignatureAlgorithmsDC = supportedSignatureAlgorithmsDC
 	}
 
-	return hello, params, nil
+	return hello, keySharePrivates, sharedSecret, nil
 }
 
 func (c *Conn) clientHandshake() (err error) {
@@ -151,13 +295,13 @@ func (c *Conn) clientHandshake() (err error) {
 
 	// Determine the minimum required version for this handshake.
 	minVersion := c.config.MinVersion
-	if c.config.echCanOffer() {
-		// If the ECH extension will be offered in this handshake, then the
-		// ClientHelloInner must not offer TLS 1.2 or below.
+	if c.config.echCanOffer() || len(c.config.CachedCert) > 0 || len(c.config.CachedCertReq) > 0 {
+		// If the ECH extension or the cached information extension will be offered in this handshake,
+		// then the ClientHelloInner must not offer TLS 1.2 or below.
 		minVersion = VersionTLS13
 	}
 
-	helloBase, ecdheParams, err := c.makeClientHello(minVersion)
+	helloBase, keysharePrivates, ssKEMTLS, err := c.makeClientHello(minVersion)
 	if err != nil {
 		return err
 	}
@@ -208,6 +352,9 @@ func (c *Conn) clientHandshake() (err error) {
 		return err
 	}
 
+	// Client already received the serverHello
+	handshakeTimings.reset()
+
 	// If we are negotiating a protocol version that's lower than what we
 	// support, check for the server downgrade canaries.
 	// See RFC 8446, Section 4.1.3.
@@ -227,11 +374,13 @@ func (c *Conn) clientHandshake() (err error) {
 			hello:            hello,
 			helloInner:       helloInner,
 			helloBase:        helloBase,
-			ecdheParams:      ecdheParams,
+			keyShare:         keysharePrivates,
 			session:          session,
 			earlySecret:      earlySecret,
 			binderKey:        binderKey,
 			handshakeTimings: handshakeTimings,
+			ssKEMTLS:         ssKEMTLS,
+			pdkKEMTLS:        hello.pdkKEMTLS,
 		}
 
 		// In TLS 1.3, session tickets are delivered after the handshake.
@@ -885,7 +1034,7 @@ func (c *Conn) verifyServerCertificate(certificates [][]byte) error {
 	}
 
 	switch certs[0].PublicKey.(type) {
-	case *rsa.PublicKey, *ecdsa.PublicKey, ed25519.PublicKey, circlSign.PublicKey:
+	case *rsa.PublicKey, *ecdsa.PublicKey, ed25519.PublicKey, circlSign.PublicKey, *kem.PublicKey:
 		break
 	default:
 		c.sendAlert(alertUnsupportedCertificate)

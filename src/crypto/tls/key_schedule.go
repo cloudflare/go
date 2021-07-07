@@ -21,14 +21,16 @@ import (
 // schedule. See RFC 8446, Section 7.
 
 const (
-	resumptionBinderLabel         = "res binder"
-	clientHandshakeTrafficLabel   = "c hs traffic"
-	serverHandshakeTrafficLabel   = "s hs traffic"
-	clientApplicationTrafficLabel = "c ap traffic"
-	serverApplicationTrafficLabel = "s ap traffic"
-	exporterLabel                 = "exp master"
-	resumptionLabel               = "res master"
-	trafficUpdateLabel            = "traffic upd"
+	resumptionBinderLabel                    = "res binder"
+	clientHandshakeTrafficLabel              = "c hs traffic"
+	serverHandshakeTrafficLabel              = "s hs traffic"
+	clientApplicationTrafficLabel            = "c ap traffic"
+	serverApplicationTrafficLabel            = "s ap traffic"
+	clientAuthenticatedHandshakeTrafficLabel = "c ahs traffic"
+	serverAuthenticatedHandshakeTrafficLabel = "s ahs traffic"
+	exporterLabel                            = "exp master"
+	resumptionLabel                          = "res master"
+	trafficUpdateLabel                       = "traffic upd"
 )
 
 // expandLabel implements HKDF-Expand-Label from RFC 8446, Section 7.1.
@@ -84,6 +86,14 @@ func (c *cipherSuiteTLS13) trafficKey(trafficSecret []byte) (key, iv []byte) {
 // selection.
 func (c *cipherSuiteTLS13) finishedHash(baseKey []byte, transcript hash.Hash) []byte {
 	finishedKey := c.expandLabel(baseKey, "finished", nil, c.hash.Size())
+	verifyData := hmac.New(c.hash.New, finishedKey)
+	verifyData.Write(transcript.Sum(nil))
+	return verifyData.Sum(nil)
+}
+
+// finishedHashKEMTLS is the KEMTLS finished hash, depending on the peer role.
+func (c *cipherSuiteTLS13) finishedHashKEMTLS(baseKey []byte, role string, transcript hash.Hash) []byte {
+	finishedKey := c.expandLabel(baseKey, role+" finished", nil, c.hash.Size())
 	verifyData := hmac.New(c.hash.New, finishedKey)
 	verifyData.Write(transcript.Sum(nil))
 	return verifyData.Sum(nil)

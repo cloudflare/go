@@ -12,6 +12,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/ed25519"
 	"crypto/elliptic"
+	"crypto/kem"
 	"crypto/rsa"
 	"crypto/sha1"
 	"crypto/x509/pkix"
@@ -111,6 +112,9 @@ func marshalPublicKey(pub interface{}) (publicKeyBytes []byte, publicKeyAlgorith
 		}
 		publicKeyBytes, _ = pub.MarshalBinary()
 		publicKeyAlgorithm.Algorithm = scheme.Oid()
+	case *kem.PublicKey:
+		publicKeyBytes, _ = pub.MarshalBinary()
+		publicKeyAlgorithm.Algorithm = oidPublicKeyKEMTLS
 	default:
 		return nil, pkix.AlgorithmIdentifier{}, fmt.Errorf("x509: unsupported public key type: %T", pub)
 	}
@@ -210,7 +214,9 @@ const (
 	SHA384WithRSAPSS
 	SHA512WithRSAPSS
 	PureEd25519
+	PureEd448
 	PureEdDilithium3
+	PureEdDilithium4
 )
 
 func (algo SignatureAlgorithm) isRSAPSS() bool {
@@ -239,7 +245,10 @@ const (
 	DSA // Unsupported.
 	ECDSA
 	Ed25519
+	Ed448
 	EdDilithium3
+	EdDilithium4
+	KEMTLS
 )
 
 var publicKeyAlgoName = [...]string{
@@ -247,7 +256,10 @@ var publicKeyAlgoName = [...]string{
 	DSA:          "DSA",
 	ECDSA:        "ECDSA",
 	Ed25519:      "Ed25519",
+	Ed448:        "Ed448",
 	EdDilithium3: "Ed25519-Dilithium3",
+	EdDilithium4: "Ed448-Dilithium4",
+	KEMTLS:       "KEMTLS",
 }
 
 func (algo PublicKeyAlgorithm) String() string {
@@ -462,10 +474,14 @@ func getSignatureAlgorithmFromAI(ai pkix.AlgorithmIdentifier) SignatureAlgorithm
 // id-ecPublicKey OBJECT IDENTIFIER ::= {
 //       iso(1) member-body(2) us(840) ansi-X9-62(10045) keyType(2) 1 }
 var (
-	oidPublicKeyRSA     = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 1, 1}
-	oidPublicKeyDSA     = asn1.ObjectIdentifier{1, 2, 840, 10040, 4, 1}
-	oidPublicKeyECDSA   = asn1.ObjectIdentifier{1, 2, 840, 10045, 2, 1}
-	oidPublicKeyEd25519 = oidSignatureEd25519
+	oidPublicKeyRSA          = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 1, 1}
+	oidPublicKeyDSA          = asn1.ObjectIdentifier{1, 2, 840, 10040, 4, 1}
+	oidPublicKeyECDSA        = asn1.ObjectIdentifier{1, 2, 840, 10045, 2, 1}
+	oidPublicKeyEd25519      = oidSignatureEd25519
+	oidPublicKeyEd448        = asn1.ObjectIdentifier{1, 3, 101, 113}
+	oidPublicKeyEdDilithium3 = asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 44363, 45, 9}  // Cloudflare OID
+	oidPublicKeyEdDilithium4 = asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 44363, 45, 10} // Cloudflare OID
+	oidPublicKeyKEMTLS       = asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 44363, 45, 11} // Cloudflare OID
 )
 
 func getPublicKeyAlgorithmFromOID(oid asn1.ObjectIdentifier) PublicKeyAlgorithm {
@@ -478,6 +494,14 @@ func getPublicKeyAlgorithmFromOID(oid asn1.ObjectIdentifier) PublicKeyAlgorithm 
 		return ECDSA
 	case oid.Equal(oidPublicKeyEd25519):
 		return Ed25519
+	case oid.Equal(oidPublicKeyEd448):
+		return Ed448
+	case oid.Equal(oidPublicKeyEdDilithium3):
+		return EdDilithium3
+	case oid.Equal(oidPublicKeyEdDilithium4):
+		return EdDilithium4
+	case oid.Equal(oidPublicKeyKEMTLS):
+		return KEMTLS
 	default:
 		scheme := circlPki.SchemeByOid(oid)
 		if scheme == nil {
@@ -1046,6 +1070,13 @@ func parsePublicKey(algo PublicKeyAlgorithm, keyData *publicKeyInfo) (interface{
 		pub := make([]byte, ed25519.PublicKeySize)
 		copy(pub, asn1Data)
 		return ed25519.PublicKey(pub), nil
+	case KEMTLS:
+		pub := new(kem.PublicKey)
+		err := pub.UnmarshalBinary(keyData.PublicKey.Bytes)
+		if err != nil {
+			return nil, errors.New("x509: wrong KEM identifier")
+		}
+		return pub, nil
 	default:
 		if scheme := CirclSchemeByPublicKeyAlgorithm(algo); scheme != nil {
 			if len(keyData.Algorithm.Parameters.FullBytes) != 0 {
@@ -1748,7 +1779,7 @@ func isIA5String(s string) error {
 }
 
 func buildCertExtensions(template *Certificate, subjectIsEmpty bool, authorityKeyId []byte, subjectKeyId []byte) (ret []pkix.Extension, err error) {
-	ret = make([]pkix.Extension, 10 /* maximum number of elements. */)
+	ret = make([]pkix.Extension, 11 /* maximum number of elements. */)
 	n := 0
 
 	if template.KeyUsage != 0 &&
