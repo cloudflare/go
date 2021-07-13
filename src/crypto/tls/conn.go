@@ -129,7 +129,8 @@ type Conn struct {
 		greased      bool   // Client greased ECH
 		accepted     bool   // Server accepted ECH
 		retryConfigs []byte // The retry configurations
-		configId     uint8  // The config id
+		configId     uint8  // The ECH config id
+		maxNameLen   int    // maximum_name_len indicated by the ECH config
 	}
 }
 
