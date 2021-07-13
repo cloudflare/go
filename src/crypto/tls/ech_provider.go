@@ -47,6 +47,8 @@ const (
 	ECHProviderSuccess ECHProviderStatus = 0
 	ECHProviderReject                    = 1
 	ECHProviderAbort                     = 2
+
+	errHPKEInvalidPublicKey = "hpke: invalid KEM public key"
 )
 
 // ECHProviderResult represents the result of invoking the ECH provider.
@@ -179,6 +181,17 @@ func (keySet *EXP_ECHKeySet) GetDecryptionContext(rawHandle []byte, version uint
 	// Compute the decryption context.
 	opener, err := key.setupOpener(handle.enc, suite)
 	if err != nil {
+		if err.Error() == errHPKEInvalidPublicKey {
+			// This occurs if the KEM algorithm used to generate handle.enc is
+			// not the same as the KEM algorithm of the key. One way this can
+			// happen is if the client sent a GREASE ECH extension with a
+			// config_id that happens to match a known config, but which uses a
+			// different KEM algorithm.
+			res.Status = ECHProviderReject
+			res.RetryConfigs = keySet.configs
+			return // Reject
+		}
+
 		res.Status = ECHProviderAbort
 		res.Alert = uint8(alertInternalError)
 		res.Error = err
