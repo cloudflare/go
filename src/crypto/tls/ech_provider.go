@@ -179,6 +179,17 @@ func (keySet *EXP_ECHKeySet) GetDecryptionContext(rawHandle []byte, version uint
 	// Compute the decryption context.
 	opener, err := key.setupOpener(handle.enc, suite)
 	if err != nil {
+		if err.Error() == "hpke: invalid KEM public key" {
+			// This occurs if the KEM algorithm used to generate handle.enc is
+			// not the same as the KEM algorithm of the key. One way this can
+			// happen if the client sent a GREASE ECH extension with a config_id
+			// that happens to match a known config, but with the incorrect KEM
+			// algorithm.
+			res.Status = ECHProviderReject
+			res.RetryConfigs = keySet.configs
+			return // Reject
+		}
+
 		res.Status = ECHProviderAbort
 		res.Alert = uint8(alertInternalError)
 		res.Error = err
