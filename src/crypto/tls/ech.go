@@ -278,7 +278,7 @@ func (c *Conn) echAcceptOrReject(hello *clientHelloMsg) (*clientHelloMsg, error)
 			return hello, nil
 		case ECHProviderAbort:
 			c.sendAlert(alert(res.Alert))
-			return nil, fmt.Errorf("ech: %s", err)
+			return nil, fmt.Errorf("ech: provider aborted: %s", res.Error)
 		default:
 			c.sendAlert(alertInternalError)
 			return nil, errors.New("ech: unexpected provider status")
@@ -442,16 +442,16 @@ func echGenerateDummyExt(rand io.Reader) ([]byte, error) {
 	randomByte := make([]byte, 1)
 	_, err = io.ReadFull(rand, randomByte)
 	if err != nil {
-		return nil, fmt.Errorf("tls: grease ech:: %s", err)
+		return nil, fmt.Errorf("tls: grease ech: %s", err)
 	}
 	ech.handle.configId = randomByte[0]
 	ech.handle.enc, _, err = sender.Setup(rand)
 	if err != nil {
-		return nil, fmt.Errorf("tls: grease ech:: %s", err)
+		return nil, fmt.Errorf("tls: grease ech: %s", err)
 	}
 	ech.payload = make([]byte, dummyEncodedHelloInnerLen+defaultHPKESuiteTagLen)
 	if _, err = io.ReadFull(rand, ech.payload); err != nil {
-		return nil, fmt.Errorf("tls: grease ech:: %s", err)
+		return nil, fmt.Errorf("tls: grease ech: %s", err)
 	}
 	return ech.marshal(), nil
 }
