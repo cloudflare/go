@@ -6,7 +6,7 @@
 // and TLS 1.3, as specified in RFC 8446.
 //
 // This package implements the "Encrypted ClientHello (ECH)" extension, as
-// specified by draft-ietf-tls-esni-10. This extension allows the client to
+// specified by draft-ietf-tls-esni-11. This extension allows the client to
 // encrypt its ClientHello to the public key of an ECH-service provider, known
 // as the client-facing server. If successful, then the client-facing server
 // forwards the decrypted ClientHello to the intended recipient, known as the
