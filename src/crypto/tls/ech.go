@@ -62,8 +62,9 @@ func (c *Conn) echOfferOrGrease(helloBase *clientHelloMsg) (hello, helloInner *c
 		return helloBase, nil, nil
 	}
 
-	// Store the config id in case of HelloRetryRequest (HRR).
+	// Store the ECH config parameters that are needed later.
 	c.ech.configId = echConfig.configId
+	c.ech.maxNameLen = int(echConfig.maxNameLen)
 
 	// Generate the HPKE context. Store it in case of HRR.
 	var enc []byte
@@ -132,7 +133,10 @@ func (c *Conn) echUpdateClientHelloOuter(hello, helloInner *clientHelloMsg, enc 
 
 	// EncodedClientHelloInner
 	helloInner.raw = nil
-	encodedHelloInner := echEncodeClientHelloInner(helloInner.marshal())
+	encodedHelloInner := echEncodeClientHelloInner(
+		helloInner.marshal(),
+		len(helloInner.serverName),
+		c.ech.maxNameLen)
 	if encodedHelloInner == nil {
 		return errors.New("tls: ech: encoding of EncodedClientHelloInner failed")
 	}
@@ -490,7 +494,7 @@ func echGenerateGreaseExt(rand io.Reader) ([]byte, error) {
 // echEncodeClientHelloInner interprets innerData as a ClientHelloInner message
 // and transforms it into an EncodedClientHelloInner. Returns nil if parsing
 // innerData fails.
-func echEncodeClientHelloInner(innerData []byte) []byte {
+func echEncodeClientHelloInner(innerData []byte, serverNameLen, maxNameLen int) []byte {
 	var (
 		errIllegalParameter      = errors.New("illegal parameter")
 		msgType                  uint8
@@ -584,6 +588,18 @@ func echEncodeClientHelloInner(innerData []byte) []byte {
 		panic(err) // Host encountered internal error
 	}
 
+	// Add padding.
+	paddingLen := 0
+	if serverNameLen > 0 {
+		paddingLen += max(0, maxNameLen-serverNameLen)
+	} else {
+		paddingLen += maxNameLen + 9
+	}
+	paddingLen = 31 - ((len(encodedData) + paddingLen - 1) % 32)
+	for i := 0; i < paddingLen; i++ {
+		encodedData = append(encodedData, 0)
+	}
+
 	return encodedData
 }
 
@@ -636,7 +652,7 @@ func echDecodeClientHelloInner(encodedData, outerData, outerSessionId []byte) []
 		return nil
 	}
 
-	if !s.ReadUint16LengthPrefixed(&extensions) || !s.Empty() {
+	if !s.ReadUint16LengthPrefixed(&extensions) {
 		return nil
 	}
 
@@ -721,6 +737,14 @@ func echDecodeClientHelloInner(encodedData, outerData, outerSessionId []byte) []
 		return nil // Input malformed
 	} else if err != nil {
 		panic(err) // Host encountered internal error
+	}
+
+	// Read the padding.
+	for !s.Empty() {
+		var zero uint8
+		if !s.ReadUint8(&zero) || zero != 0 {
+			return nil
+		}
 	}
 
 	return innerData
@@ -949,7 +973,7 @@ func splitClientHelloExtensions(data []byte) ([]byte, []byte) {
 	return data[:len(data)-len(s)], s
 }
 
-// TODO(cjpatton): draft-ietf-tls-esni-11, Section 4 mandates:
+// TODO(cjpatton): draft-ietf-tls-esni-12, Section 4 mandates:
 //
 //   Clients MUST ignore any "ECHConfig" structure whose public_name is
 //   not parsable as a dot-separated sequence of LDH labels, as defined
@@ -965,7 +989,7 @@ func splitClientHelloExtensions(data []byte) ([]byte, []byte) {
 //   See Section 6.1.4.3 for how the client interprets and validates
 //   the public_name.
 //
-// TODO(cjpatton): draft-ietf-tls-esni-11, Section 4.1 mandates:
+// TODO(cjpatton): draft-ietf-tls-esni-12, Section 4.1 mandates:
 //
 //   ECH configuration extensions are used to provide room for additional
 //   functionality as needed.  See Section 12 for guidance on which types
@@ -1055,4 +1079,11 @@ func echCopyExtensionFromClientHelloInner(hello, helloInner *clientHelloMsg, ext
 	default:
 		panic(fmt.Errorf("tried to copy unrecognized extension: %04x", ext))
 	}
+}
+
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }

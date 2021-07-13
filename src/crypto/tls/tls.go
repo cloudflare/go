@@ -6,7 +6,7 @@
 // and TLS 1.3, as specified in RFC 8446.
 //
 // This package implements the "Encrypted ClientHello (ECH)" extension, as
-// specified by draft-ietf-tls-esni-11. This extension allows the client to
+// specified by draft-ietf-tls-esni-12. This extension allows the client to
 // encrypt its ClientHello to the public key of an ECH-service provider, known
 // as the client-facing server. If successful, then the client-facing server
 // forwards the decrypted ClientHello to the intended recipient, known as the
@@ -31,7 +31,7 @@ package tls
 // BUG(cjpatton): In order to achieve its security goal, the ECH extension
 // requires padding in order to ensure that the length of handshake messages
 // doesn't depend on who terminates the connection. This package does not yet
-// implement client- or server-side padding: see
+// implement server-side padding: see
 // https://github.com/tlswg/draft-ietf-tls-esni/issues/264.
 
 // BUG(cjpatton): Another goal of the ECH extension is that connections that

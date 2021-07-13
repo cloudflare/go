@@ -127,7 +127,7 @@ func (keySet *EXP_ECHKeySet) GetDecryptionContext(rawHandle []byte, version uint
 	res.RetryConfigs = keySet.configs
 
 	// Ensure we know how to proceed, i.e., the caller has indicated a supported
-	// version of ECH. Currently only draft-ietf-tls-esni-11 is supported.
+	// version of ECH. Currently only draft-ietf-tls-esni-12 is supported.
 	if version != extensionECH {
 		res.Status = ECHProviderAbort
 		res.Alert = uint8(alertInternalError)
@@ -204,7 +204,7 @@ func (keySet *EXP_ECHKeySet) GetDecryptionContext(rawHandle []byte, version uint
 //
 // struct {
 //     opaque sk<0..2^16-1>;
-//     ECHConfig config<0..2^16>; // draft-ietf-tls-esni-11
+//     ECHConfig config<0..2^16>; // draft-ietf-tls-esni-12
 // } ECHKey;
 type EXP_ECHKey struct {
 	sk     kem.PrivateKey

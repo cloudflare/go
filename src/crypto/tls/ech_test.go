@@ -90,11 +90,11 @@ Fy/vytRwyjhHuX9ntc5ArCpwbAmY+oW/4w==
 
 // The ECH keys used by the client-facing server.
 const echTestKeys = `-----BEGIN ECH KEYS-----
-ACBScNuuZgB3rYAAwFwIiu88+7u3O132AeajwVOaACPr5QBG/gsAQvUAIAAg3g+Q
-j/4Evd1gjMN/zh4FQgB2qUHBxH1jDMF1cyrvzS0ABAABAAEAE2Nsb3VkZmxhcmUt
-ZXNuaS5jb20AAAAgjrmEl1cAKVdbqQZk24eybJsZFqsPMtfF/1q7oYnu80AAZ/4L
-AGOzABAAQQT1WFJwSj7F90czLHDuG2oNW5rXhUszsd2KDjx6JxPM8HwPLJySTt5V
-tHOQbMbiQR61mLx52GpiKCNFJeCT7NWVAAQAAQABABNjbG91ZGZsYXJlLWVzbmku
+ACB4tkn0JtfTduvavwVASdSbBMYDUUck1MPkK7yVh2rU2ABG/gwAQhQAIAAgEMqr
+0FIiUB4xPxOzpPhb6nWOdk/tqEzFx5Rz6Htw8SYABAABAAElE2Nsb3VkZmxhcmUt
+ZXNuaS5jb20AAAAgXftzLuaXvHdrwMEkYdVF6ZXWs2rL14J25XXAUWytJsUAZ/4M
+AGP4ABAAQQSBp7GpuEgjs0FXL6zm6A1vuFc7G8hM8onq7lixh6FkNbwjNPHOmm7e
+UBsqOKliDuiB0HFm/InFRhWlYhOzRxBoAAQAAQABKhNjbG91ZGZsYXJlLWVzbmku
 Y29tAAA=
 -----END ECH KEYS-----`
 
@@ -109,17 +109,18 @@ AAATY2xvdWRmbGFyZS1lc25pLmNvbQAA
 
 // The sequence of ECH configurations corresponding to echTestKeys.
 const echTestConfigs = `-----BEGIN ECH CONFIGS-----
-AK3+CwBC9QAgACDeD5CP/gS93WCMw3/OHgVCAHapQcHEfWMMwXVzKu/NLQAEAAEA
-AQATY2xvdWRmbGFyZS1lc25pLmNvbQAA/gsAY7MAEABBBPVYUnBKPsX3RzMscO4b
-ag1bmteFSzOx3YoOPHonE8zwfA8snJJO3lW0c5BsxuJBHrWYvHnYamIoI0Ul4JPs
-1ZUABAABAAEAE2Nsb3VkZmxhcmUtZXNuaS5jb20AAA==
+AK3+DABCFAAgACAQyqvQUiJQHjE/E7Ok+FvqdY52T+2oTMXHlHPoe3DxJgAEAAEA
+ASUTY2xvdWRmbGFyZS1lc25pLmNvbQAA/gwAY/gAEABBBIGnsam4SCOzQVcvrObo
+DW+4VzsbyEzyieruWLGHoWQ1vCM08c6abt5QGyo4qWIO6IHQcWb8icVGFaViE7NH
+EGgABAABAAEqE2Nsb3VkZmxhcmUtZXNuaS5jb20AAA==
 -----END ECH CONFIGS-----`
 
 // An invalid sequence of ECH configurations.
 const echTestStaleConfigs = `-----BEGIN ECH CONFIGS-----
-AIz+CwBCAAAgACC0BTukOld/Lw24E1y1Ae6CpyGj/J+GeePXnJQ7CvADegAEAAEA
-AQATY2xvdWRmbGFyZS1lc25pLmNvbQAA/gsAQgAAIAAgvjBnPowjhbhpVpm1px+m
-LSa50fgQyEE4L8IiXNHCiAAABAABAAEAE2Nsb3VkZmxhcmUtZXNuaS5jb20AAA==
+AK3+DABC+wAgACBuArXCr+oOemNd4Gm0jGqCGXNGXyw0nybC4wgJPoE3BQAEAAEA
+AQATY2xvdWRmbGFyZS1lc25pLmNvbQAA/gwAY1cAEABBBMfAn9UTeq+sbIJqNfsZ
+0r+FMLV0yT7o00wx1UNkMcaemXAFSjhbk96UAysPgq5XBy9bNxv8Vux7fba00ExD
+90sABAABAAEAE2Nsb3VkZmxhcmUtZXNuaS5jb20AAA==
 -----END ECH CONFIGS-----`
 
 // echTestProviderAlwaysAbort mocks an ECHProvider that, in response to any
@@ -896,17 +897,17 @@ func TestECHProvider(t *testing.T) {
 	p := echTestLoadKeySet(echTestKeys)
 	t.Run("ok", func(t *testing.T) {
 		handle := []byte{
-			0, 1, 0, 1, 245, 0, 32, 229, 27, 229, 141, 69, 240, 9, 35, 75, 76,
-			171, 120, 67, 143, 151, 186, 127, 71, 25, 191, 196, 253, 49, 172,
-			65, 141, 195, 40, 150, 37, 106, 117,
+			0, 1, 0, 1, 20, 0, 32, 58, 65, 152, 17, 242, 228, 197, 65, 50, 141,
+			192, 238, 191, 189, 66, 135, 216, 221, 241, 116, 130, 74, 16, 120,
+			43, 82, 156, 175, 33, 26, 246, 80,
 		}
 		context := []byte{
-			1, 0, 32, 0, 1, 0, 1, 32, 198, 196, 234, 57, 116, 12, 5, 252, 105,
-			137, 60, 237, 166, 161, 45, 133, 169, 140, 60, 0, 172, 24, 120, 16,
-			36, 62, 159, 97, 19, 234, 254, 152, 16, 104, 245, 85, 178, 38, 194,
-			67, 111, 219, 54, 128, 40, 121, 218, 117, 75, 12, 68, 251, 63, 222,
-			237, 147, 48, 96, 102, 10, 33, 119, 12, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-			0, 0, 0,
+			1, 0, 32, 0, 1, 0, 1, 32, 188, 60, 186, 168, 74, 122, 101, 108, 101,
+			175, 151, 224, 216, 133, 41, 38, 176, 243, 158, 241, 238, 224, 63,
+			54, 36, 209, 55, 185, 130, 243, 98, 102, 16, 224, 243, 140, 134, 61,
+			96, 23, 103, 174, 168, 68, 76, 141, 178, 155, 172, 12, 146, 174,
+			128, 209, 7, 197, 22, 81, 186, 174, 199, 183, 12, 0, 0, 0, 0, 0, 0,
+			0, 0, 0, 0, 0, 0,
 		}
 		testECHProvider(t, p, handle, extensionECH, ECHProviderResult{
 			Status:       ECHProviderSuccess,

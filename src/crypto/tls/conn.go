@@ -130,6 +130,7 @@ type Conn struct {
 		accepted     bool   // Server accepted ECH
 		retryConfigs []byte // The retry configurations
 		configId     uint8  // The config id
+		maxNameLen   int    // maximum_name_len indicated by the ECH config
 	}
 }
 
