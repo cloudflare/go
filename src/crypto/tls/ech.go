@@ -27,138 +27,77 @@ const (
 	echClientHelloInnerVariant uint8 = 1
 )
 
+// echOfferOrGrease is called by the client after generating its ClientHello
+// message to decide if it will offer or GREASE ECH. It does neither if ECH is
+// disabled. Returns a pair of ClientHello messages, hello and helloInner. If
+// offering ECH, these are the ClienthelloOuter and ClientHelloInner
+// respectively. Otherwise, hello is the ClientHello and helloInner == nil.
+//
 // TODO(cjpatton): "[When offering ECH, the client] MUST NOT offer to resume any
 // session for TLS 1.2 and below [in ClientHelloInner]."
 func (c *Conn) echOfferOrGrease(helloBase *clientHelloMsg) (hello, helloInner *clientHelloMsg, err error) {
 	config := c.config
 
-	if !config.ECHEnabled ||
-		(c.hrrTriggered && testingECHTriggerBypassAfterHRR) ||
-		(!c.hrrTriggered && testingECHTriggerBypassBeforeHRR) {
+	if !config.ECHEnabled || testingECHTriggerBypassBeforeHRR {
 		// Bypass ECH.
 		return helloBase, nil, nil
 	}
 
+	// Choose the ECHConfig to use for this connection. If none is available, or
+	// if we're not offering TLS 1.3 or above, then GREASE.
 	echConfig := config.echSelectConfig()
 	if echConfig == nil || config.maxSupportedVersion() < VersionTLS13 {
-		// Compute artifacts that are reused across HRR.
-		if c.ech.dummy == nil {
-			// Serialized ClientECH.
-			c.ech.dummy, err = echGenerateDummyExt(config.rand())
-			if err != nil {
-				return nil, nil, fmt.Errorf("tls: ech: failed to generate grease ECH: %s", err)
-			}
+		var err error
+
+		// Generate a dummy ClientECH.
+		helloBase.ech, err = echGenerateGreaseExt(config.rand())
+		if err != nil {
+			return nil, nil, fmt.Errorf("tls: ech: failed to generate grease ECH: %s", err)
 		}
 
-		// Grease ECH.
-		helloBase.ech = c.ech.dummy
+		// GREASE ECH.
 		c.ech.offered = false
 		c.ech.greased = true
 		helloBase.raw = nil
 		return helloBase, nil, nil
 	}
 
-	// Compute artifacts that are reused across HRR.
+	// Store the config id in case of HelloRetryRequest (HRR).
+	c.ech.configId = echConfig.configId
+
+	// Generate the HPKE context. Store it in case of HRR.
 	var enc []byte
-	if c.ech.sealer == nil {
-		// HPKE context.
-		enc, c.ech.sealer, err = echConfig.setupSealer(config.rand())
-		if err != nil {
-			return nil, nil, fmt.Errorf("tls: ech: %s", err)
-		}
-
-		// ECHConfig.contents.public_name.
-		c.ech.publicName = string(echConfig.rawPublicName)
-
-		// ECHConfig.contents.key_config.config_id.
-		c.ech.configId = echConfig.configId
-
-		// ClientHelloInner.random.
-		c.ech.innerRandom = make([]byte, 32)
-		if _, err = io.ReadFull(config.rand(), c.ech.innerRandom); err != nil {
-			return nil, nil, fmt.Errorf("tls: short read from Rand: %s", err)
-		}
+	enc, c.ech.sealer, err = echConfig.setupSealer(config.rand())
+	if err != nil {
+		return nil, nil, fmt.Errorf("tls: ech: %s", err)
 	}
 
-	// ClientHelloInner is constructed from helloBase, but uses a fresh "random"
-	// (helloBase.random is used for ClientHelloOuter) and an empty
-	// "ech_is_inner" extension indicating that this is the ClientHelloInner.
-	helloInner = new(clientHelloMsg)
-	*helloInner = *helloBase
-	helloInner.random = c.ech.innerRandom
+	// ClientHelloInner is constructed from the base ClientHello. The payload of
+	// the "encrypted_client_hello" extension is a single 1 byte indicating that
+	// this is the ClientHelloInner.
+	helloInner = helloBase
 	helloInner.ech = []byte{echClientHelloInnerVariant}
 
-	// Ensure that only TLS 1.3 and above are offered.
+	// Ensure that only TLS 1.3 and above are offered in the inner handshake.
 	if v := helloInner.supportedVersions; len(v) == 0 || v[len(v)-1] < VersionTLS13 {
 		return nil, nil, errors.New("tls: ech: only TLS 1.3 is allowed in ClientHelloInner")
 	}
 
-	// EncodedClientHelloInner is constructed from ClientHelloInner by removing
-	// extensions that are also used in the ClientHelloOuter.
-	//
-	// NOTE(cjpatton): It would be nice to incorporate more extensions, but
-	// "key_share" is the last extension to appear in the ClientHello before
-	// "pre_shared_key". As a result, the only contiguous sequence of outer
-	// extensions that contains "key_share" is "key_share" itself. Note that
-	// we cannot change the order of extensions in the ClientHello, as the
-	// unit tests expect "key_share" to be the second to last extension.
-	outerExtensions := []uint16{extensionKeyShare}
-	if testingECHOuterExtMany {
-		// NOTE(cjpatton): Incorporating this particular sequence does not
-		// yield significant savings. However, it's useful to test that our
-		// server correctly handles a sequence of compressed extensions and
-		// not just one.
-		outerExtensions = []uint16{
-			extensionStatusRequest,
-			extensionSupportedCurves,
-			extensionSupportedPoints,
-		}
-	} else if testingECHOuterExtNone {
-		outerExtensions = nil
-	}
-	encodedHelloInner := echEncodeClientHelloInner(helloInner.marshal(), outerExtensions)
-	if encodedHelloInner == nil {
-		return nil, nil, errors.New("tls: ech: encoding of EncodedClientHelloInner failed")
-	}
-
 	// ClientHelloOuter is constructed by generating a fresh ClientHello and
-	// copying "key_share", "random", and "sesion_id" from helloBase, setting
-	// "server_name" to be the client-facing server, and adding the
-	// "encrypted_client_hello" extension.
+	// copying "session_id" from ClientHelloInner, setting "server_name" to the
+	// client-facing server, and adding the "encrypted_client_hello" extension.
+	//
+	// In addition, we discard the "key_share" and instead use the one from
+	// ClientHelloInner.
 	hello, _, err = c.makeClientHello(config.MinVersion)
 	if err != nil {
 		return nil, nil, fmt.Errorf("tls: ech: %s", err)
 	}
-	hello.keyShares = helloBase.keyShares
-	hello.random = helloBase.random
 	hello.sessionId = helloBase.sessionId
-	hello.serverName = hostnameInSNI(c.ech.publicName)
-
-	// ClientECH, the payload of the "encrypted_client_hello" extension.
-	var ech echClientOuter
-	_, kdf, aead := c.ech.sealer.Suite().Params()
-	ech.handle.suite.kdfId = uint16(kdf)
-	ech.handle.suite.aeadId = uint16(aead)
-	ech.handle.configId = echConfig.configId
-	ech.handle.enc = enc // Empty after HRR
-
-	// ClientHelloOuterAAD
-	hello.ech = ech.marshal()
-	helloOuterAad := echEncodeClientHelloOuterAAD(hello.marshal(),
-		int(aead.CipherLen(uint(len(encodedHelloInner)))))
-	if helloOuterAad == nil {
-		return nil, nil, errors.New("tls: ech: encoding of ClientHelloOuterAAD failed")
+	hello.serverName = hostnameInSNI(string(echConfig.rawPublicName))
+	if err := c.echUpdateClientHelloOuter(hello, helloInner, enc); err != nil {
+		return nil, nil, err
 	}
-
-	ech.payload, err = c.ech.sealer.Seal(encodedHelloInner, helloOuterAad)
-	if err != nil {
-		return nil, nil, fmt.Errorf("tls: ech: seal failed: %s", err)
-	}
-	if testingECHTriggerPayloadDecryptError {
-		ech.payload[0] ^= 0xff // Inauthentic ciphertext
-	}
-	ech.raw = nil
-	hello.ech = ech.marshal()
 
 	// Offer ECH.
 	c.ech.offered = true
@@ -167,16 +106,73 @@ func (c *Conn) echOfferOrGrease(helloBase *clientHelloMsg) (hello, helloInner *c
 	return hello, helloInner, nil
 }
 
-func (c *Conn) echAcceptOrReject(hello *clientHelloMsg) (*clientHelloMsg, error) {
+// echUpdateClientHelloOuter is called by the client to construct the payload of
+// the ECH extension in the outer handshake.
+func (c *Conn) echUpdateClientHelloOuter(hello, helloInner *clientHelloMsg, enc []byte) error {
+	var (
+		ech echClientOuter
+		err error
+	)
+
+	// Copy all compressed extensions from ClientHelloInner into
+	// ClientHelloOuter.
+	for _, ext := range echOuterExtensions {
+		echCopyExtensionFromClientHelloInner(hello, helloInner, ext)
+	}
+
+	// Always copy the "key_shares" extension from ClientHelloInner, regardless
+	// of whether it gets compressed.
+	hello.keyShares = helloInner.keyShares
+
+	_, kdf, aead := c.ech.sealer.Suite().Params()
+	ech.handle.suite.kdfId = uint16(kdf)
+	ech.handle.suite.aeadId = uint16(aead)
+	ech.handle.configId = c.ech.configId
+	ech.handle.enc = enc
+
+	// EncodedClientHelloInner
+	helloInner.raw = nil
+	encodedHelloInner := echEncodeClientHelloInner(helloInner.marshal())
+	if encodedHelloInner == nil {
+		return errors.New("tls: ech: encoding of EncodedClientHelloInner failed")
+	}
+
+	// ClientHelloOuterAAD
+	hello.raw = nil
+	hello.ech = ech.marshal()
+	helloOuterAad := echEncodeClientHelloOuterAAD(hello.marshal(),
+		int(aead.CipherLen(uint(len(encodedHelloInner)))))
+	if helloOuterAad == nil {
+		return errors.New("tls: ech: encoding of ClientHelloOuterAAD failed")
+	}
+
+	ech.payload, err = c.ech.sealer.Seal(encodedHelloInner, helloOuterAad)
+	if err != nil {
+		return fmt.Errorf("tls: ech: seal failed: %s", err)
+	}
+	if testingECHTriggerPayloadDecryptError {
+		ech.payload[0] ^= 0xff // Inauthentic ciphertext
+	}
+	ech.raw = nil
+	hello.ech = ech.marshal()
+
+	helloInner.raw = nil
+	hello.raw = nil
+	return nil
+}
+
+// echAcceptOrReject is called by the client-facing server to determine whether
+// ECH was offered by the client, and if so, whether to accept or reject. The
+// return value is the ClientHello that will be used for the connection.
+//
+// This function is called prior to processing the ClientHello. In case of
+// HelloRetryRequest, it is also called before processing the second
+// ClientHello. This is indicated by the afterHRR flag.
+func (c *Conn) echAcceptOrReject(hello *clientHelloMsg, afterHRR bool) (*clientHelloMsg, error) {
 	config := c.config
 	p := config.ServerECHProvider
 
-	if !config.echCanAccept() {
-		// Bypass ECH.
-		return hello, nil
-	}
-
-	if len(hello.ech) > 0 {
+	if config.echCanAccept() && len(hello.ech) > 0 {
 		switch hello.ech[0] {
 		case echClientHelloInnerVariant: // inner handshake
 			if len(hello.ech) > 1 {
@@ -184,7 +180,7 @@ func (c *Conn) echAcceptOrReject(hello *clientHelloMsg) (*clientHelloMsg, error)
 				return nil, errors.New("ech: inner handshake has non-empty payload")
 			}
 
-			// Bypass ECH and continue as backend server.
+			// Continue as the backend server.
 			return hello, nil
 		case echClientHelloOuterVariant: // outer handshake
 		default:
@@ -204,7 +200,7 @@ func (c *Conn) echAcceptOrReject(hello *clientHelloMsg) (*clientHelloMsg, error)
 		return hello, nil
 	}
 
-	if c.hrrTriggered && !c.ech.offered && !c.ech.greased {
+	if afterHRR && !c.ech.offered && !c.ech.greased {
 		// The client bypassed ECH prior to HRR, but not after. This could
 		// cause ClientHelloInner to be used after ClientHelloOuter, which is
 		// illegal.
@@ -218,17 +214,22 @@ func (c *Conn) echAcceptOrReject(hello *clientHelloMsg) (*clientHelloMsg, error)
 		c.sendAlert(alertIllegalParameter)
 		return nil, fmt.Errorf("ech: failed to parse extension: %s", err)
 	}
-	if c.hrrTriggered && c.ech.offered &&
-		(ech.handle.suite != c.ech.suite ||
+
+	// Make sure that the HPKE suite and config id don't change across HRR and
+	// that the encapsulated key is not present after HRR.
+	if afterHRR && c.ech.offered {
+		_, kdf, aead := c.ech.opener.Suite().Params()
+		if ech.handle.suite.kdfId != uint16(kdf) ||
+			ech.handle.suite.aeadId != uint16(aead) ||
 			ech.handle.configId != c.ech.configId ||
-			len(ech.handle.enc) > 0) {
-		// The cipher suite and config id don't change across HRR. The
-		// encapsulated key field must be empty after HRR.
-		c.sendAlert(alertIllegalParameter)
-		return nil, errors.New("ech: hrr: illegal handle in second hello")
+			len(ech.handle.enc) > 0 {
+			c.sendAlert(alertIllegalParameter)
+			return nil, errors.New("ech: hrr: illegal handle in second hello")
+		}
 	}
+
+	// Store the config id in case of HRR.
 	c.ech.configId = ech.handle.configId
-	c.ech.suite = ech.handle.suite
 
 	// Ask the ECH provider for the HPKE context.
 	if c.ech.opener == nil {
@@ -237,7 +238,7 @@ func (c *Conn) echAcceptOrReject(hello *clientHelloMsg) (*clientHelloMsg, error)
 		// Compute retry configurations, skipping those indicating an
 		// unsupported version.
 		if len(res.RetryConfigs) > 0 {
-			configs, err := UnmarshalECHConfigs(res.RetryConfigs)
+			configs, err := UnmarshalECHConfigs(res.RetryConfigs) // skips unrecognized versions
 			if err != nil {
 				c.sendAlert(alertInternalError)
 				return nil, fmt.Errorf("ech: %s", err)
@@ -255,8 +256,8 @@ func (c *Conn) echAcceptOrReject(hello *clientHelloMsg) (*clientHelloMsg, error)
 			// advertised by the client-facing server. As of
 			// draft-ietf-tls-esni-10, the client is required to use the ECH
 			// config's public name as the outer SNI. Although there's no real
-			// reason for the server to enforce this, it worth noting it when it
-			// happens.
+			// reason for the server to enforce this, it's worth noting it when
+			// it happens.
 			pubNameMatches := false
 			for _, config := range configs {
 				if hello.serverName == string(config.rawPublicName) {
@@ -290,8 +291,7 @@ func (c *Conn) echAcceptOrReject(hello *clientHelloMsg) (*clientHelloMsg, error)
 		}
 	}
 
-	// EncodedClientHelloInner, the plaintext corresponding to
-	// ClientECH.payload.
+	// ClientHelloOuterAAD
 	rawHelloOuterAad := echEncodeClientHelloOuterAAD(hello.marshal(), len(ech.payload))
 	if rawHelloOuterAad == nil {
 		// This occurs if the ClientHelloOuter is malformed. This values was
@@ -299,14 +299,17 @@ func (c *Conn) echAcceptOrReject(hello *clientHelloMsg) (*clientHelloMsg, error)
 		c.sendAlert(alertInternalError)
 		return nil, fmt.Errorf("ech: failed to encode ClientHelloOuterAAD")
 	}
+
+	// EncodedClientHelloInner
 	rawEncodedHelloInner, err := c.ech.opener.Open(ech.payload, rawHelloOuterAad)
 	if err != nil {
-		if c.hrrTriggered && c.ech.accepted {
+		if afterHRR && c.ech.accepted {
 			// Don't reject after accept, as this would result in processing the
 			// ClientHelloOuter after processing the ClientHelloInner.
 			c.sendAlert(alertDecryptError)
 			return nil, fmt.Errorf("ech: hrr: reject after accept: %s", err)
 		}
+
 		// Reject ECH. We do not know at this point whether the client
 		// intended to offer or grease ECH, so we presume grease until the
 		// client indicates rejection by sending an "ech_required" alert.
@@ -314,7 +317,7 @@ func (c *Conn) echAcceptOrReject(hello *clientHelloMsg) (*clientHelloMsg, error)
 		return hello, nil
 	}
 
-	// ClientHelloInner, obtained by decoding EncodedClientHelloInner.
+	// ClientHelloInner
 	rawHelloInner := echDecodeClientHelloInner(rawEncodedHelloInner, hello.marshal(), hello.sessionId)
 	if rawHelloInner == nil {
 		c.sendAlert(alertIllegalParameter)
@@ -445,7 +448,7 @@ type hpkeSymmetricCipherSuite struct {
 }
 
 // Generates a grease ECH extension using a hard-coded KEM public key.
-func echGenerateDummyExt(rand io.Reader) ([]byte, error) {
+func echGenerateGreaseExt(rand io.Reader) ([]byte, error) {
 	var err error
 	var dummyX25519PublicKey = []byte{
 		143, 38, 37, 36, 12, 6, 229, 30, 140, 27, 167, 73, 26, 100, 203, 107, 216,
@@ -476,7 +479,8 @@ func echGenerateDummyExt(rand io.Reader) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("tls: grease ech:: %s", err)
 	}
-	ech.payload = make([]byte, dummyEncodedHelloInnerLen+defaultHPKESuiteTagLen)
+	ech.payload = make([]byte,
+		int(aead.CipherLen(uint(dummyEncodedHelloInnerLen))))
 	if _, err = io.ReadFull(rand, ech.payload); err != nil {
 		return nil, fmt.Errorf("tls: grease ech:: %s", err)
 	}
@@ -486,10 +490,7 @@ func echGenerateDummyExt(rand io.Reader) ([]byte, error) {
 // echEncodeClientHelloInner interprets innerData as a ClientHelloInner message
 // and transforms it into an EncodedClientHelloInner. Returns nil if parsing
 // innerData fails.
-//
-// outerExtensions specifies the contiguous sequence of extensions that will be
-// incorporated using the "ech_outer_extensions" mechanism.
-func echEncodeClientHelloInner(innerData []byte, outerExtensions []uint16) []byte {
+func echEncodeClientHelloInner(innerData []byte) []byte {
 	var (
 		errIllegalParameter      = errors.New("illegal parameter")
 		msgType                  uint8
@@ -539,7 +540,7 @@ func echEncodeClientHelloInner(innerData []byte, outerExtensions []uint16) []byt
 		if testingECHOuterExtIncorrectOrder {
 			// Replace outer extensions with "outer_extension" extension, but in
 			// the incorrect order.
-			echAddOuterExtensions(b, outerExtensions)
+			echAddOuterExtensions(b, echOuterExtensions)
 		}
 
 		for !extensions.Empty() {
@@ -550,14 +551,14 @@ func echEncodeClientHelloInner(innerData []byte, outerExtensions []uint16) []byt
 				panic(cryptobyte.BuildError{Err: errIllegalParameter})
 			}
 
-			if len(outerExtensions) > 0 && ext == outerExtensions[0] {
+			if len(echOuterExtensions) > 0 && ext == echOuterExtensions[0] {
 				if !testingECHOuterExtIncorrectOrder {
 					// Replace outer extensions with "outer_extension" extension.
-					echAddOuterExtensions(b, outerExtensions)
+					echAddOuterExtensions(b, echOuterExtensions)
 				}
 
 				// Consume the remaining outer extensions.
-				for _, outerExt := range outerExtensions[1:] {
+				for _, outerExt := range echOuterExtensions[1:] {
 					if !extensions.ReadUint16(&ext) ||
 						!extensions.ReadUint16LengthPrefixed(&extData) {
 						panic(cryptobyte.BuildError{Err: errIllegalParameter})
@@ -1007,4 +1008,51 @@ func (c *Config) echCanAccept() bool {
 	return c.ECHEnabled &&
 		c.ServerECHProvider != nil &&
 		c.maxSupportedVersion() >= VersionTLS13
+}
+
+var (
+	// The list of compressed extensions used for the "ech_outer_extensions"
+	// extension.
+	echOuterExtensions []uint16
+)
+
+func init() {
+	// EncodedClientHelloInner is constructed from ClientHelloInner by removing
+	// extensions that are also used in the ClientHelloOuter.
+	//
+	// NOTE(cjpatton): It would be nice to incorporate more extensions, but
+	// "key_share" is the last extension to appear in the ClientHello before
+	// "pre_shared_key". As a result, the only contiguous sequence of outer
+	// extensions that contains "key_share" is "key_share" itself. Note that
+	// we cannot change the order of extensions in the ClientHello, as the
+	// unit tests expect "key_share" to be the second to last extension.
+	echOuterExtensions = []uint16{extensionKeyShare}
+	if testingECHOuterExtMany {
+		// NOTE(cjpatton): Incorporating this particular sequence does not
+		// yield significant savings. However, it's useful to test that our
+		// server correctly handles a sequence of compressed extensions and
+		// not just one.
+		echOuterExtensions = []uint16{
+			extensionStatusRequest,
+			extensionSupportedCurves,
+			extensionSupportedPoints,
+		}
+	} else if testingECHOuterExtNone {
+		echOuterExtensions = []uint16{}
+	}
+}
+
+func echCopyExtensionFromClientHelloInner(hello, helloInner *clientHelloMsg, ext uint16) {
+	switch ext {
+	case extensionStatusRequest:
+		hello.ocspStapling = helloInner.ocspStapling
+	case extensionSupportedCurves:
+		hello.supportedCurves = helloInner.supportedCurves
+	case extensionSupportedPoints:
+		hello.supportedPoints = helloInner.supportedPoints
+	case extensionKeyShare:
+		hello.keyShares = helloInner.keyShares
+	default:
+		panic(fmt.Errorf("tried to copy unrecognized extension: %04x", ext))
+	}
 }

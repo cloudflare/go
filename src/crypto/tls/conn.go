@@ -129,18 +129,8 @@ type Conn struct {
 		greased      bool   // Client greased ECH
 		accepted     bool   // Server accepted ECH
 		retryConfigs []byte // The retry configurations
-
-		// The client's state, used in case of HRR.
-		innerRandom []byte                   // ClientHelloInner.random
-		publicName  string                   // ECHConfig.contents.public_name
-		configId    uint8                    // ECHConfig.contents.key_config.config_id
-		suite       hpkeSymmetricCipherSuite // ClientECH.cipher_suite
-		dummy       []byte                   // serialized ClientECH when greasing ECH
+		configId     uint8  // The config id
 	}
-
-	// Set by the client and server when an HRR message was sent in this
-	// handshake.
-	hrrTriggered bool
 }
 
 // Access to net.Conn methods.
