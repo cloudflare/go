@@ -76,7 +76,7 @@ func (c *Conn) echOfferOrGrease(helloBase *clientHelloMsg) (hello, helloInner *c
 	// the "encrypted_client_hello" extension is a single 1 byte indicating that
 	// this is the ClientHelloInner.
 	helloInner = helloBase
-	helloInner.ech = []byte{1}
+	helloInner.ech = []byte{echClientHelloInnerVariant}
 
 	// Ensure that only TLS 1.3 and above are offered in the inner handshake.
 	if v := helloInner.supportedVersions; len(v) == 0 || v[len(v)-1] < VersionTLS13 {
