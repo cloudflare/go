@@ -284,7 +284,7 @@ func (hs *clientHandshakeStateTLS13) processHelloRetryRequest() error {
 		hs.transcriptInner.Write(chHash)
 
 		// Check for ECH acceptance confirmation.
-		if len(hs.serverHello.ech) == 8 {
+		if len(hs.serverHello.ech) > 0 {
 			echAcceptConfHRRTranscript := cloneHash(hs.transcriptInner, hs.suite.hash)
 			if echAcceptConfHRRTranscript == nil {
 				c.sendAlert(alertInternalError)
@@ -487,6 +487,18 @@ func (hs *clientHandshakeStateTLS13) processServerHello() error {
 
 	if !hs.serverHello.selectedIdentityPresent {
 		return nil
+	}
+
+	// draft-ietf-tls-esni-12
+	//
+	// Per the rules of Section 6.1, the server is not permitted to resume a
+	// connection in the outer handshake. If ECH is rejected and the
+	// client-facing server replies with a "pre_shared_key" extension in its
+	// ServerHello, then the client MUST abort the handshake with an
+	// "illegal_parameter" alert.
+	if c.ech.offered && !c.ech.accepted {
+		c.sendAlert(alertIllegalParameter)
+		return errors.New("tls: ech: client-facing server offered PSK after ECH rejection")
 	}
 
 	if int(hs.serverHello.selectedIdentity) >= len(hs.hello.pskIdentities) {
