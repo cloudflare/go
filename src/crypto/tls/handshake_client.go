@@ -468,6 +468,7 @@ func (hs *clientHandshakeState) handshake() error {
 		}
 	}
 
+	c.clientHello = hs.hello.marshal()
 	c.ekm = ekmFromMasterSecret(c.vers, hs.suite, hs.masterSecret, hs.hello.random, hs.serverHello.random)
 	atomic.StoreUint32(&c.handshakeStatus, 1)
 

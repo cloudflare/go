@@ -141,6 +141,9 @@ type Conn struct {
 	// Set by the client and server when an HRR message was sent in this
 	// handshake.
 	hrrTriggered bool
+
+	// The serialized ClientHello used in this connection.
+	clientHello []byte
 }
 
 // Access to net.Conn methods.
@@ -1485,6 +1488,7 @@ func (c *Conn) connectionStateLocked() ConnectionState {
 	state.OCSPResponse = c.ocspResponse
 	state.ECHAccepted = c.ech.accepted
 	state.CFControl = c.config.CFControl
+	state.CFClientHello = c.clientHello
 	if !c.didResume && c.vers != VersionTLS13 {
 		if c.clientFinishedIsFirst {
 			state.TLSUnique = c.clientFinished[:]
