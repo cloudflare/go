@@ -831,6 +831,8 @@ func TestECHHandshake(t *testing.T) {
 			if accepted := server.connState.ECHAccepted; accepted != server.serverStatus.Accepted() {
 				t.Errorf("server got ECHAccepted=%v; want %v", accepted, server.serverStatus.Accepted())
 			}
+
+			cfTestClientHelloEqual(t, &client.connState, &server.connState)
 		})
 	}
 }

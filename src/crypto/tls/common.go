@@ -350,6 +350,13 @@ type ConnectionState struct {
 	// This feature is unstable and applications MUST NOT depend on it.
 	CFControl interface{}
 
+	// CFClientHello is the serialized ClientHello handshake message used by the
+	// connection. It can be empty if the handshake has not concluded.
+	//
+	// NOTE: This feature is used for a Cloudflare-internal functionality. It
+	// is unstable and applications MUST NOT depend on it.
+	CFClientHello []byte
+
 	// ekm is a closure exposed via ExportKeyingMaterial.
 	ekm func(label string, context []byte, length int) ([]byte, error)
 }

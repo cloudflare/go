@@ -152,6 +152,7 @@ func (hs *clientHandshakeStateTLS13) handshake() error {
 		return err
 	}
 
+	c.clientHello = hs.hello.marshal()
 	c.handleCFEvent(hs.handshakeTimings)
 	atomic.StoreUint32(&c.handshakeStatus, 1)
 
