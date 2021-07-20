@@ -28,8 +28,7 @@ func fipsMinVersion(c *Config) uint16 {
 
 // fipsMaxVersion replaces c.maxVersion in FIPS-only mode.
 func fipsMaxVersion(c *Config) uint16 {
-	// FIPS requires TLS 1.2.
-	return VersionTLS12
+	return VersionTLS13
 }
 
 // default defaultFIPSCurvePreferences is the FIPS-allowed curves,
@@ -62,6 +61,8 @@ var defaultFIPSCipherSuites = []uint16{
 	TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
 	TLS_RSA_WITH_AES_128_GCM_SHA256,
 	TLS_RSA_WITH_AES_256_GCM_SHA384,
+	TLS_AES_128_GCM_SHA256,
+	//  TODO: unclear if SHA-384 is allowed. Find out
 }
 
 // fipsCipherSuites replaces c.cipherSuites in FIPS-only mode.
