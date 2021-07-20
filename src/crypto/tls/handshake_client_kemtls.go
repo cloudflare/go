@@ -8,7 +8,6 @@ import (
 	"crypto/hmac"
 	"crypto/kem"
 	"errors"
-	"fmt"
 	"sync/atomic"
 )
 
@@ -66,7 +65,6 @@ func (hs *clientHandshakeStateTLS13) handshakeKEMTLS() error {
 	// hs.handshakeTimings.ExperimentName = experimentName(c)
 	hs.handshakeTimings.finish()
 	c.handleCFEvent(hs.handshakeTimings)
-	fmt.Printf("\n client kemtls %+v \n", hs.handshakeTimings)
 	atomic.StoreUint32(&c.handshakeStatus, 1)
 
 	return nil
@@ -112,7 +110,6 @@ func (hs *clientHandshakeStateTLS13) sendClientKEMCiphertext() error {
 			return err
 		}
 		hs.handshakeTimings.WriteKEMCiphertext = hs.handshakeTimings.elapsedTime()
-		fmt.Printf("\n %v \n", hs.handshakeTimings.WriteKEMCiphertext)
 
 		// AHS <- HKDF.Extract(dHS, ss_s)
 		ahs = hs.suite.extract(ss, hs.suite.deriveSecret(hs.handshakeSecret, "derived", nil))
