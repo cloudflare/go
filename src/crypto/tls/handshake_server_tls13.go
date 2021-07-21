@@ -145,6 +145,7 @@ func (hs *serverHandshakeStateTLS13) handshake() error {
 	}
 
 	//hs.handshakeTimings.ExperimentName = experimentName(c)
+	fmt.Printf("\n %+v \n", hs.handshakeTimings)
 	hs.handshakeTimings.finish()
 	c.handleCFEvent(hs.handshakeTimings)
 
