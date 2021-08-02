@@ -400,6 +400,7 @@ var depsRules = `
 	< golang.org/x/crypto/curve25519
 	< crypto/dsa, crypto/elliptic, crypto/rsa
 	< crypto/ecdsa
+	< crypto/kem
 	< CRYPTO-BORING;
 
 	net !< CRYPTO-BORING;
