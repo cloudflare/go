@@ -1,14 +1,17 @@
 package common
 
-import "testing"
+import (
+	"math/rand"
+	"testing"
+)
 
 func TestPackLe16AgainstGeneric(t *testing.T) {
 	var p Poly
 	var buf1, buf2 [PolyLe16Size]byte
-
 	for j := 0; j < 1000; j++ {
-		pp := randSliceUint32WithMax(N, 16)
-		copy(p[:], pp)
+		for i := 0; i < 256; i++ {
+			p[i] = uint32(rand.Intn(16))
+		}
 		p.PackLe16(buf1[:])
 		p.packLe16Generic(buf2[:])
 		if buf1 != buf2 {

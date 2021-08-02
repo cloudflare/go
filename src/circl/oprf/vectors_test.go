@@ -79,7 +79,7 @@ func readFile(t *testing.T, fileName string) []vector {
 
 func (v *vector) SetUpParties(t *testing.T) (s *Server, c *Client) {
 	seed := toBytes(t, v.Seed, "seed for keys")
-	privateKey, err := DeriveKey(v.ID, v.Mode, seed)
+	privateKey, err := DeriveKey(v.ID, seed)
 	test.CheckNoErr(t, err, "deriving key")
 
 	got, err := privateKey.Serialize()
@@ -111,7 +111,6 @@ func (v *vector) SetUpParties(t *testing.T) (s *Server, c *Client) {
 }
 
 func (v *vector) compareLists(t *testing.T, got, want [][]byte) {
-	t.Helper()
 	for i := range got {
 		if !bytes.Equal(got[i], want[i]) {
 			test.ReportError(t, got[i], want[i], v.Name, v.Mode, i)
@@ -120,7 +119,6 @@ func (v *vector) compareLists(t *testing.T, got, want [][]byte) {
 }
 
 func (v *vector) compareStrings(t *testing.T, got, want string) {
-	t.Helper()
 	if got != want {
 		test.ReportError(t, got, want, v.Name, v.Mode)
 	}
@@ -192,10 +190,8 @@ func (v *vector) test(t *testing.T) {
 }
 
 func TestVectors(t *testing.T) {
-	// Source of test vectors
-	// published: https://datatracker.ietf.org/doc/draft-irtf-cfrg-voprf
-	// master: https://github.com/cfrg/draft-irtf-cfrg-voprf
-	v := readFile(t, "testdata/allVectors_v07.json")
+	// Test vectors from https://datatracker.ietf.org/doc/draft-irtf-cfrg-voprf
+	v := readFile(t, "testdata/allVectors_v06.json")
 
 	for i := range v {
 		id := v[i].ID

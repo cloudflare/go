@@ -1,7 +1,6 @@
 package conv
 
 import (
-	"encoding/binary"
 	"fmt"
 	"math/big"
 	"strings"
@@ -65,30 +64,6 @@ func Uint64Le2BigInt(x []uint64) *big.Int {
 		b.Add(b, &bi)
 	}
 	return b
-}
-
-// Uint64Le2BytesLe converts a little-endian slice x to a little-endian slice of bytes.
-func Uint64Le2BytesLe(x []uint64) []byte {
-	b := make([]byte, 8*len(x))
-	for i := range x {
-		binary.LittleEndian.PutUint64(b[i*8:], x[i])
-	}
-	return b
-}
-
-// Uint64Le2Hex returns an hexadecimal string of a number stored in a
-// little-endian order slice x.
-func Uint64Le2Hex(x []uint64) string {
-	b := new(strings.Builder)
-	b.Grow(16*len(x) + 2)
-	fmt.Fprint(b, "0x")
-	if len(x) == 0 {
-		fmt.Fprint(b, "00")
-	}
-	for i := len(x) - 1; i >= 0; i-- {
-		fmt.Fprintf(b, "%016x", x[i])
-	}
-	return b.String()
 }
 
 // BigInt2Uint64Le stores a positive big.Int number x into a little-endian slice z.

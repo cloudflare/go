@@ -1,36 +1,16 @@
 package common
 
 import (
-	"crypto/rand"
-	"encoding/binary"
 	"flag"
-	"math"
+	"math/rand"
 	"testing"
 )
 
 var runVeryLongTest = flag.Bool("very-long", false, "runs very long tests")
 
-func randSliceUint32(length uint) []uint32 { return randSliceUint32WithMax(length, math.MaxUint32) }
-
-func randSliceUint32WithMax(length uint, max uint32) []uint32 {
-	bytes := make([]uint8, 4*length)
-	if n, err := rand.Read(bytes); err != nil {
-		panic(err)
-	} else if n < len(bytes) {
-		panic("short read from RNG")
-	}
-	x := make([]uint32, length)
-	for i := range x {
-		x[i] = binary.LittleEndian.Uint32(bytes[4*i:]) % max
-	}
-	return x
-}
-
 func TestModQ(t *testing.T) {
-	const testTimes = 1000
-	r := randSliceUint32(testTimes)
-	for i := 0; i < testTimes; i++ {
-		x := r[i]
+	for i := 0; i < 1000; i++ {
+		x := rand.Uint32()
 		y := modQ(x)
 		if y > Q {
 			t.Fatalf("modQ(%d) > Q", x)
@@ -42,10 +22,8 @@ func TestModQ(t *testing.T) {
 }
 
 func TestReduceLe2Q(t *testing.T) {
-	const testTimes = 1000
-	r := randSliceUint32(testTimes)
-	for i := 0; i < testTimes; i++ {
-		x := r[i]
+	for i := 0; i < 1000; i++ {
+		x := rand.Uint32()
 		y := reduceLe2Q(x)
 		if y > 2*Q {
 			t.Fatalf("reduce_le2q(%d) > 2Q", x)

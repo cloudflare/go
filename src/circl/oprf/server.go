@@ -32,10 +32,7 @@ func newServer(id SuiteID, m Mode, skS *PrivateKey) (*Server, error) {
 		return nil, err
 	}
 	if skS == nil {
-		skS, err = GenerateKey(id, rand.Reader)
-		if err != nil {
-			return nil, err
-		}
+		skS = suite.generateKey()
 	} else if id != skS.s { // Verifies key corresponds to SuiteID.
 		return nil, errors.New("key doesn't match with suite")
 	}
@@ -75,10 +72,11 @@ func (s *Server) evaluateWithProofScalar(blindedElements []Blinded, proofScalar 
 		eval[i] = s.Group.NewElement()
 		eval[i].Mul(input[i], s.privateKey.k)
 
-		out[i], err = eval[i].MarshalBinaryCompress()
+		e, err := eval[i].MarshalBinaryCompress()
 		if err != nil {
 			return nil, err
 		}
+		out[i] = e
 	}
 
 	var proof *Proof
@@ -95,11 +93,12 @@ func (s *Server) evaluateWithProofScalar(blindedElements []Blinded, proofScalar 
 // FullEvaluate performs a full OPRF protocol at server-side.
 func (s *Server) FullEvaluate(input []byte) ([]byte, error) {
 	p := s.Group.HashToElement(input, s.getDST(hashToGroupDST))
-	p.Mul(p, s.privateKey.k)
-	ser, err := p.MarshalBinaryCompress()
+
+	ser, err := s.scalarMult(p, s.privateKey.k)
 	if err != nil {
 		return nil, err
 	}
+
 	return s.finalizeHash(input, ser), nil
 }
 

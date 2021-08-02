@@ -360,7 +360,7 @@ func testKAT(t *testing.T, v sikeVec) {
 		return ret
 	}
 
-	testKeygen := func(pk, sk []byte) {
+	testKeygen := func(pk, sk []byte) bool {
 		// Import provided private key
 		var prvKey = NewPrivateKey(v.id, KeyVariantSike)
 		var pubKey = NewPublicKey(v.id, KeyVariantSike)
@@ -370,9 +370,7 @@ func testKAT(t *testing.T, v sikeVec) {
 		// Generate public key
 		prvKey.GeneratePublicKey(pubKey)
 		pubKey.Export(pubKeyBytes)
-		if !bytes.Equal(pubKeyBytes, pk) {
-			t.Errorf("Public key differ [%s]", v.name)
-		}
+		return bytes.Equal(pubKeyBytes, pk)
 	}
 
 	f, err := os.Open(v.KatFile)

@@ -16,6 +16,7 @@ package oprf
 
 import (
 	"crypto"
+	"crypto/rand"
 	"encoding/binary"
 	"errors"
 	"io"
@@ -24,7 +25,7 @@ import (
 )
 
 const (
-	version         = "VOPRF07-"
+	version         = "VOPRF06-"
 	seedDST         = "Seed-"
 	challengeDST    = "Challenge-"
 	finalizeDST     = "Finalize-"
@@ -62,7 +63,6 @@ type Blind group.Scalar
 type SerializedElement = []byte
 type SerializedScalar = []byte
 type Blinded = SerializedElement
-type UnBlinded = SerializedElement
 
 type Proof struct {
 	C, S SerializedScalar
@@ -116,12 +116,27 @@ func GetSizes(id SuiteID) (
 }
 
 func (s *suite) GetMode() Mode { return s.Mode }
-
 func (s *suite) getDST(name string) []byte {
 	return append(append(append([]byte{},
-		[]byte(name)...),
 		[]byte(version)...),
+		[]byte(name)...),
 		[]byte{s.Mode, 0, byte(s.SuiteID)}...)
+}
+
+func (s *suite) generateKey() *PrivateKey {
+	privateKey := s.Group.RandomScalar(rand.Reader)
+	return &PrivateKey{s.SuiteID, privateKey}
+}
+
+func (s *suite) deriveKey(seed []byte) *PrivateKey {
+	privateKey := s.Group.HashToScalar(seed, nil)
+	return &PrivateKey{s.SuiteID, privateKey}
+}
+
+func (s *suite) scalarMult(e group.Element, k group.Scalar) ([]byte, error) {
+	t := s.Group.NewElement()
+	t.Mul(e, k)
+	return t.MarshalBinaryCompress()
 }
 
 func (s *suite) finalizeHash(input, element []byte) []byte {

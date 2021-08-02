@@ -9,6 +9,7 @@ base = os.path.dirname(os.path.abspath(sys.argv[0]))
 
 REPO = 'https://github.com/cloudflare/circl'
 BRANCH = 'master'
+COMMIT = 'bb9ec5d'
 
 circl = os.path.join(base, 'src/circl')
 
@@ -18,14 +19,19 @@ if os.path.exists(circl):
 
 with tempfile.TemporaryDirectory() as d:
     print(f"Cloning {REPO} branch {BRANCH} ...")
-    subprocess.check_call(['git', 'clone', REPO, '--branch', BRANCH],
-                cwd=d)
+    subprocess.check_call(['git', 'clone', REPO, '--branch', BRANCH, 'circl'])
+    print(f"Resetting {REPO} to commit {COMMIT} ...")
+    subprocess.check_call(['git', 'reset', '--hard', COMMIT], cwd='circl')
+    subprocess.check_call(['rm', 'group/ristretto255.go', 'group/ristretto255_test.go'], cwd='circl')
 
     print("Copying ...")
     subprocess.check_call(['cp', '-r',
-        os.path.join(d, 'circl'),
+        'circl',
         circl,
     ])
+
+    print("Removing ...")
+    subprocess.check_call(['rm', '-rf', 'circl'])
 
 print("Removing avo sourcecode (for now) ...")
 # XXX figure out a way to prevent ./src/all.sh from trying to build the

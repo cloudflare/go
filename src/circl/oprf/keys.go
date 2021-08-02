@@ -1,8 +1,6 @@
 package oprf
 
 import (
-	"io"
-
 	"circl/group"
 )
 
@@ -45,26 +43,20 @@ func (k *PrivateKey) Public() *PublicKey {
 	return &PublicKey{k.s, publicKey}
 }
 
-// GenerateKey generates a pair of keys in accordance with the suite. Panics if
-// rnd is nil.
-func GenerateKey(id SuiteID, rnd io.Reader) (*PrivateKey, error) {
+// GenerateKey generates a pair of keys in accordance with the suite.
+func GenerateKey(id SuiteID) (*PrivateKey, error) {
 	suite, err := suiteFromID(id, BaseMode)
 	if err != nil {
 		return nil, err
 	}
-	if rnd == nil {
-		panic("rnd must be an non-nil io.Reader")
-	}
-	privateKey := suite.Group.RandomScalar(rnd)
-	return &PrivateKey{suite.SuiteID, privateKey}, nil
+	return suite.generateKey(), nil
 }
 
-// DeriveKey derives a pair of keys given a seed and in accordance with the suite and mode.
-func DeriveKey(id SuiteID, mode Mode, seed []byte) (*PrivateKey, error) {
-	suite, err := suiteFromID(id, mode)
+// DeriveKey derives a pair of keys given a seed and in accordance with the suite.
+func DeriveKey(id SuiteID, seed []byte) (*PrivateKey, error) {
+	suite, err := suiteFromID(id, BaseMode)
 	if err != nil {
 		return nil, err
 	}
-	privateKey := suite.Group.HashToScalar(seed, suite.getDST(hashToScalarDST))
-	return &PrivateKey{suite.SuiteID, privateKey}, nil
+	return suite.deriveKey(seed), nil
 }

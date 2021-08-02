@@ -10,16 +10,13 @@ import (
 	"circl/internal/test"
 )
 
-var allGroups = []group.Group{
-	group.P256,
-	group.P384,
-	group.P521,
-	group.Ristretto255,
-}
-
 func TestGroup(t *testing.T) {
 	const testTimes = 1 << 7
-	for _, g := range allGroups {
+	for _, g := range []group.Group{
+		group.P256,
+		group.P384,
+		group.P521,
+	} {
 		g := g
 		n := g.(fmt.Stringer).String()
 		t.Run(n+"/Add", func(tt *testing.T) { testAdd(tt, testTimes, g) })
@@ -128,16 +125,14 @@ func isZero(b []byte) bool {
 func testMarshal(t *testing.T, testTimes int, g group.Group) {
 	params := g.Params()
 	I := g.Identity()
-	got, err := I.MarshalBinary()
-	test.CheckNoErr(t, err, "error on MarshalBinary")
+	got, _ := I.MarshalBinary()
 	if !isZero(got) {
 		test.ReportError(t, got, "Non-zero identity")
 	}
 	if l := uint(len(got)); !(l == 1 || l == params.ElementLength) {
 		test.ReportError(t, l, params.ElementLength)
 	}
-	got, err = I.MarshalBinaryCompress()
-	test.CheckNoErr(t, err, "error on MarshalBinaryCompress")
+	got, _ = I.MarshalBinaryCompress()
 	if !isZero(got) {
 		test.ReportError(t, got, "Non-zero identity")
 	}
@@ -145,7 +140,7 @@ func testMarshal(t *testing.T, testTimes int, g group.Group) {
 		test.ReportError(t, l, params.CompressedElementLength)
 	}
 	II := g.NewElement()
-	err = II.UnmarshalBinary(got)
+	err := II.UnmarshalBinary(got)
 	if err != nil || !I.IsEqual(II) {
 		test.ReportError(t, I, II)
 	}
@@ -207,7 +202,11 @@ func testScalar(t *testing.T, testTimes int, g group.Group) {
 }
 
 func BenchmarkElement(b *testing.B) {
-	for _, g := range allGroups {
+	for _, g := range []group.Group{
+		group.P256,
+		group.P384,
+		group.P521,
+	} {
 		x := g.RandomElement(rand.Reader)
 		y := g.RandomElement(rand.Reader)
 		n := g.RandomScalar(rand.Reader)
@@ -236,7 +235,11 @@ func BenchmarkElement(b *testing.B) {
 }
 
 func BenchmarkScalar(b *testing.B) {
-	for _, g := range allGroups {
+	for _, g := range []group.Group{
+		group.P256,
+		group.P384,
+		group.P521,
+	} {
 		x := g.RandomScalar(rand.Reader)
 		y := g.RandomScalar(rand.Reader)
 		name := g.(fmt.Stringer).String()
@@ -253,6 +256,27 @@ func BenchmarkScalar(b *testing.B) {
 		b.Run(name+"/Inv", func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
 				y.Inv(x)
+			}
+		})
+	}
+}
+
+func BenchmarkHash(b *testing.B) {
+	for _, g := range []group.Group{
+		group.P256,
+		group.P384,
+		group.P521,
+	} {
+		g := g
+		name := g.(fmt.Stringer).String()
+		b.Run(name+"/HashToElement", func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				g.HashToElement(nil, nil)
+			}
+		})
+		b.Run(name+"/HashToScalar", func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				g.HashToScalar(nil, nil)
 			}
 		})
 	}

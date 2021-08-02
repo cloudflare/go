@@ -9,17 +9,17 @@ on:
 jobs:
   amd64_job:
     name: Go-${{matrix.GOVER}}/amd64
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-18.04
     strategy:
       matrix:
-        GOVER: ['1.16', '1.15']
+        GOVER: ['1.16', '1.15', '1.14', '1.13', '1.12']
     steps:
       - name: Checkout
         uses: actions/checkout@v2
       - name: Linting
         uses: golangci/golangci-lint-action@v2
         with:
-          version: v1.41
+          version: v1.29
           args: --config=./.etc/golangci.yml ./...
       - name: Setup Go-${{ matrix.GOVER }}
         uses: actions/setup-go@v2
@@ -35,7 +35,7 @@ jobs:
         run: go test -v -count=1 ./...
   exotic_job:
     name: Go-${{matrix.CFG[2]}}/${{matrix.CFG[0]}}
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-18.04
     strategy:
       matrix:
         CFG: [ [arm64,arm64v8,1.16] ]
@@ -56,7 +56,7 @@ jobs:
   coverage_amd64_job:
     needs: [ amd64_job ]
     if: github.event_name == 'push'
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-18.04
     name: amd64/coverage
     steps:
       - name: Checkout
@@ -66,25 +66,8 @@ jobs:
         with:
           go-version: '1.16'
       - name: Produce Coverage
-        run: go test -coverprofile=./coverage.txt ./...
+        run: go test -race -coverprofile=./coverage.txt -covermode=atomic ./...
       - name: Upload Codecov
-        uses: codecov/codecov-action@v2
+        uses: codecov/codecov-action@v1
         with:
           file: ./coverage.txt
-  osCompat:
-    runs-on: ${{ matrix.os }}
-    name: Running on ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [macos-10.15, windows-2019]
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v2
-      - name: Setup Go
-        uses: actions/setup-go@v2
-        with:
-          go-version: '1.16'
-      - name: Building
-        run: go build -v ./...
-      - name: Testing
-        run: go test -v -count=1 ./...
