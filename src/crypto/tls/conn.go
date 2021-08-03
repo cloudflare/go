@@ -27,6 +27,7 @@ type Conn struct {
 	// constant
 	conn        net.Conn
 	isClient    bool
+	didPQKEX    bool
 	handshakeFn func() error // (*Conn).clientHandshake or serverHandshake
 
 	// handshakeStatus is 1 if the connection is currently transferring
@@ -1424,6 +1425,7 @@ func (c *Conn) connectionStateLocked() ConnectionState {
 	state.VerifiedChains = c.verifiedChains
 	state.SignedCertificateTimestamps = c.scts
 	state.OCSPResponse = c.ocspResponse
+	state.DidPQKEX = c.didPQKEX
 	if !c.didResume && c.vers != VersionTLS13 {
 		if c.clientFinishedIsFirst {
 			state.TLSUnique = c.clientFinished[:]

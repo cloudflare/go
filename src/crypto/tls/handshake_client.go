@@ -32,6 +32,9 @@ type clientHandshakeState struct {
 	session      *ClientSessionState
 }
 
+// Defines the private part of the handshake keyshares
+type clientKeySharePrivate interface{}
+
 func (c *Conn) makeClientHello() (*clientHelloMsg, ecdheParameters, error) {
 	config := c.config
 	if len(config.ServerName) == 0 && !config.InsecureSkipVerify {
@@ -131,7 +134,7 @@ func (c *Conn) makeClientHello() (*clientHelloMsg, ecdheParameters, error) {
 		if err != nil {
 			return nil, nil, err
 		}
-		hello.keyShares = []keyShare{{group: curveID, data: params.PublicKey()}}
+		hello.keyShares = []keyShare{{group: curveID, data1: params.PublicKey()}}
 	}
 
 	return hello, params, nil

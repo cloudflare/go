@@ -11,6 +11,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/ed25519"
 	"crypto/elliptic"
+	"crypto/kem"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha512"
@@ -121,12 +122,21 @@ const (
 	CurveP384 CurveID = 24
 	CurveP521 CurveID = 25
 	X25519    CurveID = 29
+	Kyber512  CurveID = CurveID(kem.Kyber512)
 )
+
+func (curve CurveID) isKEM() bool {
+	switch curve {
+	case Kyber512:
+		return true
+	}
+	return false
+}
 
 // TLS 1.3 Key Share. See RFC 8446, Section 4.2.8.
 type keyShare struct {
 	group CurveID
-	data  []byte
+	data1 []byte
 }
 
 // TLS 1.3 PSK Key Exchange Modes. See RFC 8446, Section 4.2.9.
@@ -267,6 +277,9 @@ type ConnectionState struct {
 	// response provided by the peer for the leaf certificate, if any.
 	OCSPResponse []byte
 
+	// DidPQKEX signals if the handshake used Post-Quantum algorithms for
+	// the TLS 1.3 Key Exchange.
+	DidPQKEX bool
 	// TLSUnique contains the "tls-unique" channel binding value (see RFC 5929,
 	// Section 3). This value will be nil for TLS 1.3 connections and for all
 	// resumed connections.
@@ -688,6 +701,11 @@ type Config struct {
 	// used for debugging.
 	KeyLogWriter io.Writer
 
+	// AllowPQKEX is true if the client or server is willing
+	// to use post-quantum algorithms (Kyber512) in a hybrid mode for
+	// the TLS 1.3 Key-Exchange (KEX).
+	AllowPQKEX bool
+
 	// mutex protects sessionTicketKeys and autoSessionTicketKeys.
 	mutex sync.RWMutex
 	// sessionTicketKeys contains zero or more ticket keys. If set, it means the
@@ -776,6 +794,7 @@ func (c *Config) Clone() *Config {
 		CurvePreferences:            c.CurvePreferences,
 		DynamicRecordSizingDisabled: c.DynamicRecordSizingDisabled,
 		Renegotiation:               c.Renegotiation,
+		AllowPQKEX:                  c.AllowPQKEX,
 		KeyLogWriter:                c.KeyLogWriter,
 		sessionTicketKeys:           c.sessionTicketKeys,
 		autoSessionTicketKeys:       c.autoSessionTicketKeys,

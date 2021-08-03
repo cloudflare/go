@@ -234,7 +234,7 @@ func (hs *clientHandshakeStateTLS13) processHelloRetryRequest() error {
 			return err
 		}
 		hs.ecdheParams = params
-		hs.hello.keyShares = []keyShare{{group: curveID, data: params.PublicKey()}}
+		hs.hello.keyShares = []keyShare{{group: curveID, data1: params.PublicKey()}}
 	}
 
 	hs.hello.raw = nil
@@ -346,7 +346,7 @@ func (hs *clientHandshakeStateTLS13) processServerHello() error {
 func (hs *clientHandshakeStateTLS13) establishHandshakeKeys() error {
 	c := hs.c
 
-	sharedKey := hs.ecdheParams.SharedKey(hs.serverHello.serverShare.data)
+	sharedKey := hs.ecdheParams.SharedKey(hs.serverHello.serverShare.data1)
 	if sharedKey == nil {
 		c.sendAlert(alertIllegalParameter)
 		return errors.New("tls: invalid server key share")

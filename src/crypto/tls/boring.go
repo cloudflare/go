@@ -34,10 +34,15 @@ func fipsMaxVersion(c *Config) uint16 {
 // default defaultFIPSCurvePreferences is the FIPS-allowed curves,
 // in preference order (most preferable first).
 var defaultFIPSCurvePreferences = []CurveID{CurveP256, CurveP384, CurveP521}
+var defaultFIPSGroupPreferences = []CurveID{CurveP256, CurveP384, CurveP521, Kyber512}
 
 // fipsCurvePreferences replaces c.curvePreferences in FIPS-only mode.
 func fipsCurvePreferences(c *Config) []CurveID {
 	if c == nil || len(c.CurvePreferences) == 0 {
+		if c.AllowPQKEX {
+			return defaultFIPSGroupPreferences
+		}
+
 		return defaultFIPSCurvePreferences
 	}
 	var list []CurveID

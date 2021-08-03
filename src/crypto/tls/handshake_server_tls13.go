@@ -230,8 +230,8 @@ GroupSelection:
 		c.sendAlert(alertInternalError)
 		return err
 	}
-	hs.hello.serverShare = keyShare{group: selectedGroup, data: params.PublicKey()}
-	hs.sharedKey = params.SharedKey(clientKeyShare.data)
+	hs.hello.serverShare = keyShare{group: selectedGroup, data1: params.PublicKey()}
+	hs.sharedKey = params.SharedKey(clientKeyShare.data1)
 	if hs.sharedKey == nil {
 		c.sendAlert(alertIllegalParameter)
 		return errors.New("tls: invalid client key share")
