@@ -7,6 +7,7 @@ package tls
 import (
 	"crypto/elliptic"
 	"crypto/hmac"
+	"crypto/kem"
 	"errors"
 	"hash"
 	"io"
@@ -109,6 +110,15 @@ type ecdheParameters interface {
 	SharedKey(peerPublicKey []byte) []byte
 }
 
+type hybridParameters interface {
+	CurveID() CurveID
+	ClassicPublicKey() []byte
+	ClassicSharedKey(peerPublicKey []byte) []byte
+	PQPrivateKey() []byte
+	PQPublicKey() []byte
+	PQSharedKey(rand io.Reader, peerPublicKey []byte) ([]byte, []byte)
+}
+
 func generateECDHEParameters(rand io.Reader, curveID CurveID) (ecdheParameters, error) {
 	if curveID == X25519 {
 		privateKey := make([]byte, curve25519.ScalarSize)
@@ -134,6 +144,37 @@ func generateECDHEParameters(rand io.Reader, curveID CurveID) (ecdheParameters, 
 		return nil, err
 	}
 	return p, nil
+}
+
+func generateHybridParameters(rand io.Reader, curveID CurveID) (hybridParameters, error) {
+	if curveID == X25519Kyber512 {
+		privateKey := make([]byte, curve25519.ScalarSize)
+		if _, err := io.ReadFull(rand, privateKey); err != nil {
+			return nil, err
+		}
+		publicKey, err := curve25519.X25519(privateKey, curve25519.Basepoint)
+		if err != nil {
+			return nil, err
+		}
+
+		kemID := kem.ID(Kyber512)
+		pqPublicKey, pqPrivateKey, err := kem.GenerateKey(rand, kemID)
+
+		return &x25519Kyber512Parameters{privateKey: privateKey, publicKey: publicKey, pqPrivateKey: pqPrivateKey.PrivateKey, pqPublicKey: pqPublicKey.PublicKey}, nil
+	} else if curveID == CurveP256Kyber512 {
+		curve, _ := curveForCurveID(CurveP256)
+		privateKey, x, y, err := elliptic.GenerateKey(curve, rand)
+		if err != nil {
+			return nil, err
+		}
+
+		kemID := kem.ID(Kyber512)
+		pqPublicKey, pqPrivateKey, err := kem.GenerateKey(rand, kemID)
+
+		return &p256Kyber512Parameters{classicPrivateKey: privateKey, x: x, y: y, pqPrivateKey: pqPrivateKey.PrivateKey, pqPublicKey: pqPublicKey.PublicKey}, nil
+	}
+
+	return nil, nil
 }
 
 func curveForCurveID(id CurveID) (elliptic.Curve, bool) {
@@ -196,4 +237,88 @@ func (p *x25519Parameters) SharedKey(peerPublicKey []byte) []byte {
 		return nil
 	}
 	return sharedKey
+}
+
+type x25519Kyber512Parameters struct {
+	privateKey   []byte
+	publicKey    []byte
+	pqPrivateKey []byte
+	pqPublicKey  []byte
+}
+
+func (p *x25519Kyber512Parameters) CurveID() CurveID {
+	return X25519Kyber512
+}
+
+func (p *x25519Kyber512Parameters) ClassicPublicKey() []byte {
+	return p.publicKey[:]
+}
+
+func (p *x25519Kyber512Parameters) ClassicSharedKey(peerPublicKey []byte) []byte {
+	sharedKey, err := curve25519.X25519(p.privateKey, peerPublicKey)
+	if err != nil {
+		return nil
+	}
+	return sharedKey
+}
+
+func (p *x25519Kyber512Parameters) PQPublicKey() []byte {
+	return p.pqPublicKey[:]
+}
+
+func (p *x25519Kyber512Parameters) PQPrivateKey() []byte {
+	return p.pqPrivateKey[:]
+}
+
+func (p *x25519Kyber512Parameters) PQSharedKey(rand io.Reader, peerPublicKey []byte) ([]byte, []byte) {
+	sharedKey, ciphertext, err := kem.Encapsulate(rand, &kem.PublicKey{KEMId: kem.ID(Kyber512), PublicKey: peerPublicKey})
+	if err != nil {
+		return nil, nil
+	}
+	return sharedKey, ciphertext
+}
+
+type p256Kyber512Parameters struct {
+	classicPrivateKey []byte
+	x, y              *big.Int // public key
+	pqPrivateKey      []byte
+	pqPublicKey       []byte
+}
+
+func (p *p256Kyber512Parameters) CurveID() CurveID {
+	return CurveP256Kyber512
+}
+
+func (p *p256Kyber512Parameters) ClassicPublicKey() []byte {
+	curve, _ := curveForCurveID(CurveP256)
+	return elliptic.Marshal(curve, p.x, p.y)
+}
+
+func (p *p256Kyber512Parameters) ClassicSharedKey(peerPublicKey []byte) []byte {
+	curve, _ := curveForCurveID(CurveP256)
+	// Unmarshal also checks whether the given point is on the curve.
+	x, y := elliptic.Unmarshal(curve, peerPublicKey)
+	if x == nil {
+		return nil
+	}
+
+	xShared, _ := curve.ScalarMult(x, y, p.classicPrivateKey)
+	sharedKey := make([]byte, (curve.Params().BitSize+7)/8)
+	return xShared.FillBytes(sharedKey)
+}
+
+func (p *p256Kyber512Parameters) PQPublicKey() []byte {
+	return p.pqPublicKey[:]
+}
+
+func (p *p256Kyber512Parameters) PQPrivateKey() []byte {
+	return p.pqPrivateKey[:]
+}
+
+func (p *p256Kyber512Parameters) PQSharedKey(rand io.Reader, peerPublicKey []byte) ([]byte, []byte) {
+	sharedKey, ciphertext, err := kem.Encapsulate(rand, &kem.PublicKey{KEMId: kem.ID(Kyber512), PublicKey: peerPublicKey})
+	if err != nil {
+		return nil, nil
+	}
+	return sharedKey, ciphertext
 }

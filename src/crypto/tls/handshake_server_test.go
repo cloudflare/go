@@ -1935,7 +1935,7 @@ func TestAESCipherReordering13(t *testing.T) {
 					cipherSuites:       tc.clientCiphers,
 					supportedVersions:  []uint16{VersionTLS13},
 					compressionMethods: []uint8{compressionNone},
-					keyShares:          []keyShare{{group: X25519, data1: curve25519.Basepoint}},
+					keyShares:          []keyShare{{group: X25519, data: curve25519.Basepoint}},
 				},
 			}
 

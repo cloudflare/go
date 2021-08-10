@@ -246,7 +246,7 @@ func (m *clientHelloMsg) marshal() []byte {
 						for _, ks := range m.keyShares {
 							b.AddUint16(uint16(ks.group))
 							b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
-								b.AddBytes(ks.data1)
+								b.AddBytes(ks.data)
 							})
 						}
 
@@ -533,8 +533,8 @@ func (m *clientHelloMsg) unmarshal(data []byte) bool {
 			for !clientShares.Empty() {
 				var ks keyShare
 				if !clientShares.ReadUint16((*uint16)(&ks.group)) ||
-					!readUint16LengthPrefixed(&clientShares, &ks.data1) ||
-					len(ks.data1) == 0 {
+					!readUint16LengthPrefixed(&clientShares, &ks.data) ||
+					len(ks.data) == 0 {
 					return false
 				}
 				m.keyShares = append(m.keyShares, ks)
@@ -684,7 +684,7 @@ func (m *serverHelloMsg) marshal() []byte {
 				b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
 					b.AddUint16(uint16(m.serverShare.group))
 					b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
-						b.AddBytes(m.serverShare.data1)
+						b.AddBytes(m.serverShare.data)
 					})
 				})
 			}
@@ -812,7 +812,7 @@ func (m *serverHelloMsg) unmarshal(data []byte) bool {
 				}
 			} else {
 				if !extData.ReadUint16((*uint16)(&m.serverShare.group)) ||
-					!readUint16LengthPrefixed(&extData, &m.serverShare.data1) {
+					!readUint16LengthPrefixed(&extData, &m.serverShare.data) {
 					return false
 				}
 			}

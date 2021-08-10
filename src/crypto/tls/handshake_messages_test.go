@@ -171,7 +171,7 @@ func (*clientHelloMsg) Generate(rand *rand.Rand, size int) reflect.Value {
 	for i := 0; i < rand.Intn(5); i++ {
 		var ks keyShare
 		ks.group = CurveID(rand.Intn(30000) + 1)
-		ks.data1 = randomBytes(rand.Intn(200)+1, rand)
+		ks.data = randomBytes(rand.Intn(200)+1, rand)
 		m.keyShares = append(m.keyShares, ks)
 	}
 	switch rand.Intn(3) {
@@ -230,7 +230,7 @@ func (*serverHelloMsg) Generate(rand *rand.Rand, size int) reflect.Value {
 	if rand.Intn(10) > 5 {
 		for i := 0; i < rand.Intn(5); i++ {
 			m.serverShare.group = CurveID(rand.Intn(30000) + 1)
-			m.serverShare.data1 = randomBytes(rand.Intn(200)+1, rand)
+			m.serverShare.data = randomBytes(rand.Intn(200)+1, rand)
 		}
 	} else if rand.Intn(10) > 5 {
 		m.selectedGroup = CurveID(rand.Intn(30000) + 1)

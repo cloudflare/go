@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"crypto"
 	"crypto/hmac"
+	"crypto/kem"
 	"crypto/rsa"
 	"errors"
 	"hash"
@@ -19,7 +20,7 @@ type clientHandshakeStateTLS13 struct {
 	c           *Conn
 	serverHello *serverHelloMsg
 	hello       *clientHelloMsg
-	ecdheParams ecdheParameters
+	keyShare    clientKeySharePrivate
 
 	session     *ClientSessionState
 	earlySecret []byte
@@ -34,7 +35,7 @@ type clientHandshakeStateTLS13 struct {
 	trafficSecret []byte // client_application_traffic_secret_0
 }
 
-// handshake requires hs.c, hs.hello, hs.serverHello, hs.ecdheParams, and,
+// handshake requires hs.c, hs.hello, hs.serverHello, hs.keyShare, and,
 // optionally, hs.session, hs.earlySecret and hs.binderKey to be set.
 func (hs *clientHandshakeStateTLS13) handshake() error {
 	c := hs.c
@@ -51,7 +52,7 @@ func (hs *clientHandshakeStateTLS13) handshake() error {
 	}
 
 	// Consistency check on the presence of a keyShare and its parameters.
-	if hs.ecdheParams == nil || len(hs.hello.keyShares) != 1 {
+	if hs.keyShare == nil || len(hs.hello.keyShares) != 1 {
 		return c.sendAlert(alertInternalError)
 	}
 
@@ -220,21 +221,44 @@ func (hs *clientHandshakeStateTLS13) processHelloRetryRequest() error {
 			c.sendAlert(alertIllegalParameter)
 			return errors.New("tls: server selected unsupported group")
 		}
-		if hs.ecdheParams.CurveID() == curveID {
+		if ecdheParams, ok := hs.keyShare.(ecdheParameters); ok {
+			if ecdheParams.CurveID() == curveID {
+				c.sendAlert(alertIllegalParameter)
+				return errors.New("tls: server sent an unnecessary HelloRetryRequest key_share")
+			}
+		} else if hybridParams, ok := hs.keyShare.(hybridParameters); ok {
+			if hybridParams.CurveID() == curveID {
+				c.sendAlert(alertIllegalParameter)
+				return errors.New("tls: server sent an unnecessary HelloRetryRequest key_share")
+			}
+		} else {
 			c.sendAlert(alertIllegalParameter)
 			return errors.New("tls: server sent an unnecessary HelloRetryRequest key_share")
 		}
-		if _, ok := curveForCurveID(curveID); curveID != X25519 && !ok {
+		if _, ok := curveForCurveID(curveID); (!curveID.isHybridGroup() || curveID != X25519) && !ok {
 			c.sendAlert(alertInternalError)
 			return errors.New("tls: CurvePreferences includes unsupported curve")
 		}
-		params, err := generateECDHEParameters(c.config.rand(), curveID)
-		if err != nil {
-			c.sendAlert(alertInternalError)
-			return err
+
+		if curveID.isHybridGroup() && c.config.AllowPQKEX {
+			hybridParams, err := generateHybridParameters(c.config.rand(), curveID)
+			if err != nil {
+				c.sendAlert(alertInternalError)
+				return err
+			}
+			hybridPublicKeys := append(hybridParams.ClassicPublicKey(), hybridParams.PQPublicKey()...)
+
+			hs.keyShare = []clientKeySharePrivate{hybridParams}
+			hs.hello.keyShares = []keyShare{{group: curveID, data: hybridPublicKeys}}
+		} else {
+			params, err := generateECDHEParameters(c.config.rand(), curveID)
+			if err != nil {
+				c.sendAlert(alertInternalError)
+				return err
+			}
+			hs.keyShare = []clientKeySharePrivate{params}
+			hs.hello.keyShares = []keyShare{{group: curveID, data: params.PublicKey()}}
 		}
-		hs.ecdheParams = params
-		hs.hello.keyShares = []keyShare{{group: curveID, data1: params.PublicKey()}}
 	}
 
 	hs.hello.raw = nil
@@ -308,7 +332,13 @@ func (hs *clientHandshakeStateTLS13) processServerHello() error {
 		c.sendAlert(alertIllegalParameter)
 		return errors.New("tls: server did not send a key share")
 	}
-	if hs.serverHello.serverShare.group != hs.ecdheParams.CurveID() {
+	var curveID CurveID
+	if hybridParams, ok := hs.keyShare.(hybridParameters); ok {
+		curveID = hybridParams.CurveID()
+	} else if ecdheParams, ok := hs.keyShare.(ecdheParameters); ok {
+		curveID = ecdheParams.CurveID()
+	}
+	if hs.serverHello.serverShare.group != curveID {
 		c.sendAlert(alertIllegalParameter)
 		return errors.New("tls: server selected unsupported group")
 	}
@@ -346,10 +376,40 @@ func (hs *clientHandshakeStateTLS13) processServerHello() error {
 func (hs *clientHandshakeStateTLS13) establishHandshakeKeys() error {
 	c := hs.c
 
-	sharedKey := hs.ecdheParams.SharedKey(hs.serverHello.serverShare.data1)
-	if sharedKey == nil {
-		c.sendAlert(alertIllegalParameter)
-		return errors.New("tls: invalid server key share")
+	var sharedKey []byte
+	if params, ok := hs.keyShare.(ecdheParameters); ok {
+		sharedKey = params.SharedKey(hs.serverHello.serverShare.data)
+		if sharedKey == nil {
+			c.sendAlert(alertIllegalParameter)
+			return errors.New("tls: invalid server key share")
+		}
+	} else if params, ok := hs.keyShare.(hybridParameters); ok {
+		var classicPublicKey, ciphertext []byte
+		if params.CurveID() == CurveP256Kyber512 {
+			classicPublicKey = hs.serverHello.serverShare.data[:32]
+			ciphertext = hs.serverHello.serverShare.data[32:]
+		} else if params.CurveID() == X25519Kyber512 {
+			classicPublicKey = hs.serverHello.serverShare.data[:32]
+			ciphertext = hs.serverHello.serverShare.data[32:]
+		} else {
+			c.sendAlert(alertInternalError)
+			return errors.New("tls: CurvePreferences includes unsupported curve")
+		}
+
+		classicSharedKey := params.ClassicSharedKey(classicPublicKey)
+		if classicSharedKey == nil {
+			c.sendAlert(alertIllegalParameter)
+			return errors.New("tls: invalid server key share")
+		}
+
+		pqPrivateKey := &kem.PrivateKey{KEMId: kem.ID(Kyber512), PrivateKey: params.PQPrivateKey()}
+		pqSharedKey, err := kem.Decapsulate(pqPrivateKey, ciphertext)
+		if err != nil {
+			c.sendAlert(alertInternalError)
+			return err
+		}
+
+		sharedKey = append(classicSharedKey, pqSharedKey...)
 	}
 
 	earlySecret := hs.earlySecret

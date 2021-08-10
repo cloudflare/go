@@ -118,16 +118,20 @@ const (
 type CurveID uint16
 
 const (
-	CurveP256 CurveID = 23
-	CurveP384 CurveID = 24
-	CurveP521 CurveID = 25
-	X25519    CurveID = 29
-	Kyber512  CurveID = CurveID(kem.Kyber512)
+	CurveP256         CurveID = 23
+	CurveP384         CurveID = 24
+	CurveP521         CurveID = 25
+	X25519            CurveID = 29
+	Kyber512          CurveID = CurveID(kem.Kyber512)
+	CurveP256Kyber512 CurveID = CurveID(0x01fe)
+	X25519Kyber512    CurveID = CurveID(0xfe00)
 )
 
-func (curve CurveID) isKEM() bool {
+func (curve CurveID) isHybridGroup() bool {
 	switch curve {
-	case Kyber512:
+	case CurveP256Kyber512:
+		return true
+	case X25519Kyber512:
 		return true
 	}
 	return false
@@ -136,7 +140,7 @@ func (curve CurveID) isKEM() bool {
 // TLS 1.3 Key Share. See RFC 8446, Section 4.2.8.
 type keyShare struct {
 	group CurveID
-	data1 []byte
+	data  []byte
 }
 
 // TLS 1.3 PSK Key Exchange Modes. See RFC 8446, Section 4.2.9.

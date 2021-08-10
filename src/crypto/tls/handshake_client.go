@@ -35,7 +35,7 @@ type clientHandshakeState struct {
 // Defines the private part of the handshake keyshares
 type clientKeySharePrivate interface{}
 
-func (c *Conn) makeClientHello() (*clientHelloMsg, ecdheParameters, error) {
+func (c *Conn) makeClientHello() (*clientHelloMsg, clientKeySharePrivate, error) {
 	config := c.config
 	if len(config.ServerName) == 0 && !config.InsecureSkipVerify {
 		return nil, nil, errors.New("tls: either ServerName or InsecureSkipVerify must be specified in the tls.Config")
@@ -123,21 +123,50 @@ func (c *Conn) makeClientHello() (*clientHelloMsg, ecdheParameters, error) {
 	}
 
 	var params ecdheParameters
+	var hybridParams hybridParameters
+	var keyShares []keyShare
+	var keySharePrivates clientKeySharePrivate
 	if hello.supportedVersions[0] == VersionTLS13 {
-		hello.cipherSuites = append(hello.cipherSuites, defaultCipherSuitesTLS13()...)
+		if !config.AllowPQKEX {
+			hello.cipherSuites = append(hello.cipherSuites, defaultCipherSuitesTLS13()...)
 
-		curveID := config.curvePreferences()[0]
-		if _, ok := curveForCurveID(curveID); curveID != X25519 && !ok {
-			return nil, nil, errors.New("tls: CurvePreferences includes unsupported curve")
+			curveID := config.curvePreferences()[0]
+			if _, ok := curveForCurveID(curveID); curveID != X25519 && !ok {
+				return nil, nil, errors.New("tls: CurvePreferences includes unsupported curve")
+			}
+			params, err = generateECDHEParameters(config.rand(), curveID)
+			if err != nil {
+				return nil, nil, err
+			}
+			hello.keyShares = []keyShare{{group: curveID, data: params.PublicKey()}}
+		} else {
+			hello.cipherSuites = append(hello.cipherSuites, defaultCipherSuitesTLS13()...)
+
+			curveID := config.curvePreferences()[0]
+			if _, ok := curveForCurveID(curveID); (!curveID.isHybridGroup() || curveID != X25519) && !ok {
+				return nil, nil, errors.New("tls: CurvePreferences includes unsupported curve")
+			}
+
+			if !curveID.isHybridGroup() {
+				params, err = generateECDHEParameters(config.rand(), curveID)
+				if err != nil {
+					return nil, nil, err
+				}
+
+				keyShares = append(keyShares, keyShare{group: curveID, data: params.PublicKey()})
+				keySharePrivates = params
+			} else if curveID.isHybridGroup() {
+				hybridParams, err = generateHybridParameters(config.rand(), curveID)
+				hybridPublicKeys := append(hybridParams.ClassicPublicKey(), hybridParams.PQPublicKey()...)
+
+				keyShares = append(keyShares, keyShare{group: curveID, data: hybridPublicKeys})
+				keySharePrivates = hybridParams
+			}
 		}
-		params, err = generateECDHEParameters(config.rand(), curveID)
-		if err != nil {
-			return nil, nil, err
-		}
-		hello.keyShares = []keyShare{{group: curveID, data1: params.PublicKey()}}
+		hello.keyShares = keyShares
 	}
 
-	return hello, params, nil
+	return hello, keySharePrivates, nil
 }
 
 func (c *Conn) clientHandshake() (err error) {
@@ -149,7 +178,7 @@ func (c *Conn) clientHandshake() (err error) {
 	// need to be reset.
 	c.didResume = false
 
-	hello, ecdheParams, err := c.makeClientHello()
+	hello, keysharePrivates, err := c.makeClientHello()
 	if err != nil {
 		return err
 	}
@@ -206,7 +235,7 @@ func (c *Conn) clientHandshake() (err error) {
 			c:           c,
 			serverHello: serverHello,
 			hello:       hello,
-			ecdheParams: ecdheParams,
+			keyShare:    keysharePrivates,
 			session:     session,
 			earlySecret: earlySecret,
 			binderKey:   binderKey,

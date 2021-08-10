@@ -221,20 +221,55 @@ GroupSelection:
 		clientKeyShare = &hs.clientHello.keyShares[0]
 	}
 
-	if _, ok := curveForCurveID(selectedGroup); selectedGroup != X25519 && !ok {
+	if _, ok := curveForCurveID(selectedGroup); (selectedGroup != X25519 || !selectedGroup.isHybridGroup()) && !ok {
 		c.sendAlert(alertInternalError)
 		return errors.New("tls: CurvePreferences includes unsupported curve")
 	}
-	params, err := generateECDHEParameters(c.config.rand(), selectedGroup)
-	if err != nil {
-		c.sendAlert(alertInternalError)
-		return err
-	}
-	hs.hello.serverShare = keyShare{group: selectedGroup, data1: params.PublicKey()}
-	hs.sharedKey = params.SharedKey(clientKeyShare.data1)
-	if hs.sharedKey == nil {
-		c.sendAlert(alertIllegalParameter)
-		return errors.New("tls: invalid client key share")
+	if selectedGroup.isHybridGroup() {
+		var classicPublicKey, pqPublicKey []byte
+		if selectedGroup == CurveP256Kyber512 {
+			classicPublicKey = clientKeyShare.data[:32]
+			pqPublicKey = clientKeyShare.data[32:]
+		} else if selectedGroup == X25519Kyber512 {
+			classicPublicKey = clientKeyShare.data[:32]
+			pqPublicKey = clientKeyShare.data[32:]
+		} else {
+			c.sendAlert(alertInternalError)
+			return errors.New("tls: CurvePreferences includes unsupported curve")
+		}
+		params, err := generateHybridParameters(c.config.rand(), selectedGroup)
+		if err != nil {
+			c.sendAlert(alertInternalError)
+			return err
+		}
+		classicSharedKey := params.ClassicSharedKey(classicPublicKey)
+		if classicSharedKey == nil {
+			c.sendAlert(alertIllegalParameter)
+			return errors.New("tls: invalid client key share")
+		}
+
+		pqSharedKey, ciphertext := params.PQSharedKey(c.config.rand(), pqPublicKey)
+		if pqSharedKey == nil || ciphertext == nil {
+			c.sendAlert(alertIllegalParameter)
+			return errors.New("tls: invalid client key share")
+		}
+
+		hybridSharedKeys := append(classicSharedKey, pqSharedKey...)
+		hybridServerShares := append(params.ClassicPublicKey(), ciphertext...)
+		hs.hello.serverShare = keyShare{group: selectedGroup, data: hybridServerShares}
+		hs.sharedKey = hybridSharedKeys
+	} else {
+		params, err := generateECDHEParameters(c.config.rand(), selectedGroup)
+		if err != nil {
+			c.sendAlert(alertInternalError)
+			return err
+		}
+		hs.hello.serverShare = keyShare{group: selectedGroup, data: params.PublicKey()}
+		hs.sharedKey = params.SharedKey(clientKeyShare.data)
+		if hs.sharedKey == nil {
+			c.sendAlert(alertIllegalParameter)
+			return errors.New("tls: invalid client key share")
+		}
 	}
 
 	c.serverName = hs.clientHello.serverName
