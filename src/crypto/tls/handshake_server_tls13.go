@@ -221,11 +221,15 @@ GroupSelection:
 		clientKeyShare = &hs.clientHello.keyShares[0]
 	}
 
-	if _, ok := curveForCurveID(selectedGroup); (selectedGroup != X25519 || !selectedGroup.isHybridGroup()) && !ok {
+	if _, ok := curveForCurveID(selectedGroup); selectedGroup != X25519 && !ok {
 		c.sendAlert(alertInternalError)
-		return errors.New("tls: CurvePreferences includes unsupported curve")
+		return errors.New("tls: GroupPreferences includes unsupported group")
 	}
-	if selectedGroup.isHybridGroup() {
+	if !c.config.AllowPQKEX && selectedGroup.isHybridGroup() == true {
+		c.sendAlert(alertInternalError)
+		return errors.New("tls: GroupPreferences includes unsupported group")
+	}
+	if selectedGroup.isHybridGroup() && c.config.AllowPQKEX {
 		var classicPublicKey, pqPublicKey []byte
 		if selectedGroup == CurveP256Kyber512 {
 			classicPublicKey = clientKeyShare.data[:32]
@@ -235,7 +239,7 @@ GroupSelection:
 			pqPublicKey = clientKeyShare.data[32:]
 		} else {
 			c.sendAlert(alertInternalError)
-			return errors.New("tls: CurvePreferences includes unsupported curve")
+			return errors.New("tls: CurvePreferences includes unsupported group")
 		}
 		params, err := generateHybridParameters(c.config.rand(), selectedGroup)
 		if err != nil {
@@ -254,9 +258,9 @@ GroupSelection:
 			return errors.New("tls: invalid client key share")
 		}
 
-		hybridSharedKeys := append(classicSharedKey, pqSharedKey...)
 		hybridServerShares := append(params.ClassicPublicKey(), ciphertext...)
 		hs.hello.serverShare = keyShare{group: selectedGroup, data: hybridServerShares}
+		hybridSharedKeys := append(classicSharedKey, pqSharedKey...)
 		hs.sharedKey = hybridSharedKeys
 	} else {
 		params, err := generateECDHEParameters(c.config.rand(), selectedGroup)

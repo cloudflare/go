@@ -41,6 +41,7 @@ func (hs *clientHandshakeStateTLS13) handshake() error {
 	c := hs.c
 
 	if needFIPS() {
+		// TODO: fix
 		return errors.New("tls: internal error: TLS 1.3 reached in FIPS mode")
 	}
 
@@ -235,9 +236,13 @@ func (hs *clientHandshakeStateTLS13) processHelloRetryRequest() error {
 			c.sendAlert(alertIllegalParameter)
 			return errors.New("tls: server sent an unnecessary HelloRetryRequest key_share")
 		}
-		if _, ok := curveForCurveID(curveID); (!curveID.isHybridGroup() || curveID != X25519) && !ok {
+		if _, ok := curveForCurveID(curveID); curveID != X25519 && !ok {
 			c.sendAlert(alertInternalError)
-			return errors.New("tls: CurvePreferences includes unsupported curve")
+			return errors.New("tls: GroupPreferences includes unsupported group")
+		}
+		if curveID.isHybridGroup() && !c.config.AllowPQKEX {
+			c.sendAlert(alertInternalError)
+			return errors.New("tls: GroupPreferences includes unsupported group")
 		}
 
 		if curveID.isHybridGroup() && c.config.AllowPQKEX {
@@ -248,7 +253,7 @@ func (hs *clientHandshakeStateTLS13) processHelloRetryRequest() error {
 			}
 			hybridPublicKeys := append(hybridParams.ClassicPublicKey(), hybridParams.PQPublicKey()...)
 
-			hs.keyShare = []clientKeySharePrivate{hybridParams}
+			hs.keyShare = hybridParams
 			hs.hello.keyShares = []keyShare{{group: curveID, data: hybridPublicKeys}}
 		} else {
 			params, err := generateECDHEParameters(c.config.rand(), curveID)
@@ -256,7 +261,7 @@ func (hs *clientHandshakeStateTLS13) processHelloRetryRequest() error {
 				c.sendAlert(alertInternalError)
 				return err
 			}
-			hs.keyShare = []clientKeySharePrivate{params}
+			hs.keyShare = params
 			hs.hello.keyShares = []keyShare{{group: curveID, data: params.PublicKey()}}
 		}
 	}

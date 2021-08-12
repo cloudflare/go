@@ -132,19 +132,24 @@ func (c *Conn) makeClientHello() (*clientHelloMsg, clientKeySharePrivate, error)
 
 			curveID := config.curvePreferences()[0]
 			if _, ok := curveForCurveID(curveID); curveID != X25519 && !ok {
-				return nil, nil, errors.New("tls: CurvePreferences includes unsupported curve")
+				if curveID.isHybridGroup() == true {
+					return nil, nil, errors.New("tls: CurvePreferences includes unsupported curve")
+				}
 			}
 			params, err = generateECDHEParameters(config.rand(), curveID)
 			if err != nil {
 				return nil, nil, err
 			}
-			hello.keyShares = []keyShare{{group: curveID, data: params.PublicKey()}}
+			keyShares = []keyShare{{group: curveID, data: params.PublicKey()}}
+			keySharePrivates = params
 		} else {
 			hello.cipherSuites = append(hello.cipherSuites, defaultCipherSuitesTLS13()...)
 
 			curveID := config.curvePreferences()[0]
-			if _, ok := curveForCurveID(curveID); (!curveID.isHybridGroup() || curveID != X25519) && !ok {
-				return nil, nil, errors.New("tls: CurvePreferences includes unsupported curve")
+			if _, ok := curveForCurveID(curveID); (curveID.isHybridGroup() || curveID != X25519) && !ok {
+				if curveID.isHybridGroup() == false {
+					return nil, nil, errors.New("tls: GroupPreferences includes unsupported group")
+				}
 			}
 
 			if !curveID.isHybridGroup() {
