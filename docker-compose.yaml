@@ -1,0 +1,16 @@
+version: "3.8"
+services:
+  # build
+  build:
+    image: &image ${GO_DOCKER_IMAGE:-golang}
+    command: ./make.bash
+    working_dir: /work/repo/src
+    volumes:
+      - .:/work/repo
+  # build and run the full test suite
+  test:
+    image: *image
+    command: ./all.bash
+    working_dir: /work/repo/src
+    volumes:
+      - .:/work/repo
