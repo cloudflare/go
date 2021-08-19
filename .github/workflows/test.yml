@@ -1,0 +1,14 @@
+name: Go Toolchain Tests
+on:
+  pull_request:
+  push:
+    branches:
+      - cf
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Run tests
+        run: ./all.bash --no-clean
+        working-directory: src
