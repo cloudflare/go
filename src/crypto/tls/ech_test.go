@@ -90,11 +90,11 @@ Fy/vytRwyjhHuX9ntc5ArCpwbAmY+oW/4w==
 
 // The ECH keys used by the client-facing server.
 const echTestKeys = `-----BEGIN ECH KEYS-----
-ACB4tkn0JtfTduvavwVASdSbBMYDUUck1MPkK7yVh2rU2ABG/gwAQhQAIAAgEMqr
-0FIiUB4xPxOzpPhb6nWOdk/tqEzFx5Rz6Htw8SYABAABAAElE2Nsb3VkZmxhcmUt
-ZXNuaS5jb20AAAAgXftzLuaXvHdrwMEkYdVF6ZXWs2rL14J25XXAUWytJsUAZ/4M
-AGP4ABAAQQSBp7GpuEgjs0FXL6zm6A1vuFc7G8hM8onq7lixh6FkNbwjNPHOmm7e
-UBsqOKliDuiB0HFm/InFRhWlYhOzRxBoAAQAAQABKhNjbG91ZGZsYXJlLWVzbmku
+ACBpvnEYyFK6Ey4Pajbm6VaEsQp4bgRxoPVOs2wOiMuD+QBG/g0AQsMAIAAgCfU+
+VOBXjOut9a9m7wLhrZhHfM0GqE5BQLQK03DJf10ABAABAAElE2Nsb3VkZmxhcmUt
+ZXNuaS5jb20AAAAguffuF8tjWUORwFbQ3+cDDqkMQuuMV7py7p1EJfM9S3IAZ/4N
+AGMDABAAQQRhm1JRi7hkaK1HhcJq4ByJpK4fbsaD65xSqUuW0L53OYK3zEtz78pk
+NhWC9NlkItWc2SYOTrGGHc5WhmJxKCTbAAQAAQABKhNjbG91ZGZsYXJlLWVzbmku
 Y29tAAA=
 -----END ECH KEYS-----`
 
@@ -109,18 +109,18 @@ AAATY2xvdWRmbGFyZS1lc25pLmNvbQAA
 
 // The sequence of ECH configurations corresponding to echTestKeys.
 const echTestConfigs = `-----BEGIN ECH CONFIGS-----
-AK3+DABCFAAgACAQyqvQUiJQHjE/E7Ok+FvqdY52T+2oTMXHlHPoe3DxJgAEAAEA
-ASUTY2xvdWRmbGFyZS1lc25pLmNvbQAA/gwAY/gAEABBBIGnsam4SCOzQVcvrObo
-DW+4VzsbyEzyieruWLGHoWQ1vCM08c6abt5QGyo4qWIO6IHQcWb8icVGFaViE7NH
-EGgABAABAAEqE2Nsb3VkZmxhcmUtZXNuaS5jb20AAA==
+AK3+DQBCwwAgACAJ9T5U4FeM6631r2bvAuGtmEd8zQaoTkFAtArTcMl/XQAEAAEA
+ASUTY2xvdWRmbGFyZS1lc25pLmNvbQAA/g0AYwMAEABBBGGbUlGLuGRorUeFwmrg
+HImkrh9uxoPrnFKpS5bQvnc5grfMS3PvymQ2FYL02WQi1ZzZJg5OsYYdzlaGYnEo
+JNsABAABAAEqE2Nsb3VkZmxhcmUtZXNuaS5jb20AAA==
 -----END ECH CONFIGS-----`
 
 // An invalid sequence of ECH configurations.
 const echTestStaleConfigs = `-----BEGIN ECH CONFIGS-----
-AK3+DABC+wAgACBuArXCr+oOemNd4Gm0jGqCGXNGXyw0nybC4wgJPoE3BQAEAAEA
-AQATY2xvdWRmbGFyZS1lc25pLmNvbQAA/gwAY1cAEABBBMfAn9UTeq+sbIJqNfsZ
-0r+FMLV0yT7o00wx1UNkMcaemXAFSjhbk96UAysPgq5XBy9bNxv8Vux7fba00ExD
-90sABAABAAEAE2Nsb3VkZmxhcmUtZXNuaS5jb20AAA==
+AK3+DQBCfgAgACA02DWuCoykTn5CZ/t+h3dXN2JLS5r5RlJPaOzH1UdnRgAEAAEA
+ASUTY2xvdWRmbGFyZS1lc25pLmNvbQAA/g0AY8YAEABBBIpQ8lWXbmjAgaFg6TDf
+si7tgaTV7fUMbrOZzCyKyIfv/cO872MYb9dvEH1Izu6LtKdGAlmKmu2pxtdpbsSW
+CX0ABAABAAEqE2Nsb3VkZmxhcmUtZXNuaS5jb20AAA==
 -----END ECH CONFIGS-----`
 
 // echTestProviderAlwaysAbort mocks an ECHProvider that, in response to any
@@ -757,13 +757,13 @@ func TestECHHandshake(t *testing.T) {
 
 			if test.expectClientAbort && client.err == nil {
 				t.Error("client succeeds; want abort")
-			} else {
+			} else if client.err != nil {
 				t.Logf("client err: %s", client.err)
 			}
 
 			if test.expectServerAbort && server.err == nil {
 				t.Errorf("server succeeds; want abort")
-			} else {
+			} else if server.err != nil {
 				t.Logf("server err: %s", server.err)
 			}
 
@@ -897,17 +897,17 @@ func TestECHProvider(t *testing.T) {
 	p := echTestLoadKeySet(echTestKeys)
 	t.Run("ok", func(t *testing.T) {
 		handle := []byte{
-			0, 1, 0, 1, 20, 0, 32, 58, 65, 152, 17, 242, 228, 197, 65, 50, 141,
-			192, 238, 191, 189, 66, 135, 216, 221, 241, 116, 130, 74, 16, 120,
-			43, 82, 156, 175, 33, 26, 246, 80,
+			0, 1, 0, 1, 195, 0, 32, 49, 215, 32, 55, 8, 132, 98, 118, 166, 113,
+			184, 40, 196, 151, 103, 20, 221, 148, 22, 72, 112, 152, 18, 20, 107,
+			15, 109, 178, 15, 98, 104, 66,
 		}
 		context := []byte{
-			1, 0, 32, 0, 1, 0, 1, 32, 188, 60, 186, 168, 74, 122, 101, 108, 101,
-			175, 151, 224, 216, 133, 41, 38, 176, 243, 158, 241, 238, 224, 63,
-			54, 36, 209, 55, 185, 130, 243, 98, 102, 16, 224, 243, 140, 134, 61,
-			96, 23, 103, 174, 168, 68, 76, 141, 178, 155, 172, 12, 146, 174,
-			128, 209, 7, 197, 22, 81, 186, 174, 199, 183, 12, 0, 0, 0, 0, 0, 0,
-			0, 0, 0, 0, 0, 0,
+			1, 0, 32, 0, 1, 0, 1, 32, 111, 237, 227, 138, 43, 202, 113, 109,
+			127, 174, 36, 48, 232, 103, 97, 52, 76, 112, 136, 36, 220, 91, 12,
+			21, 63, 194, 77, 110, 112, 25, 241, 135, 16, 214, 55, 95, 236, 101,
+			6, 49, 56, 18, 215, 166, 137, 136, 225, 58, 54, 12, 229, 100, 254,
+			43, 179, 2, 188, 179, 6, 166, 138, 138, 12, 0, 0, 0, 0, 0, 0, 0, 0,
+			0, 0, 0, 0,
 		}
 		testECHProvider(t, p, handle, extensionECH, ECHProviderResult{
 			Status:       ECHProviderSuccess,
