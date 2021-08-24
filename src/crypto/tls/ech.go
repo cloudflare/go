@@ -610,7 +610,7 @@ func echEncodeClientHelloInner(innerData []byte, serverNameLen, maxNameLen int) 
 	// Add padding.
 	paddingLen := 0
 	if serverNameLen > 0 {
-		// draft-ietf-tls-esni-12, Section 6.1.3:
+		// draft-ietf-tls-esni-13, Section 6.1.3:
 		//
 		// If the ClientHelloInner contained a "server_name" extension with a
 		// name of length D, add max(0, L - D) bytes of padding.
@@ -618,7 +618,7 @@ func echEncodeClientHelloInner(innerData []byte, serverNameLen, maxNameLen int) 
 			paddingLen += n
 		}
 	} else {
-		// draft-ietf-tls-esni-12, Section 6.1.3:
+		// draft-ietf-tls-esni-13, Section 6.1.3:
 		//
 		// If the ClientHelloInner did not contain a "server_name" extension
 		// (e.g., if the client is connecting to an IP address), add L + 9 bytes
@@ -1005,39 +1005,11 @@ func splitClientHelloExtensions(data []byte) ([]byte, []byte) {
 	return data[:len(data)-len(s)], s
 }
 
-// TODO(cjpatton): draft-ietf-tls-esni-12, Section 4 mandates:
+// TODO(cjpatton): Handle public name as described in draft-ietf-tls-esni-13,
+// Section 4.
 //
-//   Clients MUST ignore any "ECHConfig" structure whose public_name is
-//   not parsable as a dot-separated sequence of LDH labels, as defined
-//   in [RFC5890], Section 2.3.1 or which begins or end with an ASCII
-//   dot.
-//
-//   Clients SHOULD ignore the "ECHConfig" if it contains an encoded
-//   IPv4 address.  To determine if a public_name value is an IPv4
-//   address, clients can invoke the IPv4 parser algorithm in
-//   [WHATWG-IPV4].  It returns a value when the input is an IPv4
-//   address.
-//
-//   See Section 6.1.4.3 for how the client interprets and validates
-//   the public_name.
-//
-// TODO(cjpatton): draft-ietf-tls-esni-12, Section 4.1 mandates:
-//
-//   ECH configuration extensions are used to provide room for additional
-//   functionality as needed.  See Section 12 for guidance on which types
-//   of extensions are appropriate for this structure.
-//
-//   The format is as defined in [RFC8446], Section 4.2.  The same
-//   interpretation rules apply: extensions MAY appear in any order, but
-//   there MUST NOT be more than one extension of the same type in the
-//   extensions block.  An extension can be tagged as mandatory by using
-//   an extension type codepoint with the high order bit set to 1.  A
-//   client that receives a mandatory extension they do not understand
-//   MUST reject the "ECHConfig" content.
-//
-//   Clients MUST parse the extension list and check for unsupported
-//   mandatory extensions.  If an unsupported mandatory extension is
-//   present, clients MUST ignore the "ECHConfig".
+// TODO(cjpatton): Implement ECH config extensions as described in
+// draft-ietf-tls-esni-13, Section 4.1.
 func (c *Config) echSelectConfig() *ECHConfig {
 	for _, echConfig := range c.ClientECHConfigs {
 		if _, err := echConfig.selectSuite(); err == nil &&

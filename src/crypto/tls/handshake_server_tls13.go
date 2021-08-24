@@ -568,8 +568,9 @@ func (hs *serverHandshakeStateTLS13) doHelloRetryRequest(selectedGroup CurveID) 
 		selectedGroup:     selectedGroup,
 	}
 
-	// Confirm ECH acceptance.
+	// Decide whether to send "encrypted_client_hello" extension.
 	if hs.echIsInner() {
+		// Confirm ECH acceptance if this is the inner handshake.
 		echAcceptConfHRRTranscript := cloneHash(hs.transcript, hs.suite.hash)
 		if echAcceptConfHRRTranscript == nil {
 			c.sendAlert(alertInternalError)
@@ -587,6 +588,17 @@ func (hs *serverHandshakeStateTLS13) doHelloRetryRequest(selectedGroup CurveID) 
 
 		helloRetryRequest.ech = echAcceptConfHRRSignal
 		helloRetryRequest.raw = nil
+	} else if c.ech.greased {
+		// draft-ietf-tls-esni-13, Section 7.1:
+		//
+		// If sending a HelloRetryRequest, the server MAY include an
+		// "encrypted_client_hello" extension with a payload of 8 random bytes;
+		// see Section 10.9.4 for details.
+		helloRetryRequest.ech = make([]byte, 8)
+		if _, err := io.ReadFull(c.config.Rand, helloRetryRequest.ech); err != nil {
+			c.sendAlert(alertInternalError)
+			return fmt.Errorf("tls: internal error: rng failure: %s", err)
+		}
 	}
 
 	hs.transcript.Write(helloRetryRequest.marshal())

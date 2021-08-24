@@ -284,7 +284,12 @@ func (hs *clientHandshakeStateTLS13) processHelloRetryRequest() error {
 		hs.transcriptInner.Write(chHash)
 
 		// Check for ECH acceptance confirmation.
-		if len(hs.serverHello.ech) > 0 {
+		if hs.serverHello.ech != nil {
+			if len(hs.serverHello.ech) != 8 {
+				c.sendAlert(alertDecodeError)
+				return errors.New("tls: ech: hrr: malformed acceptance signal")
+			}
+
 			echAcceptConfHRRTranscript := cloneHash(hs.transcriptInner, hs.suite.hash)
 			if echAcceptConfHRRTranscript == nil {
 				c.sendAlert(alertInternalError)
@@ -392,7 +397,7 @@ func (hs *clientHandshakeStateTLS13) processHelloRetryRequest() error {
 		hs.hello = hello
 	}
 
-	if testingECHIllegalHandleAfterHRR {
+	if c.ech.offered && testingECHIllegalHandleAfterHRR {
 		hs.hello.raw = nil
 
 		// Change the cipher suite and config id and set an encapsulated key in
@@ -489,13 +494,11 @@ func (hs *clientHandshakeStateTLS13) processServerHello() error {
 		return nil
 	}
 
-	// draft-ietf-tls-esni-12
-	//
-	// Per the rules of Section 6.1, the server is not permitted to resume a
-	// connection in the outer handshake. If ECH is rejected and the
-	// client-facing server replies with a "pre_shared_key" extension in its
-	// ServerHello, then the client MUST abort the handshake with an
-	// "illegal_parameter" alert.
+	// Per the rules of draft-ietf-tls-esni-13, Section 6.1, the server is not
+	// permitted to resume a connection connection in the outer handshake. If
+	// ECH is rejected and the client-facing server replies with a
+	// "pre_shared_key" extension in its ServerHello, then the client MUST abort
+	// the handshake with an "illegal_parameter" alert.
 	if c.ech.offered && !c.ech.accepted {
 		c.sendAlert(alertIllegalParameter)
 		return errors.New("tls: ech: client-facing server offered PSK after ECH rejection")
@@ -601,7 +604,7 @@ func (hs *clientHandshakeStateTLS13) readServerParameters() error {
 			// abort if they are not correct.
 			c.ech.retryConfigs = encryptedExtensions.ech
 			if _, err = UnmarshalECHConfigs(c.ech.retryConfigs); err != nil {
-				c.sendAlert(alertIllegalParameter)
+				c.sendAlert(alertDecodeError)
 				return fmt.Errorf("tls: ech: failed to parse retry configs: %s", err)
 			}
 		} else {
