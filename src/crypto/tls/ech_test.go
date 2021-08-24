@@ -89,39 +89,69 @@ Fy/vytRwyjhHuX9ntc5ArCpwbAmY+oW/4w==
 -----END PRIVATE KEY-----`
 
 // The ECH keys used by the client-facing server.
-const echTestKeys = `-----BEGIN ECH KEYS-----
-ACBpvnEYyFK6Ey4Pajbm6VaEsQp4bgRxoPVOs2wOiMuD+QBG/g0AQsMAIAAgCfU+
-VOBXjOut9a9m7wLhrZhHfM0GqE5BQLQK03DJf10ABAABAAElE2Nsb3VkZmxhcmUt
-ZXNuaS5jb20AAAAguffuF8tjWUORwFbQ3+cDDqkMQuuMV7py7p1EJfM9S3IAZ/4N
-AGMDABAAQQRhm1JRi7hkaK1HhcJq4ByJpK4fbsaD65xSqUuW0L53OYK3zEtz78pk
-NhWC9NlkItWc2SYOTrGGHc5WhmJxKCTbAAQAAQABKhNjbG91ZGZsYXJlLWVzbmku
-Y29tAAA=
------END ECH KEYS-----`
+var echTestKeys = []byte{
+	0, 32, 105, 190, 113, 24, 200, 82, 186, 19, 46, 15, 106, 54, 230, 233, 86,
+	132, 177, 10, 120, 110, 4, 113, 160, 245, 78, 179, 108, 14, 136, 203, 131,
+	249, 0, 70, 254, 13, 0, 66, 195, 0, 32, 0, 32, 9, 245, 62, 84, 224, 87, 140,
+	235, 173, 245, 175, 102, 239, 2, 225, 173, 152, 71, 124, 205, 6, 168, 78,
+	65, 64, 180, 10, 211, 112, 201, 127, 93, 0, 4, 0, 1, 0, 1, 37, 19, 99, 108,
+	111, 117, 100, 102, 108, 97, 114, 101, 45, 101, 115, 110, 105, 46, 99, 111,
+	109, 0, 0, 0, 32, 185, 247, 238, 23, 203, 99, 89, 67, 145, 192, 86, 208,
+	223, 231, 3, 14, 169, 12, 66, 235, 140, 87, 186, 114, 238, 157, 68, 37, 243,
+	61, 75, 114, 0, 103, 254, 13, 0, 99, 3, 0, 16, 0, 65, 4, 97, 155, 82, 81,
+	139, 184, 100, 104, 173, 71, 133, 194, 106, 224, 28, 137, 164, 174, 31, 110,
+	198, 131, 235, 156, 82, 169, 75, 150, 208, 190, 119, 57, 130, 183, 204, 75,
+	115, 239, 202, 100, 54, 21, 130, 244, 217, 100, 34, 213, 156, 217, 38, 14,
+	78, 177, 134, 29, 206, 86, 134, 98, 113, 40, 36, 219, 0, 4, 0, 1, 0, 1, 42,
+	19, 99, 108, 111, 117, 100, 102, 108, 97, 114, 101, 45, 101, 115, 110, 105,
+	46, 99, 111, 109, 0, 0,
+}
 
 // A sequence of ECH keys with unsupported versions.
-const echTestInvalidVersionKeys = `-----BEGIN ECH KEYS-----
-ACDhS0q2cTU1Qzi6hPM4BQ/HLnbEUZyWdY2GbmS0DVkumgBIAfUARAAAIAAgi1Tu
-jWJ236k1VAMeRnysKbDigxLpDs/AGdEowK8KiBkABAABAAEAAAATY2xvdWRmbGFy
-ZS1lc25pLmNvbQAAACBmNj/zQe6OT/MR/MM39G6kwMJCJEXpdvTAkbdHErlgXwBI
-AfUARAEAIAAgZ1Ru1uyGX6N9HYs5/pAE3KwUXRDBHD0Bdna8oP4uVEwABAABAAEA
-AAATY2xvdWRmbGFyZS1lc25pLmNvbQAA
------END ECH KEYS-----`
+var echTestInvalidVersionKeys = []byte{
+	0, 32, 225, 75, 74, 182, 113, 53, 53, 67, 56, 186, 132, 243, 56, 5, 15, 199, 46,
+	118, 196, 81, 156, 150, 117, 141, 134, 110, 100, 180, 13, 89, 46, 154, 0, 72, 1,
+	245, 0, 68, 0, 0, 32, 0, 32, 139, 84, 238, 141, 98, 118, 223, 169, 53, 84, 3,
+	30, 70, 124, 172, 41, 176, 226, 131, 18, 233, 14, 207, 192, 25, 209, 40, 192,
+	175, 10, 136, 25, 0, 4, 0, 1, 0, 1, 0, 0, 0, 19, 99, 108, 111, 117, 100, 102,
+	108, 97, 114, 101, 45, 101, 115, 110, 105, 46, 99, 111, 109, 0, 0, 0, 32, 102,
+	54, 63, 243, 65, 238, 142, 79, 243, 17, 252, 195, 55, 244, 110, 164, 192, 194,
+	66, 36, 69, 233, 118, 244, 192, 145, 183, 71, 18, 185, 96, 95, 0, 72, 1, 245, 0,
+	68, 1, 0, 32, 0, 32, 103, 84, 110, 214, 236, 134, 95, 163, 125, 29, 139, 57,
+	254, 144, 4, 220, 172, 20, 93, 16, 193, 28, 61, 1, 118, 118, 188, 160, 254, 46,
+	84, 76, 0, 4, 0, 1, 0, 1, 0, 0, 0, 19, 99, 108, 111, 117, 100, 102, 108, 97,
+	114, 101, 45, 101, 115, 110, 105, 46, 99, 111, 109, 0, 0,
+}
 
 // The sequence of ECH configurations corresponding to echTestKeys.
-const echTestConfigs = `-----BEGIN ECH CONFIGS-----
-AK3+DQBCwwAgACAJ9T5U4FeM6631r2bvAuGtmEd8zQaoTkFAtArTcMl/XQAEAAEA
-ASUTY2xvdWRmbGFyZS1lc25pLmNvbQAA/g0AYwMAEABBBGGbUlGLuGRorUeFwmrg
-HImkrh9uxoPrnFKpS5bQvnc5grfMS3PvymQ2FYL02WQi1ZzZJg5OsYYdzlaGYnEo
-JNsABAABAAEqE2Nsb3VkZmxhcmUtZXNuaS5jb20AAA==
------END ECH CONFIGS-----`
+var echTestConfigs = []byte{
+	0, 173, 254, 13, 0, 66, 195, 0, 32, 0, 32, 9, 245, 62, 84, 224, 87, 140,
+	235, 173, 245, 175, 102, 239, 2, 225, 173, 152, 71, 124, 205, 6, 168, 78,
+	65, 64, 180, 10, 211, 112, 201, 127, 93, 0, 4, 0, 1, 0, 1, 37, 19, 99, 108,
+	111, 117, 100, 102, 108, 97, 114, 101, 45, 101, 115, 110, 105, 46, 99, 111,
+	109, 0, 0, 254, 13, 0, 99, 3, 0, 16, 0, 65, 4, 97, 155, 82, 81, 139, 184,
+	100, 104, 173, 71, 133, 194, 106, 224, 28, 137, 164, 174, 31, 110, 198, 131,
+	235, 156, 82, 169, 75, 150, 208, 190, 119, 57, 130, 183, 204, 75, 115, 239,
+	202, 100, 54, 21, 130, 244, 217, 100, 34, 213, 156, 217, 38, 14, 78, 177,
+	134, 29, 206, 86, 134, 98, 113, 40, 36, 219, 0, 4, 0, 1, 0, 1, 42, 19, 99,
+	108, 111, 117, 100, 102, 108, 97, 114, 101, 45, 101, 115, 110, 105, 46, 99,
+	111, 109, 0, 0,
+}
 
 // An invalid sequence of ECH configurations.
-const echTestStaleConfigs = `-----BEGIN ECH CONFIGS-----
-AK3+DQBCfgAgACA02DWuCoykTn5CZ/t+h3dXN2JLS5r5RlJPaOzH1UdnRgAEAAEA
-ASUTY2xvdWRmbGFyZS1lc25pLmNvbQAA/g0AY8YAEABBBIpQ8lWXbmjAgaFg6TDf
-si7tgaTV7fUMbrOZzCyKyIfv/cO872MYb9dvEH1Izu6LtKdGAlmKmu2pxtdpbsSW
-CX0ABAABAAEqE2Nsb3VkZmxhcmUtZXNuaS5jb20AAA==
------END ECH CONFIGS-----`
+var echTestStaleConfigs = []byte{
+	0, 173, 254, 13, 0, 66, 126, 0, 32, 0, 32, 52, 216, 53, 174, 10, 140, 164,
+	78, 126, 66, 103, 251, 126, 135, 119, 87, 55, 98, 75, 75, 154, 249, 70, 82,
+	79, 104, 236, 199, 213, 71, 103, 70, 0, 4, 0, 1, 0, 1, 37, 19, 99, 108, 111,
+	117, 100, 102, 108, 97, 114, 101, 45, 101, 115, 110, 105, 46, 99, 111, 109,
+	0, 0, 254, 13, 0, 99, 198, 0, 16, 0, 65, 4, 138, 80, 242, 85, 151, 110, 104,
+	192, 129, 161, 96, 233, 48, 223, 178, 46, 237, 129, 164, 213, 237, 245, 12,
+	110, 179, 153, 204, 44, 138, 200, 135, 239, 253, 195, 188, 239, 99, 24, 111,
+	215, 111, 16, 125, 72, 206, 238, 139, 180, 167, 70, 2, 89, 138, 154, 237,
+	169, 198, 215, 105, 110, 196, 150, 9, 125, 0, 4, 0, 1, 0, 1, 42, 19, 99,
+	108, 111, 117, 100, 102, 108, 97, 114, 101, 45, 101, 115, 110, 105, 46, 99,
+	111, 109, 0, 0,
+}
 
 // echTestProviderAlwaysAbort mocks an ECHProvider that, in response to any
 // request, sets an alert and returns an error. The client-facing server must
@@ -146,13 +176,8 @@ func (p echTestProviderAlwaysReject) GetDecryptionContext(_ []byte, _ uint16) (r
 	return // Reject without retry configs
 }
 
-func echTestLoadConfigs(pemData string) []ECHConfig {
-	block, rest := pem.Decode([]byte(pemData))
-	if block == nil || block.Type != "ECH CONFIGS" || len(rest) > 0 {
-		panic("pem decoding fails")
-	}
-
-	configs, err := UnmarshalECHConfigs(block.Bytes)
+func echTestLoadConfigs(raw []byte) []ECHConfig {
+	configs, err := UnmarshalECHConfigs(raw)
 	if err != nil {
 		panic(err)
 	}
@@ -160,13 +185,8 @@ func echTestLoadConfigs(pemData string) []ECHConfig {
 	return configs
 }
 
-func echTestLoadKeySet(pemData string) *EXP_ECHKeySet {
-	block, rest := pem.Decode([]byte(pemData))
-	if block == nil || block.Type != "ECH KEYS" || len(rest) > 0 {
-		panic("pem decoding fails")
-	}
-
-	keys, err := EXP_UnmarshalECHKeys(block.Bytes)
+func echTestLoadKeySet(raw []byte) *EXP_ECHKeySet {
+	keys, err := EXP_UnmarshalECHKeys(raw)
 	if err != nil {
 		panic(err)
 	}
@@ -621,9 +641,13 @@ func TestECHHandshake(t *testing.T) {
 		testingECHTriggerPayloadDecryptError = false
 	}()
 
+	t.Log("stale configs")
 	staleConfigs := echTestLoadConfigs(echTestStaleConfigs)
+	t.Log("configs")
 	configs := echTestLoadConfigs(echTestConfigs)
+	t.Log("keys")
 	keySet := echTestLoadKeySet(echTestKeys)
+	t.Log("invalid version keys")
 	invalidVersionKeySet := echTestLoadKeySet(echTestInvalidVersionKeys)
 
 	clientConfig, serverConfig := echSetupConnTest()
@@ -821,12 +845,7 @@ func TestECHHandshake(t *testing.T) {
 }
 
 func TestUnmarshalConfigs(t *testing.T) {
-	block, rest := pem.Decode([]byte(echTestConfigs))
-	if block == nil || block.Type != "ECH CONFIGS" || len(rest) > 0 {
-		t.Fatal("pem decoding fails")
-	}
-
-	configs, err := UnmarshalECHConfigs(block.Bytes)
+	configs, err := UnmarshalECHConfigs(echTestConfigs)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -849,12 +868,7 @@ func TestUnmarshalConfigs(t *testing.T) {
 }
 
 func TestUnmarshalKeys(t *testing.T) {
-	block, rest := pem.Decode([]byte(echTestKeys))
-	if block == nil || block.Type != "ECH KEYS" || len(rest) > 0 {
-		t.Fatal("pem decoding fails")
-	}
-
-	keys, err := EXP_UnmarshalECHKeys(block.Bytes)
+	keys, err := EXP_UnmarshalECHKeys(echTestKeys)
 	if err != nil {
 		t.Fatal(err)
 	}
