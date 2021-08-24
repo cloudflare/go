@@ -125,7 +125,7 @@ func (m *clientHelloMsg) marshal() []byte {
 
 		b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
 			if len(m.ech) > 0 {
-				// draft-ietf-tls-esni-12, "encrypted_client_hello"
+				// draft-ietf-tls-esni-13, "encrypted_client_hello"
 				b.AddUint16(extensionECH)
 				b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
 					b.AddBytes(m.ech)
@@ -418,7 +418,7 @@ func (m *clientHelloMsg) unmarshal(data []byte) bool {
 
 		switch extension {
 		case extensionECH:
-			// draft-ietf-tls-esni-12, "encrypted_client_hello"
+			// draft-ietf-tls-esni-13, "encrypted_client_hello"
 			if len(extData) == 0 ||
 				!extData.ReadBytes(&m.ech, len(extData)) {
 				return false
@@ -761,7 +761,7 @@ func (m *serverHelloMsg) marshal() []byte {
 				})
 			}
 			if len(m.ech) > 0 {
-				// draft-ietf-tls-esni-12, "encrypted_client_hello"
+				// draft-ietf-tls-esni-13, "encrypted_client_hello"
 				b.AddUint16(extensionECH)
 				b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
 					b.AddBytes(m.ech)
@@ -878,8 +878,8 @@ func (m *serverHelloMsg) unmarshal(data []byte) bool {
 				return false
 			}
 		case extensionECH:
-			// draft-ietf-tls-esni-12, "encrypted_client_hello"
-			if !extData.ReadBytes(&m.ech, len(extData)) || len(m.ech) != 8 {
+			// draft-ietf-tls-esni-13, "encrypted_client_hello"
+			if !extData.ReadBytes(&m.ech, len(extData)) {
 				return false
 			}
 		default:
@@ -921,7 +921,7 @@ func (m *encryptedExtensionsMsg) marshal() []byte {
 				})
 			}
 			if len(m.ech) > 0 {
-				// draft-ietf-tls-esni-12, "encrypted_client_hello"
+				// draft-ietf-tls-esni-13, "encrypted_client_hello"
 				b.AddUint16(extensionECH)
 				b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
 					// If the client-facing server rejects ECH, then it may
@@ -967,7 +967,7 @@ func (m *encryptedExtensionsMsg) unmarshal(data []byte) bool {
 			}
 			m.alpnProtocol = string(proto)
 		case extensionECH:
-			// draft-ietf-tls-esni-12
+			// draft-ietf-tls-esni-13
 			if !extData.ReadBytes(&m.ech, len(extData)) {
 				return false
 			}
