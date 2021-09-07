@@ -595,7 +595,7 @@ func (hs *serverHandshakeStateTLS13) doHelloRetryRequest(selectedGroup CurveID) 
 		// "encrypted_client_hello" extension with a payload of 8 random bytes;
 		// see Section 10.9.4 for details.
 		helloRetryRequest.ech = make([]byte, 8)
-		if _, err := io.ReadFull(c.config.Rand, helloRetryRequest.ech); err != nil {
+		if _, err := io.ReadFull(c.config.rand(), helloRetryRequest.ech); err != nil {
 			c.sendAlert(alertInternalError)
 			return fmt.Errorf("tls: internal error: rng failure: %s", err)
 		}
