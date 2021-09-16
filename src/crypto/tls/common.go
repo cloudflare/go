@@ -338,6 +338,10 @@ type ConnectionState struct {
 	// accepted by the server.
 	ECHAccepted bool
 
+	// ECHOffered is set if the ECH extension is present in the ClientHello.
+	// This means the client has offered ECH or sent GREASE ECH.
+	ECHOffered bool
+
 	// CFControl is used to pass additional TLS configuration information to
 	// HTTP requests.
 	//
