@@ -1475,6 +1475,7 @@ func (c *Conn) connectionStateLocked() ConnectionState {
 	state.SignedCertificateTimestamps = c.scts
 	state.OCSPResponse = c.ocspResponse
 	state.ECHAccepted = c.ech.accepted
+	state.ECHOffered = c.ech.offered || c.ech.greased
 	state.CFControl = c.config.CFControl
 	if !c.didResume && c.vers != VersionTLS13 {
 		if c.clientFinishedIsFirst {
