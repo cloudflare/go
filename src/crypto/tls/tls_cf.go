@@ -42,17 +42,26 @@ func sigTypeByCirclScheme(scheme circlSign.Scheme) uint8 {
 	return 0
 }
 
-func init() {
-	if true {
-		// FIXME(pwu): decide how to enable these signature algorithms
-		// without changing the ClientHello testdata files. Perhaps we
-		// could expose a new tls.Config parameter for clients?
-		return
+var supportedSignatureAlgorithmsWithCircl []SignatureScheme
+
+// supportedSignatureAlgorithms returns enabled signature schemes. PQ signature
+// schemes are only included when tls.Config#PQSignatureSchemesEnabled is set
+// and FIPS-only mode is not enabled.
+func (c *Config) supportedSignatureAlgorithms() []SignatureScheme {
+	// If FIPS-only mode is requested, do not add other algos.
+	if needFIPS() {
+		return supportedSignatureAlgorithms()
 	}
-	// Note: this will extend the signature_algorithms TLS extension in the
-	// Client Hello which requires changes to various testdata files.
+	if c != nil && c.PQSignatureSchemesEnabled {
+		return supportedSignatureAlgorithmsWithCircl
+	}
+	return defaultSupportedSignatureAlgorithms
+}
+
+func init() {
+	supportedSignatureAlgorithmsWithCircl = append([]SignatureScheme{}, defaultSupportedSignatureAlgorithms...)
 	for _, cs := range circlSchemes {
-		defaultSupportedSignatureAlgorithms = append(defaultSupportedSignatureAlgorithms,
+		supportedSignatureAlgorithmsWithCircl = append(supportedSignatureAlgorithmsWithCircl,
 			SignatureScheme(cs.scheme.(circlPki.TLSScheme).TLSIdentifier()))
 	}
 }
