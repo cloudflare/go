@@ -220,6 +220,11 @@ func main() {
 
 // export emits the exported package features.
 func (w *Walker) export(pkg *types.Package) {
+	// We ignore the Circl package as its API surface is so large.
+	if pkg.Path() == "circl" || strings.HasPrefix(pkg.Path(), "circl/") {
+		return
+	}
+
 	if *verbose {
 		log.Println(pkg)
 	}
