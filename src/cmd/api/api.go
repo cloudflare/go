@@ -202,13 +202,23 @@ func Check(t *testing.T) {
 	if exitCode == 1 {
 		t.Errorf("API database problems found")
 	}
-	if !compareAPI(bw, features, required, optional, exception, false) {
+	// The CF Go fork adds new APIs to crypto/x509 and crypto/tls, make sure
+	// that these do not fail the "API check" test. API additions could be
+	// tracked in files such as api/go1.000.txt, but since there are no API
+	// stability commitments, the extra work to maintain it is not worth it.
+	allowNew := strings.Contains(runtime.Version(), "-cf")
+	if !compareAPI(bw, features, required, optional, exception, allowNew) {
 		t.Errorf("API differences found")
 	}
 }
 
 // export emits the exported package features.
 func (w *Walker) export(pkg *apiPackage) {
+	// We ignore the Circl package as its API surface is so large.
+	if pkg.Path() == "circl" || strings.HasPrefix(pkg.Path(), "circl/") {
+		return
+	}
+
 	if verbose {
 		log.Println(pkg)
 	}
