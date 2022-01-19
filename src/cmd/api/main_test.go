@@ -180,7 +180,12 @@ func Check(t *testing.T) {
 	if exitCode == 1 {
 		t.Errorf("API database problems found")
 	}
-	if !compareAPI(bw, features, required, exception) {
+	// The CF Go fork adds new APIs to crypto/x509 and crypto/tls, make sure
+	// that these do not fail the "API check" test. API additions could be
+	// tracked in files such as api/go1.000.txt, but since there are no API
+	// stability commitments, the extra work to maintain it is not worth it.
+	allowNew := strings.Contains(runtime.Version(), "-cf")
+	if !compareAPI(bw, features, required, exception, allowNew) {
 		t.Errorf("API differences found")
 	}
 }
@@ -226,7 +231,7 @@ func portRemoved(feature string) bool {
 		strings.Contains(feature, "(darwin-386-cgo)")
 }
 
-func compareAPI(w io.Writer, features, required, exception []string) (ok bool) {
+func compareAPI(w io.Writer, features, required, exception []string, allowNew bool) (ok bool) {
 	ok = true
 
 	featureSet := set(features)
@@ -262,8 +267,10 @@ func compareAPI(w io.Writer, features, required, exception []string) (ok bool) {
 			}
 		case len(required) == 0 || (len(features) > 0 && required[0] > features[0]):
 			newFeature := take(&features)
-			fmt.Fprintf(w, "+%s\n", newFeature)
-			ok = false // feature not in api/next/*
+			if !allowNew {
+				fmt.Fprintf(w, "+%s\n", newFeature)
+				ok = false // feature not in api/next/*
+			}
 		default:
 			take(&required)
 			take(&features)
