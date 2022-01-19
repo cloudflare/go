@@ -89,6 +89,14 @@ func approvalNeeded(files []string) []string {
 
 // allowNew returns the -allow_new flag to use for the 'go tool api' invocation.
 func allowNew() string {
+	// The CF Go fork adds new APIs to crypto/x509 and crypto/tls, make sure
+	// that these do not fail the "API check" test. API additions could be
+	// tracked in files such as api/go1.000.txt, but since there are no API
+	// stability commitments, the extra work to maintain it is not worth it.
+	if strings.Contains(runtime.Version(), "-cf") {
+		return "-allow_new=true"
+	}
+
 	// Experiment for Go 1.19: always require api file updates.
 	return "-allow_new=false"
 
