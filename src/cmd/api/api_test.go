@@ -166,7 +166,7 @@ func TestCompareAPI(t *testing.T) {
 	}
 	for _, tt := range tests {
 		buf := new(strings.Builder)
-		gotOK := compareAPI(buf, tt.features, tt.required, tt.exception)
+		gotOK := compareAPI(buf, tt.features, tt.required, tt.exception, false)
 		if gotOK != tt.ok {
 			t.Errorf("%s: ok = %v; want %v", tt.name, gotOK, tt.ok)
 		}
