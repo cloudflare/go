@@ -84,6 +84,14 @@ func allowNew(apiDir string) string {
 		log.Fatalln("Problem with api file for previous release:", err)
 	}
 
+	// We would like to be able to add new APIs without having to update the
+	// API file since that is prone to running into merge conflicts during
+	// updates. The circl library for example has a large API surface which
+	// is not stable.
+	if strings.Contains(runtime.Version(), "-cf") {
+		return "-allow_new=true"
+	}
+
 	// See whether the api/go1.n.txt for this Go version has been created.
 	// (As of April 2021, it gets created during the release of the first Beta.)
 	_, err := os.Stat(filepath.Join(apiDir, fmt.Sprintf("go1.%d.txt", goversion.Version)))
