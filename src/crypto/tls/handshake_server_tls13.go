@@ -33,6 +33,7 @@ type serverHandshakeStateTLS13 struct {
 	suite           *cipherSuiteTLS13
 	cert            *Certificate
 	sigAlg          SignatureScheme
+	selectedGroup   CurveID
 	earlySecret     []byte
 	sharedKey       []byte
 	handshakeSecret []byte
@@ -279,23 +280,38 @@ GroupSelection:
 		clientKeyShare = &hs.clientHello.keyShares[0]
 	}
 
-	if _, ok := curveForCurveID(selectedGroup); selectedGroup != X25519 && !ok {
+	if _, ok := curveForCurveID(selectedGroup); selectedGroup != X25519 && curveIdToCirclScheme(selectedGroup) == nil && !ok {
 		c.sendAlert(alertInternalError)
 		return errors.New("tls: CurvePreferences includes unsupported curve")
 	}
-	params, err := generateECDHEParameters(c.config.rand(), selectedGroup)
-	if err != nil {
-		c.sendAlert(alertInternalError)
-		return err
+	if kem := curveIdToCirclScheme(selectedGroup); kem != nil {
+		ct, ss, internalErr, err := encapsulateForKem(kem, c.config.rand(), clientKeyShare.data)
+		if err != nil {
+			if internalErr {
+				c.sendAlert(alertInternalError)
+			} else {
+				c.sendAlert(alertIllegalParameter)
+			}
+			return err
+		}
+		hs.hello.serverShare = keyShare{group: selectedGroup, data: ct}
+		hs.sharedKey = ss
+	} else {
+		params, err := generateECDHEParameters(c.config.rand(), selectedGroup)
+		if err != nil {
+			c.sendAlert(alertInternalError)
+			return err
+		}
+		hs.hello.serverShare = keyShare{group: selectedGroup, data: params.PublicKey()}
+		hs.sharedKey = params.SharedKey(clientKeyShare.data)
 	}
-	hs.hello.serverShare = keyShare{group: selectedGroup, data: params.PublicKey()}
-	hs.sharedKey = params.SharedKey(clientKeyShare.data)
 	if hs.sharedKey == nil {
 		c.sendAlert(alertIllegalParameter)
 		return errors.New("tls: invalid client key share")
 	}
 
 	c.serverName = hs.clientHello.serverName
+	c.selectedGroup = selectedGroup
 
 	hs.hsTimings.ProcessClientHello = hs.hsTimings.elapsedTime()
 
@@ -613,6 +629,7 @@ func (hs *serverHandshakeStateTLS13) doHelloRetryRequest(selectedGroup CurveID) 
 
 	if len(clientHello.keyShares) != 1 || clientHello.keyShares[0].group != selectedGroup {
 		c.sendAlert(alertIllegalParameter)
+		fmt.Println("got", clientHello.keyShares[0].group, "want", selectedGroup)
 		return errors.New("tls: client sent invalid key share in second ClientHello")
 	}
 
