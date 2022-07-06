@@ -8,7 +8,7 @@ import subprocess
 base = os.path.dirname(os.path.abspath(sys.argv[0]))
 
 REPO = 'https://github.com/cloudflare/circl'
-BRANCH = 'master'
+BRANCH = 'main'
 
 circl = os.path.join(base, 'src/circl')
 
@@ -26,6 +26,12 @@ with tempfile.TemporaryDirectory() as d:
         os.path.join(d, 'circl'),
         circl,
     ])
+
+print("Removing unused dependencies ...")
+subprocess.check_call(['rm', '-r',
+    os.path.join(circl, 'group/ristretto255.go'),
+    os.path.join(circl, 'xof'),
+])
 
 print("Removing avo sourcecode (for now) ...")
 # XXX figure out a way to prevent ./src/all.sh from trying to build the
