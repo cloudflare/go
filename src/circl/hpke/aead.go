@@ -18,8 +18,10 @@ type encdecContext struct {
 	nonce []byte
 }
 
-type sealContext struct{ *encdecContext }
-type openContext struct{ *encdecContext }
+type (
+	sealContext struct{ *encdecContext }
+	openContext struct{ *encdecContext }
+)
 
 // Export takes a context string exporterContext and a desired length (in
 // bytes), and produces a secret derived from the internal exporter secret
@@ -54,7 +56,7 @@ func (c *encdecContext) increment() error {
 		allOnes &= c.sequenceNumber[i]
 	}
 	if allOnes == byte(0xFF) {
-		return errAEADSeqOverflows
+		return ErrAEADSeqOverflows
 	}
 
 	// performs an increment by 1 and verifies whether the sequence overflows.
@@ -65,7 +67,7 @@ func (c *encdecContext) increment() error {
 		c.sequenceNumber[i] = byte(sum & 0xFF)
 	}
 	if carry != 0 {
-		return errAEADSeqOverflows
+		return ErrAEADSeqOverflows
 	}
 	return nil
 }

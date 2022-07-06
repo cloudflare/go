@@ -1,15 +1,16 @@
 package common
 
 import (
-	cryptoRand "crypto/rand"
+	"crypto/rand"
 	"fmt"
-	mathRand "math/rand"
 	"testing"
 )
 
 func (p *Poly) RandAbsLe9Q() {
+	max := 9 * uint32(Q)
+	r := randSliceUint32WithMax(uint(N), max)
 	for i := 0; i < N; i++ {
-		p[i] = int16(mathRand.Intn(18*int(Q) - 9*int(Q)))
+		p[i] = int16(int32(r[i]))
 	}
 }
 
@@ -26,7 +27,12 @@ func TestDecompressMessage(t *testing.T) {
 	var m, m2 [PlaintextSize]byte
 	var p Poly
 	for i := 0; i < 1000; i++ {
-		_, _ = cryptoRand.Read(m[:])
+		if n, err := rand.Read(m[:]); err != nil {
+			t.Error(err)
+		} else if n != len(m) {
+			t.Fatal("short read from RNG")
+		}
+
 		p.DecompressMessage(m[:])
 		p.CompressMessageTo(m2[:])
 		if m != m2 {
