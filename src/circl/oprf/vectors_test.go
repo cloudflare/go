@@ -2,6 +2,8 @@ package oprf
 
 import (
 	"bytes"
+	"encoding"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -11,57 +13,78 @@ import (
 	"testing"
 
 	"circl/group"
+	"circl/group/dleq"
 	"circl/internal/test"
 )
 
 type vector struct {
-	ID       uint16 `json:"suiteID"`
+	ID       int    `json:"suiteID"`
 	Name     string `json:"suiteName"`
-	Mode     uint8  `json:"mode"`
+	Mode     Mode   `json:"mode"`
 	Hash     string `json:"hash"`
 	PkSm     string `json:"pkSm"`
 	SkSm     string `json:"skSm"`
 	Seed     string `json:"seed"`
+	KeyInfo  string `json:"keyInfo"`
 	GroupDST string `json:"groupDST"`
 	Vectors  []struct {
 		Batch             int    `json:"Batch"`
 		Blind             string `json:"Blind"`
+		Info              string `json:"Info"`
 		BlindedElement    string `json:"BlindedElement"`
 		EvaluationElement string `json:"EvaluationElement"`
-		EvaluationProof   struct {
-			R string `json:"r"`
-			C string `json:"c"`
-			S string `json:"s"`
-		} `json:"EvaluationProof"`
+		Proof             struct {
+			Proof string `json:"proof"`
+			R     string `json:"r"`
+		} `json:"Proof"`
 		Input  string `json:"Input"`
 		Output string `json:"Output"`
 	} `json:"vectors"`
 }
 
 func toBytes(t *testing.T, s, errMsg string) []byte {
+	t.Helper()
 	bytes, err := hex.DecodeString(s)
 	test.CheckNoErr(t, err, "decoding "+errMsg)
+
 	return bytes
 }
 
 func toListBytes(t *testing.T, s, errMsg string) [][]byte {
+	t.Helper()
 	strs := strings.Split(s, ",")
 	out := make([][]byte, len(strs))
 	for i := range strs {
 		out[i] = toBytes(t, strs[i], errMsg)
 	}
+
+	return out
+}
+
+func flattenList(t *testing.T, s, errMsg string) []byte {
+	t.Helper()
+	strs := strings.Split(s, ",")
+	out := []byte{0, 0}
+	binary.BigEndian.PutUint16(out, uint16(len(strs)))
+	for i := range strs {
+		out = append(out, toBytes(t, strs[i], errMsg)...)
+	}
+
 	return out
 }
 
 func toScalar(t *testing.T, g group.Group, s, errMsg string) group.Scalar {
+	t.Helper()
 	r := g.NewScalar()
 	rBytes := toBytes(t, s, errMsg)
 	err := r.UnmarshalBinary(rBytes)
 	test.CheckNoErr(t, err, errMsg)
+
 	return r
 }
 
 func readFile(t *testing.T, fileName string) []vector {
+	t.Helper()
 	jsonFile, err := os.Open(fileName)
 	if err != nil {
 		t.Fatalf("File %v can not be opened. Error: %v", fileName, err)
@@ -74,43 +97,41 @@ func readFile(t *testing.T, fileName string) []vector {
 	if err != nil {
 		t.Fatalf("File %v can not be loaded. Error: %v", fileName, err)
 	}
+
 	return v
 }
 
-func (v *vector) SetUpParties(t *testing.T) (s *Server, c *Client) {
-	seed := toBytes(t, v.Seed, "seed for keys")
-	privateKey, err := DeriveKey(v.ID, seed)
+func (v *vector) SetUpParties(t *testing.T) (id params, s commonServer, c commonClient) {
+	suite, err := GetSuite(v.ID)
+	test.CheckNoErr(t, err, "suite id")
+	seed := toBytes(t, v.Seed, "seed for key derivation")
+	keyInfo := toBytes(t, v.KeyInfo, "info for key derivation")
+	privateKey, err := DeriveKey(suite, v.Mode, seed, keyInfo)
 	test.CheckNoErr(t, err, "deriving key")
 
-	got, err := privateKey.Serialize()
-	test.CheckNoErr(t, err, "serlalizing key")
+	got, err := privateKey.MarshalBinary()
+	test.CheckNoErr(t, err, "serializing private key")
 	want := toBytes(t, v.SkSm, "private key")
-	if !bytes.Equal(got, want) {
-		test.ReportError(t, got, want, v.Name, v.Mode)
+	v.compareBytes(t, got, want)
+
+	switch v.Mode {
+	case BaseMode:
+		s = NewServer(suite, privateKey)
+		c = NewClient(suite)
+	case VerifiableMode:
+		s = NewVerifiableServer(suite, privateKey)
+		c = NewVerifiableClient(suite, s.PublicKey())
+	case PartialObliviousMode:
+		var info []byte
+		s = &s1{NewPartialObliviousServer(suite, privateKey), info}
+		c = &c1{NewPartialObliviousClient(suite, s.PublicKey()), info}
 	}
 
-	if v.Mode == BaseMode {
-		s, err = NewServer(v.ID, privateKey)
-	} else if v.Mode == VerifiableMode {
-		s, err = NewVerifiableServer(v.ID, privateKey)
-	}
-	test.CheckNoErr(t, err, "invalid setup of server")
-
-	if v.Mode == BaseMode {
-		c, err = NewClient(v.ID)
-	} else if v.Mode == VerifiableMode {
-		pkSm := toBytes(t, v.PkSm, "public key")
-		publicKey := new(PublicKey)
-		err = publicKey.Deserialize(v.ID, pkSm)
-		test.CheckNoErr(t, err, "invalid public key")
-		c, err = NewVerifiableClient(v.ID, publicKey)
-	}
-	test.CheckNoErr(t, err, "invalid setup of client")
-
-	return s, c
+	return suite.(params), s, c
 }
 
 func (v *vector) compareLists(t *testing.T, got, want [][]byte) {
+	t.Helper()
 	for i := range got {
 		if !bytes.Equal(got[i], want[i]) {
 			test.ReportError(t, got[i], want[i], v.Name, v.Mode, i)
@@ -118,56 +139,80 @@ func (v *vector) compareLists(t *testing.T, got, want [][]byte) {
 	}
 }
 
-func (v *vector) compareStrings(t *testing.T, got, want string) {
-	if got != want {
+func (v *vector) compareBytes(t *testing.T, got, want []byte) {
+	t.Helper()
+	if !bytes.Equal(got, want) {
 		test.ReportError(t, got, want, v.Name, v.Mode)
 	}
 }
 
 func (v *vector) test(t *testing.T) {
-	server, client := v.SetUpParties(t)
-
-	var publicKey *PublicKey
-	if v.Mode == VerifiableMode {
-		pkSm := toBytes(t, v.PkSm, "public key")
-		publicKey = new(PublicKey)
-		err := publicKey.Deserialize(v.ID, pkSm)
-		test.CheckNoErr(t, err, "invalid public key")
-	}
+	params, server, client := v.SetUpParties(t)
 
 	for i, vi := range v.Vectors {
+		if v.Mode == PartialObliviousMode {
+			info := toBytes(t, vi.Info, "info")
+			ss := server.(*s1)
+			cc := client.(*c1)
+			ss.info = info
+			cc.info = info
+		}
+
 		inputs := toListBytes(t, vi.Input, "input")
 		blindsBytes := toListBytes(t, vi.Blind, "blind")
 
 		blinds := make([]Blind, len(blindsBytes))
 		for j := range blindsBytes {
-			blinds[j] = client.suite.Group.NewScalar()
+			blinds[j] = params.group.NewScalar()
 			err := blinds[j].UnmarshalBinary(blindsBytes[j])
 			test.CheckNoErr(t, err, "invalid blind")
 		}
 
-		clientReq, err := client.blind(inputs, blinds)
+		finData, evalReq, err := client.blind(inputs, blinds)
 		test.CheckNoErr(t, err, "invalid client request")
-		v.compareLists(t,
-			clientReq.BlindedElements(),
-			toListBytes(t, vi.BlindedElement, "blindedElement"),
-		)
+		evalReqBytes, err := elementsMarshalBinary(params.group, evalReq.Elements)
+		test.CheckNoErr(t, err, "bad serialization")
+		v.compareBytes(t, evalReqBytes, flattenList(t, vi.BlindedElement, "blindedElement"))
 
-		rr := toScalar(t, client.suite.Group, vi.EvaluationProof.R, "invalid proof random scalar")
-
-		eval, err := server.evaluateWithProofScalar(clientReq.BlindedElements(), rr)
+		eval, err := server.Evaluate(evalReq)
 		test.CheckNoErr(t, err, "invalid evaluation")
-		v.compareLists(t,
-			eval.Elements,
-			toListBytes(t, vi.EvaluationElement, "evaluation"),
-		)
+		elemBytes, err := elementsMarshalBinary(params.group, eval.Elements)
+		test.CheckNoErr(t, err, "invalid evaluations marshaling")
+		v.compareBytes(t, elemBytes, flattenList(t, vi.EvaluationElement, "evaluation"))
 
-		if v.Mode == VerifiableMode {
-			v.compareStrings(t, hex.EncodeToString(eval.Proof.C), vi.EvaluationProof.C)
-			v.compareStrings(t, hex.EncodeToString(eval.Proof.S), vi.EvaluationProof.S)
+		if v.Mode == VerifiableMode || v.Mode == PartialObliviousMode {
+			randomness := toScalar(t, params.group, vi.Proof.R, "invalid proof random scalar")
+			var proof encoding.BinaryMarshaler
+			switch v.Mode {
+			case VerifiableMode:
+				ss := server.(VerifiableServer)
+				prover := dleq.Prover{Params: ss.getDLEQParams()}
+				proof, err = prover.ProveBatchWithRandomness(
+					ss.privateKey.k,
+					ss.params.group.Generator(),
+					server.PublicKey().e,
+					evalReq.Elements,
+					eval.Elements,
+					randomness)
+			case PartialObliviousMode:
+				ss := server.(*s1)
+				keyProof, _, _ := ss.secretFromInfo(ss.info)
+				prover := dleq.Prover{Params: ss.getDLEQParams()}
+				proof, err = prover.ProveBatchWithRandomness(
+					keyProof,
+					ss.params.group.Generator(),
+					ss.params.group.NewElement().MulGen(keyProof),
+					eval.Elements,
+					evalReq.Elements,
+					randomness)
+			}
+			test.CheckNoErr(t, err, "failed proof generation")
+			proofBytes, errr := proof.MarshalBinary()
+			test.CheckNoErr(t, errr, "failed proof marshaling")
+			v.compareBytes(t, proofBytes, toBytes(t, vi.Proof.Proof, "proof"))
 		}
 
-		outputs, err := client.Finalize(clientReq, eval)
+		outputs, err := client.Finalize(finData, eval)
 		test.CheckNoErr(t, err, "invalid finalize")
 		expectedOutputs := toListBytes(t, vi.Output, "output")
 		v.compareLists(t,
@@ -190,15 +235,17 @@ func (v *vector) test(t *testing.T) {
 }
 
 func TestVectors(t *testing.T) {
-	// Test vectors from https://datatracker.ietf.org/doc/draft-irtf-cfrg-voprf
-	v := readFile(t, "testdata/allVectors_v06.json")
+	// Draft published at https://datatracker.ietf.org/doc/html/draft-irtf-cfrg-voprf-10
+	// Test vectors at https://github.com/cfrg/draft-irtf-cfrg-voprf
+	// Version supported: v10
+	v := readFile(t, "testdata/allVectors.json")
 
 	for i := range v {
-		id := v[i].ID
-		if !(id == OPRFP256 || id == OPRFP384 || id == OPRFP521) {
+		suite, err := GetSuite(v[i].ID)
+		if err != nil {
 			t.Logf(v[i].Name + " not supported yet")
 			continue
 		}
-		t.Run(fmt.Sprintf("Suite%v/Mode%v", id, v[i].Mode), v[i].test)
+		t.Run(fmt.Sprintf("%v/Mode%v", suite, v[i].Mode), v[i].test)
 	}
 }

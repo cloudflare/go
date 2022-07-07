@@ -10,13 +10,16 @@ import (
 	"circl/internal/test"
 )
 
+var allGroups = []group.Group{
+	group.P256,
+	group.P384,
+	group.P521,
+	group.Ristretto255,
+}
+
 func TestGroup(t *testing.T) {
 	const testTimes = 1 << 7
-	for _, g := range []group.Group{
-		group.P256,
-		group.P384,
-		group.P521,
-	} {
+	for _, g := range allGroups {
 		g := g
 		n := g.(fmt.Stringer).String()
 		t.Run(n+"/Add", func(tt *testing.T) { testAdd(tt, testTimes, g) })
@@ -125,14 +128,16 @@ func isZero(b []byte) bool {
 func testMarshal(t *testing.T, testTimes int, g group.Group) {
 	params := g.Params()
 	I := g.Identity()
-	got, _ := I.MarshalBinary()
+	got, err := I.MarshalBinary()
+	test.CheckNoErr(t, err, "error on MarshalBinary")
 	if !isZero(got) {
 		test.ReportError(t, got, "Non-zero identity")
 	}
 	if l := uint(len(got)); !(l == 1 || l == params.ElementLength) {
 		test.ReportError(t, l, params.ElementLength)
 	}
-	got, _ = I.MarshalBinaryCompress()
+	got, err = I.MarshalBinaryCompress()
+	test.CheckNoErr(t, err, "error on MarshalBinaryCompress")
 	if !isZero(got) {
 		test.ReportError(t, got, "Non-zero identity")
 	}
@@ -140,7 +145,7 @@ func testMarshal(t *testing.T, testTimes int, g group.Group) {
 		test.ReportError(t, l, params.CompressedElementLength)
 	}
 	II := g.NewElement()
-	err := II.UnmarshalBinary(got)
+	err = II.UnmarshalBinary(got)
 	if err != nil || !I.IsEqual(II) {
 		test.ReportError(t, I, II)
 	}
@@ -178,6 +183,8 @@ func testScalar(t *testing.T, testTimes int, g group.Group) {
 	d := g.NewScalar()
 	e := g.NewScalar()
 	f := g.NewScalar()
+	one := g.NewScalar()
+	one.SetUint64(1)
 	params := g.Params()
 	for i := 0; i < testTimes; i++ {
 		a := g.RandomScalar(rand.Reader)
@@ -185,11 +192,13 @@ func testScalar(t *testing.T, testTimes int, g group.Group) {
 		c.Add(a, b)
 		d.Sub(a, b)
 		e.Mul(c, d)
+		e.Add(e, one)
 
 		c.Mul(a, a)
 		d.Mul(b, b)
 		d.Neg(d)
 		f.Add(c, d)
+		f.Add(f, one)
 		enc1, err1 := e.MarshalBinary()
 		enc2, err2 := f.MarshalBinary()
 		if err1 != nil || err2 != nil || !bytes.Equal(enc1, enc2) {
@@ -199,14 +208,17 @@ func testScalar(t *testing.T, testTimes int, g group.Group) {
 			test.ReportError(t, l, params.ScalarLength)
 		}
 	}
+
+	a := g.RandomScalar(rand.Reader)
+	c.Inv(a)
+	c.Mul(c, a)
+	if !one.IsEqual(c) {
+		test.ReportError(t, c, one, a)
+	}
 }
 
 func BenchmarkElement(b *testing.B) {
-	for _, g := range []group.Group{
-		group.P256,
-		group.P384,
-		group.P521,
-	} {
+	for _, g := range allGroups {
 		x := g.RandomElement(rand.Reader)
 		y := g.RandomElement(rand.Reader)
 		n := g.RandomScalar(rand.Reader)
@@ -235,11 +247,7 @@ func BenchmarkElement(b *testing.B) {
 }
 
 func BenchmarkScalar(b *testing.B) {
-	for _, g := range []group.Group{
-		group.P256,
-		group.P384,
-		group.P521,
-	} {
+	for _, g := range allGroups {
 		x := g.RandomScalar(rand.Reader)
 		y := g.RandomScalar(rand.Reader)
 		name := g.(fmt.Stringer).String()
@@ -256,27 +264,6 @@ func BenchmarkScalar(b *testing.B) {
 		b.Run(name+"/Inv", func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
 				y.Inv(x)
-			}
-		})
-	}
-}
-
-func BenchmarkHash(b *testing.B) {
-	for _, g := range []group.Group{
-		group.P256,
-		group.P384,
-		group.P521,
-	} {
-		g := g
-		name := g.(fmt.Stringer).String()
-		b.Run(name+"/HashToElement", func(b *testing.B) {
-			for i := 0; i < b.N; i++ {
-				g.HashToElement(nil, nil)
-			}
-		})
-		b.Run(name+"/HashToScalar", func(b *testing.B) {
-			for i := 0; i < b.N; i++ {
-				g.HashToScalar(nil, nil)
 			}
 		})
 	}

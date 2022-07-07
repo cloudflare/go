@@ -62,6 +62,9 @@ func TestApi(t *testing.T) {
 				t.Fatal()
 			}
 
+			_ = scheme.SeedSize()
+			_ = scheme.EncapsulationSeedSize()
+
 			pk, sk, err := scheme.GenerateKeyPair()
 			if err != nil {
 				t.Fatal()
@@ -114,6 +117,17 @@ func TestApi(t *testing.T) {
 				t.Fatal()
 			}
 
+			ct3, ss3, err := scheme.Encapsulate(pk2)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if bytes.Equal(ss3, ss) {
+				t.Fatal()
+			}
+			if bytes.Equal(ct3, ct) {
+				t.Fatal()
+			}
+
 			ss2, err := scheme.Decapsulate(sk2, ct)
 			if err != nil {
 				t.Fatal(err)
@@ -137,6 +151,7 @@ func Example_schemes() {
 	// HPKE_KEM_P521_HKDF_SHA512
 	// HPKE_KEM_X25519_HKDF_SHA256
 	// HPKE_KEM_X448_HKDF_SHA512
+	// FrodoKEM-640-SHAKE
 	// Kyber512
 	// Kyber768
 	// Kyber1024

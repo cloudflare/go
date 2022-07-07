@@ -3,8 +3,6 @@ package hpke
 import (
 	"crypto"
 	"crypto/rand"
-	_ "crypto/sha256" // linking sha256 packages.
-	_ "crypto/sha512" // linking sha512 packages.
 	"encoding/binary"
 	"io"
 
@@ -109,8 +107,9 @@ func (k kemBase) AuthEncapsulateDeterministically(
 	return k.authEncap(pkr, sks, seed)
 }
 
-func (k kemBase) EncapsulateDeterministically(pkr kem.PublicKey, seed []byte) (
-	ct, ss []byte, err error) {
+func (k kemBase) EncapsulateDeterministically(
+	pkr kem.PublicKey, seed []byte,
+) (ct, ss []byte, err error) {
 	return k.encap(pkr, seed)
 }
 

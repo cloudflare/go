@@ -46,11 +46,11 @@ type TestVectors struct {
 
 func TestCompare64(t *testing.T) {
 	const s uint64 = 0xFFFFFFFFFFFFFFFF
-	var val1 = fp{0, 2, 3, 4, 5, 6, 7, 8}
-	var val2 = fp{s, s, s, s, s, s, s, s}
-	var fp fp
+	val1 := fp{0, 2, 3, 4, 5, 6, 7, 8}
+	val2 := fp{s, s, s, s, s, s, s, s}
+	var zero fp
 
-	if !fp.isZero() {
+	if !zero.isZero() {
 		t.Errorf("isZero returned true, where it should be false")
 	}
 	if val1.isZero() {
@@ -273,8 +273,10 @@ func TestKAT(t *testing.T) {
 	}
 }
 
-var prv1, prv2 PrivateKey
-var pub1, pub2 PublicKey
+var (
+	prv1, prv2 PrivateKey
+	pub1, pub2 PublicKey
+)
 
 // Private key generation.
 func BenchmarkGeneratePrivate(b *testing.B) {

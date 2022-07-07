@@ -445,6 +445,20 @@ var depsRules = `
 	< crypto/x509
 	< crypto/tls;
 
+	# CIRCL
+	crypto, golang.org/x/sys/cpu, hash
+	< golang.org/x/crypto/blake2b;
+
+	crypto, golang.org/x/sys/cpu, hash
+	< golang.org/x/crypto/blake2s;
+
+	encoding/base64, encoding/hex, crypto/rand, crypto/sha256, crypto/sha512, crypto/subtle,  math/big
+	< github.com/bwesterb/go-ristretto/edwards25519
+	< github.com/bwesterb/go-ristretto;
+
+	golang.org/x/crypto/blake2b, golang.org/x/crypto/blake2s, github.com/bwesterb/go-ristretto
+	< CIRCL;
+
 	# crypto-aware packages
 
 	NET, crypto/rand, mime/quotedprintable
@@ -655,6 +669,9 @@ var buildIgnore = []byte("\n//go:build ignore")
 func findImports(pkg string) ([]string, error) {
 	vpkg := pkg
 	if strings.HasPrefix(pkg, "golang.org") {
+		vpkg = "vendor/" + pkg
+	}
+	if strings.HasPrefix(pkg, "github.com") {
 		vpkg = "vendor/" + pkg
 	}
 	dir := filepath.Join(Default.GOROOT, "src", vpkg)

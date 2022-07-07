@@ -1,3 +1,4 @@
+//go:build amd64
 // +build amd64
 
 package common
@@ -136,36 +137,6 @@ func (p *Poly) Exceeds(bound uint32) bool {
 		return exceedsAVX2((*[N]uint32)(p), bound) == 1
 	}
 	return p.exceedsGeneric(bound)
-}
-
-// Splits each of the coefficients using decompose.
-//
-// Requires p to be normalized.
-func (p *Poly) Decompose(p0PlusQ, p1 *Poly) {
-	if cpu.X86.HasAVX2 {
-		decomposeAVX2(
-			(*[N]uint32)(p),
-			(*[N]uint32)(p0PlusQ),
-			(*[N]uint32)(p1),
-		)
-	} else {
-		p.decomposeGeneric(p0PlusQ, p1)
-	}
-}
-
-// Sets p to the hint polynomial for p0 the modified low bits and p1
-// the unmodified high bits --- see makeHint().
-//
-// Returns the number of ones in the hint polynomial.
-func (p *Poly) MakeHint(p0, p1 *Poly) (pop uint32) {
-	if cpu.X86.HasAVX2 && cpu.X86.HasPOPCNT {
-		return makeHintAVX2(
-			(*[N]uint32)(p),
-			(*[N]uint32)(p0),
-			(*[N]uint32)(p1),
-		)
-	}
-	return p.makeHintGeneric(p0, p1)
 }
 
 // Sets p to 2ᵈ q without reducing.
