@@ -1,10 +1,10 @@
 package common
 
 import (
+	"encoding/binary"
+
 	"circl/internal/sha3"
 	"circl/simd/keccakf1600"
-
-	"encoding/binary"
 )
 
 // DeriveX4Available indicates whether the system supports the quick fourway

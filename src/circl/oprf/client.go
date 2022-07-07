@@ -2,187 +2,168 @@ package oprf
 
 import (
 	"crypto/rand"
-	"errors"
 
 	"circl/group"
+	"circl/group/dleq"
 )
 
-// Client is a representation of a OPRF client during protocol execution.
+type client struct{ params }
+
 type Client struct {
-	suite
+	client
+}
+
+type VerifiableClient struct {
+	client
 	pkS *PublicKey
 }
 
-// ClientRequest is a structure to encapsulate the output of a Request call.
-type ClientRequest struct {
-	inputs   [][]byte
-	blinds   []Blind
-	elements []group.Element
+type PartialObliviousClient struct {
+	client
+	pkS *PublicKey
 }
 
-// BlindedElements returns the serialized blinded elements produced for the client request.
-func (r ClientRequest) BlindedElements() [][]byte {
-	var err error
-	serializedBlinds := make([][]byte, len(r.elements))
-	for i := range r.elements {
-		serializedBlinds[i], err = r.elements[i].MarshalBinaryCompress()
-		if err != nil {
-			return nil
-		}
-	}
-	return serializedBlinds
-}
-
-// NewClient creates a client in base mode.
-func NewClient(id SuiteID) (*Client, error) {
-	suite, err := suiteFromID(id, BaseMode)
-	if err != nil {
-		return nil, err
-	}
-	return &Client{*suite, nil}, nil
-}
-
-// NewVerifiableClient creates a client in verifiable mode. A server's public
-// key must be provided.
-func NewVerifiableClient(id SuiteID, pkS *PublicKey) (*Client, error) {
-	suite, err := suiteFromID(id, VerifiableMode)
-	if err != nil {
-		return nil, err
-	}
-	if pkS == nil {
-		return nil, errors.New("no public key was provided")
-	} else if id != pkS.s { // Verifies key corresponds to SuiteID.
-		return nil, errors.New("key doesn't match with suite")
-	}
-	return &Client{*suite, pkS}, nil
-}
-
-// Request generates a request for server passing an array of inputs to be
-// evaluated by server.
-func (c *Client) Request(inputs [][]byte) (*ClientRequest, error) {
+func (c client) Blind(inputs [][]byte) (*FinalizeData, *EvaluationRequest, error) {
 	if len(inputs) == 0 {
-		return nil, errors.New("few inputs")
+		return nil, nil, ErrInvalidInput
 	}
 
 	blinds := make([]Blind, len(inputs))
 	for i := range inputs {
-		blinds[i] = c.suite.Group.RandomScalar(rand.Reader)
+		blinds[i] = c.params.group.RandomScalar(rand.Reader)
 	}
 
 	return c.blind(inputs, blinds)
 }
 
-func (c *Client) blind(inputs [][]byte, blinds []Blind) (*ClientRequest, error) {
-	blindedElements := make([]group.Element, len(inputs))
-	for i := range inputs {
-		p := c.suite.Group.HashToElement(inputs[i], c.suite.getDST(hashToGroupDST))
-		blindedElements[i] = c.suite.Group.NewElement()
-		blindedElements[i].Mul(p, blinds[i])
+func (c client) DeterministicBlind(inputs [][]byte, blinds []Blind) (*FinalizeData, *EvaluationRequest, error) {
+	if len(inputs) == 0 {
+		return nil, nil, ErrInvalidInput
 	}
-	return &ClientRequest{inputs, blinds, blindedElements}, nil
+	if len(inputs) != len(blinds) {
+		return nil, nil, ErrInvalidInput
+	}
+
+	return c.blind(inputs, blinds)
 }
 
-// Finalize computes the signed token from the server Evaluation and returns
-// the output of the OPRF protocol. The function uses server's public key
-// to verify the proof in verifiable mode.
-func (c *Client) Finalize(r *ClientRequest, e *Evaluation) ([][]byte, error) {
-	l := len(r.blinds)
-	if len(r.elements) != l || len(e.Elements) != l {
-		return nil, errors.New("mismatch number of elements")
+func (c client) blind(inputs [][]byte, blinds []Blind) (*FinalizeData, *EvaluationRequest, error) {
+	blindedElements := make([]Blinded, len(inputs))
+	dst := c.params.getDST(hashToGroupDST)
+	for i := range inputs {
+		point := c.params.group.HashToElement(inputs[i], dst)
+		if point.IsIdentity() {
+			return nil, nil, ErrInvalidInput
+		}
+		blindedElements[i] = c.params.group.NewElement().Mul(point, blinds[i])
 	}
 
-	var err error
-	evals := make([]group.Element, len(e.Elements))
-	for i := range e.Elements {
-		evals[i] = c.suite.Group.NewElement()
-		err = evals[i].UnmarshalBinary(e.Elements[i])
+	evalReq := &EvaluationRequest{blindedElements}
+	finData := &FinalizeData{inputs, blinds, evalReq}
+
+	return finData, evalReq, nil
+}
+
+func (c client) unblind(serUnblindeds [][]byte, blindeds []group.Element, blind []Blind) (err error) {
+	invBlind := c.params.group.NewScalar()
+	U := c.params.group.NewElement()
+
+	for i := range blindeds {
+		invBlind.Inv(blind[i])
+		U.Mul(blindeds[i], invBlind)
+		serUnblindeds[i], err = U.MarshalBinaryCompress()
 		if err != nil {
-			return nil, err
+			return err
 		}
 	}
 
-	if c.Mode == VerifiableMode {
-		if !c.verifyProof(r.elements, evals, *e.Proof) {
-			return nil, errors.New("invalid proof")
-		}
+	return nil
+}
+
+func (c client) validate(f *FinalizeData, e *Evaluation) (err error) {
+	if l := len(f.blinds); len(f.evalReq.Elements) != l || len(e.Elements) != l {
+		err = ErrInvalidInput
 	}
 
-	unblindedElements, err := c.unblind(evals, r.blinds)
+	return
+}
+
+func (c client) finalize(f *FinalizeData, e *Evaluation, info []byte) ([][]byte, error) {
+	unblindedElements := make([][]byte, len(f.blinds))
+	err := c.unblind(unblindedElements, e.Elements, f.blinds)
 	if err != nil {
 		return nil, err
 	}
-	outputs := make([][]byte, l)
-	for i := 0; i < l; i++ {
-		outputs[i] = c.finalizeHash(r.inputs[i], unblindedElements[i])
+
+	h := c.params.hash.New()
+	outputs := make([][]byte, len(f.inputs))
+	for i := range f.inputs {
+		outputs[i] = c.params.finalizeHash(h, f.inputs[i], info, unblindedElements[i])
 	}
+
 	return outputs, nil
 }
 
-func (c *Client) verifyProof(blinds []group.Element, elements []group.Element, proof Proof) bool {
-	pkSm, err := c.pkS.Serialize()
-	if err != nil {
-		return false
+func (c Client) Finalize(f *FinalizeData, e *Evaluation) (outputs [][]byte, err error) {
+	if err = c.validate(f, e); err != nil {
+		return nil, err
 	}
 
-	M, Z, err := c.computeComposites(nil, c.pkS.e, blinds, elements)
-	if err != nil {
-		return false
-	}
-
-	a0, err := M.MarshalBinaryCompress()
-	if err != nil {
-		return false
-	}
-	a1, err := Z.MarshalBinaryCompress()
-	if err != nil {
-		return false
-	}
-
-	sG := c.suite.Group.NewElement()
-	ss := c.suite.Group.NewScalar()
-	err = ss.UnmarshalBinary(proof.S)
-	if err != nil {
-		return false
-	}
-	sG.MulGen(ss)
-
-	cP := c.suite.Group.NewElement()
-	cc := c.suite.Group.NewScalar()
-	err = cc.UnmarshalBinary(proof.C)
-	if err != nil {
-		return false
-	}
-	cP.Mul(c.pkS.e, cc)
-	sG.Add(sG, cP)
-	a2, err := sG.MarshalBinaryCompress()
-	if err != nil {
-		return false
-	}
-
-	sM := c.suite.Group.NewElement()
-	sM.Mul(M, ss)
-	cZ := c.suite.Group.NewElement()
-	cZ.Mul(Z, cc)
-	sM.Add(sM, cZ)
-	a3, err := sM.MarshalBinaryCompress()
-	if err != nil {
-		return false
-	}
-
-	gotC := c.doChallenge([5][]byte{pkSm, a0, a1, a2, a3})
-	return gotC.IsEqual(cc)
+	return c.client.finalize(f, e, nil)
 }
 
-func (c *Client) unblind(e []group.Element, blinds []Blind) ([][]byte, error) {
-	var err error
-	unblindedElements := make([][]byte, len(e))
-	invBlind := c.Group.NewScalar()
-	for i := range e {
-		invBlind.Inv(blinds[i])
-		unblindedElements[i], err = c.scalarMult(e[i], invBlind)
-		if err != nil {
-			return nil, err
-		}
+func (c VerifiableClient) Finalize(f *FinalizeData, e *Evaluation) (outputs [][]byte, err error) {
+	if err := c.validate(f, e); err != nil {
+		return nil, err
 	}
-	return unblindedElements, nil
+
+	if !(dleq.Verifier{Params: c.getDLEQParams()}).VerifyBatch(
+		c.params.group.Generator(),
+		c.pkS.e,
+		f.evalReq.Elements,
+		e.Elements,
+		e.Proof,
+	) {
+		return nil, ErrInvalidProof
+	}
+
+	return c.client.finalize(f, e, nil)
+}
+
+func (c PartialObliviousClient) Finalize(f *FinalizeData, e *Evaluation, info []byte) (outputs [][]byte, err error) {
+	if err = c.validate(f, e); err != nil {
+		return nil, err
+	}
+
+	tweakedKey, err := c.pointFromInfo(info)
+	if err != nil {
+		return nil, err
+	}
+
+	if !(dleq.Verifier{Params: c.getDLEQParams()}).VerifyBatch(
+		c.params.group.Generator(),
+		tweakedKey,
+		e.Elements,
+		f.evalReq.Elements,
+		e.Proof,
+	) {
+		return nil, ErrInvalidProof
+	}
+
+	return c.client.finalize(f, e, info)
+}
+
+func (c PartialObliviousClient) pointFromInfo(info []byte) (group.Element, error) {
+	m, err := c.params.scalarFromInfo(info)
+	if err != nil {
+		return nil, err
+	}
+
+	T := c.params.group.NewElement().MulGen(m)
+	tweakedKey := c.params.group.NewElement().Add(T, c.pkS.e)
+	if tweakedKey.IsIdentity() {
+		return nil, ErrInvalidInfo
+	}
+
+	return tweakedKey, nil
 }
