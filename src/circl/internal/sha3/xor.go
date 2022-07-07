@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+//go:build (!amd64 && !386 && !ppc64le) || appengine
 // +build !amd64,!386,!ppc64le appengine
 
 package sha3
@@ -12,12 +13,3 @@ type storageBuf [maxRate]byte
 func (b *storageBuf) asBytes() *[maxRate]byte {
 	return (*[maxRate]byte)(b)
 }
-
-var (
-	xorIn            = xorInGeneric
-	copyOut          = copyOutGeneric
-	xorInUnaligned   = xorInGeneric
-	copyOutUnaligned = copyOutGeneric
-)
-
-const xorImplementationUnaligned = "generic"

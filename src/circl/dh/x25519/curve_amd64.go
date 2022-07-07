@@ -1,11 +1,11 @@
+//go:build amd64 && !purego
 // +build amd64,!purego
 
 package x25519
 
 import (
-	"internal/cpu"
-
 	fp "circl/math/fp25519"
+	"internal/cpu"
 )
 
 var hasBmi2Adx = cpu.X86.HasBMI2 && cpu.X86.HasADX

@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+//go:build (amd64 || 386 || ppc64le) && !appengine
 // +build amd64 386 ppc64le
 // +build !appengine
 
@@ -16,9 +17,9 @@ func (b *storageBuf) asBytes() *[maxRate]byte {
 	return (*[maxRate]byte)(unsafe.Pointer(b))
 }
 
-// xorInUnaligned uses unaligned reads and writes to update d.a to contain d.a
+// xorInuses unaligned reads and writes to update d.a to contain d.a
 // XOR buf.
-func xorInUnaligned(d *State, buf []byte) {
+func xorIn(d *State, buf []byte) {
 	n := len(buf)
 	bw := (*[maxRate / 8]uint64)(unsafe.Pointer(&buf[0]))[: n/8 : n/8]
 	if n >= 72 {
@@ -54,14 +55,7 @@ func xorInUnaligned(d *State, buf []byte) {
 	}
 }
 
-func copyOutUnaligned(d *State, buf []byte) {
+func copyOut(d *State, buf []byte) {
 	ab := (*[maxRate]uint8)(unsafe.Pointer(&d.a[0]))
 	copy(buf, ab[:])
 }
-
-var (
-	xorIn   = xorInUnaligned
-	copyOut = copyOutUnaligned
-)
-
-const xorImplementationUnaligned = "unaligned"
