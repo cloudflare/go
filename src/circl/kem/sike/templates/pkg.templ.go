@@ -8,14 +8,14 @@
 package {{.Pkg}}
 
 import (
-	"circl/dh/sidh"
-	"circl/internal/sha3"
-	"circl/kem"
-
 	"bytes"
 	cryptoRand "crypto/rand"
 	"crypto/subtle"
 	"io"
+
+	"circl/dh/sidh"
+	"circl/internal/sha3"
+	"circl/kem"
 )
 
 type PrivateKey struct {

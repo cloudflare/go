@@ -1,9 +1,12 @@
+//go:build (!noasm && arm64) || (!noasm && amd64)
 // +build !noasm,arm64 !noasm,amd64
 
 package p384
 
 import (
+	"bytes"
 	"crypto/elliptic"
+	"crypto/rand"
 	"math/big"
 	"testing"
 
@@ -11,6 +14,33 @@ import (
 )
 
 func TestInternals(t *testing.T) {
+	t.Run("reduceScalar", func(t *testing.T) {
+		var c curve
+		order := c.Params().N
+		var buffer [3 * sizeFp]byte
+
+		for i := 0; i < sizeFp; i++ {
+			buffer[i] = 0xFF
+		}
+		_, err := rand.Read(buffer[sizeFp:])
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		for i := 0; i < 3*sizeFp; i++ {
+			k := buffer[:i]
+			got := c.reduceScalar(k)
+
+			bigK := new(big.Int).SetBytes(k)
+			bigK.Mod(bigK, order)
+			want := bigK.FillBytes(make([]byte, sizeFp))
+
+			if !bytes.Equal(got, want) {
+				test.ReportError(t, got, want, k)
+			}
+		}
+	})
+
 	t.Run("absolute", func(t *testing.T) {
 		cases := []int32{-2, -1, 0, 1, 2}
 		expected := []int32{2, 1, 0, 1, 2}

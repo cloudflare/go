@@ -4,18 +4,18 @@
 
 // Code generated from modePkg.templ.go. DO NOT EDIT.
 
-// {{ .Pkg }} implements the IND-CPA-secure Public Key Encryption
-// scheme {{ .Name }}.CPAPKE as submitted to round 3 of the NIST PQC competition
+// {{.Pkg}} implements the IND-CPA-secure Public Key Encryption
+// scheme {{.Name}}.CPAPKE as submitted to round 3 of the NIST PQC competition
 // and described in
 //
 // https://pq-crystals.org/kyber/data/kyber-specification-round3.pdf
-package {{ .Pkg }}
+package {{.Pkg}}
 
 import (
 	cryptoRand "crypto/rand"
 	"io"
 
-	"circl/pke/kyber/{{ .Pkg }}/internal"
+	"circl/pke/kyber/{{.Pkg}}/internal"
 )
 
 const (
@@ -38,10 +38,10 @@ const (
 	PlaintextSize = internal.PlaintextSize
 )
 
-// PublicKey is the type of {{ .Name }}.CPAPKE public key
+// PublicKey is the type of {{.Name}}.CPAPKE public key
 type PublicKey internal.PublicKey
 
-// PrivateKey is the type of {{ .Name }}.CPAPKE private key
+// PrivateKey is the type of {{.Name}}.CPAPKE private key
 type PrivateKey internal.PrivateKey
 
 // GenerateKey generates a public/private key pair using entropy from rand.
@@ -73,8 +73,8 @@ func NewKeyFromSeed(seed []byte) (*PublicKey, *PrivateKey) {
 // EncryptTo encrypts message pt for the public key and writes the ciphertext
 // to ct using randomness from seed.
 //
-// This function panics if the lengths of pt, seed and ct are not
-// PlaintextSize, EncryptionSeedSize and CiphertextSize respectively.
+// This function panics if the lengths of pt, seed, and ct are not
+// PlaintextSize, EncryptionSeedSize, and CiphertextSize respectively.
 func (pk *PublicKey) EncryptTo(ct []byte, pt []byte, seed []byte) {
 	if len(pt) != PlaintextSize {
 		panic("pt must be of length PlaintextSize")

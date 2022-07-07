@@ -10,6 +10,7 @@ package comment
 var stdPkgs = []string{
 	"bufio",
 	"bytes",
+	"circl",
 	"context",
 	"crypto",
 	"embed",
