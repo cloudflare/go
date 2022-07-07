@@ -1,14 +1,11 @@
 package common
 
-import (
-	"math/rand"
-	"testing"
-)
+import "testing"
 
 func (p *Poly) RandLe2Q() {
-	for i := uint(0); i < N; i++ {
-		p[i] = uint32(rand.Intn(int(2 * Q)))
-	}
+	max := 2 * uint32(Q)
+	r := randSliceUint32WithMax(N, max)
+	copy(p[:], r)
 }
 
 func TestNTTAgainstGeneric(t *testing.T) {

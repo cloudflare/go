@@ -5,6 +5,8 @@ package p503
 
 import (
 	. "circl/dh/sidh/internal/common"
+	"errors"
+	"math"
 )
 
 // Stores isogeny 3 curve constants
@@ -261,7 +263,7 @@ func ScalarMul3Pt(cparams *ProjectiveCurveParameters, P, Q, PmQ *ProjectivePoint
 func (phi *isogeny3) GenerateCurve(p *ProjectivePoint) CurveCoefficientsEquiv {
 	var t0, t1, t2, t3, t4 Fp2
 	var coefEq CurveCoefficientsEquiv
-	var K1, K2 = &phi.K1, &phi.K2
+	K1, K2 := &phi.K1, &phi.K2
 
 	sub(K1, &p.X, &p.Z)            // K1 = XP3 - ZP3
 	sqr(&t0, K1)                   // t0 = K1^2
@@ -291,11 +293,10 @@ func (phi *isogeny3) GenerateCurve(p *ProjectivePoint) CurveCoefficientsEquiv {
 //
 // The output xQ = x(Q) is then a point on the curve E_(A':C'); the curve
 // parameters are returned by the GenerateCurve function used to construct phi.
-func (phi *isogeny3) EvaluatePoint(p *ProjectivePoint) ProjectivePoint {
+func (phi *isogeny3) EvaluatePoint(p *ProjectivePoint) {
 	var t0, t1, t2 Fp2
-	var q ProjectivePoint
-	var K1, K2 = &phi.K1, &phi.K2
-	var px, pz = &p.X, &p.Z
+	K1, K2 := &phi.K1, &phi.K2
+	px, pz := &p.X, &p.Z
 
 	add(&t0, px, pz)   // t0 = XQ + ZQ
 	sub(&t1, px, pz)   // t1 = XQ - ZQ
@@ -305,9 +306,8 @@ func (phi *isogeny3) EvaluatePoint(p *ProjectivePoint) ProjectivePoint {
 	sub(&t0, &t1, &t0) // t0 = t1 - t0
 	sqr(&t2, &t2)      // t2 = t2 ^ 2
 	sqr(&t0, &t0)      // t0 = t0 ^ 2
-	mul(&q.X, px, &t2) // XQ'= XQ * t2
-	mul(&q.Z, pz, &t0) // ZQ'= ZQ * t0
-	return q
+	mul(px, px, &t2)   // XQ'= XQ * t2
+	mul(pz, pz, &t0)   // ZQ'= ZQ * t0
 }
 
 // Given a four-torsion point p = x(PB) on the curve E_(A:C), construct the
@@ -318,8 +318,8 @@ func (phi *isogeny3) EvaluatePoint(p *ProjectivePoint) ProjectivePoint {
 //         * Isogeny phi with constants in F_p^2
 func (phi *isogeny4) GenerateCurve(p *ProjectivePoint) CurveCoefficientsEquiv {
 	var coefEq CurveCoefficientsEquiv
-	var xp4, zp4 = &p.X, &p.Z
-	var K1, K2, K3 = &phi.K1, &phi.K2, &phi.K3
+	xp4, zp4 := &p.X, &p.Z
+	K1, K2, K3 := &phi.K1, &phi.K2, &phi.K3
 
 	sub(K2, xp4, zp4)
 	add(K3, xp4, zp4)
@@ -338,11 +338,10 @@ func (phi *isogeny4) GenerateCurve(p *ProjectivePoint) CurveCoefficientsEquiv {
 //
 // Input: Isogeny returned by GenerateCurve and point q=(Qx,Qz) from E0_A/C
 // Output: Corresponding point q from E1_A'/C', where E1 is 4-isogenous to E0
-func (phi *isogeny4) EvaluatePoint(p *ProjectivePoint) ProjectivePoint {
+func (phi *isogeny4) EvaluatePoint(p *ProjectivePoint) {
 	var t0, t1 Fp2
-	var q = *p
-	var xq, zq = &q.X, &q.Z
-	var K1, K2, K3 = &phi.K1, &phi.K2, &phi.K3
+	xq, zq := &p.X, &p.Z
+	K1, K2, K3 := &phi.K1, &phi.K2, &phi.K3
 
 	add(&t0, xq, zq)
 	sub(&t1, xq, zq)
@@ -358,5 +357,73 @@ func (phi *isogeny4) EvaluatePoint(p *ProjectivePoint) ProjectivePoint {
 	sub(&t0, zq, &t0)
 	mul(xq, xq, &t1)
 	mul(zq, zq, &t0)
-	return q
+}
+
+// PublicKeyValidation preforms public key/ciphertext validation using the CLN test.
+// CLN test: Check that P and Q are both of order 3^e3 and they generate the torsion E_A[3^e3]
+// A countermeasure for remote timing attacks on SIKE; suggested by https://eprint.iacr.org/2022/054.pdf
+// Any curve E_A (SIKE 434, 503, 751) that passes CLN test is supersingular.
+// Input: The public key / ciphertext P, Q, PmQ. The projective coordinate A of the curve defined by (P, Q, PmQ)
+// Outputs: Whether (P,Q,PmQ) follows the CLN test
+func PublicKeyValidation(cparams *ProjectiveCurveParameters, P, Q, PmQ *ProjectivePoint, nbits uint) error {
+
+	var PmQX, PmQZ Fp2
+	FromMontgomery(&PmQX, &PmQ.X)
+	FromMontgomery(&PmQZ, &PmQ.Z)
+
+	// PmQ is not point T or O
+	if (isZero(&PmQX) == 1) || (isZero(&PmQZ) == 1) {
+		return errors.New("curve: PmQ is invalid")
+	}
+
+	cparam := CalcCurveParamsEquiv3(cparams)
+
+	// Compute e_3 = log3(2^(nbits+1))
+	var e3 uint32
+	e3_float := float64(int(nbits)+1) / math.Log2(3)
+	e3 = uint32(e3_float)
+
+	// Verify that P and Q generate E_A[3^e_3] by checking: [3^(e_3-1)]P != [+-3^(e_3-1)]Q
+	var test_P, test_Q ProjectivePoint
+	test_P = *P
+	test_Q = *Q
+
+	Pow3k(&test_P, &cparam, e3-1)
+	Pow3k(&test_Q, &cparam, e3-1)
+
+	var PZ, QZ Fp2
+	FromMontgomery(&PZ, &test_P.Z)
+	FromMontgomery(&QZ, &test_Q.Z)
+
+	// P, Q are not of full order 3^e_3
+	if (isZero(&PZ) == 1) || (isZero(&QZ) == 1) {
+		return errors.New("curve: ciphertext/public key are not of full order 3^e3")
+	}
+
+	// PX/PZ = affine(PX)
+	// QX/QZ = affine(QX)
+	// If PX/PZ = QX/QZ, we have P=+-Q
+	var PXQZ_PZQX_fromMont, PXQZ_PZQX, PXQZ, PZQX Fp2
+	mul(&PXQZ, &test_P.X, &test_Q.Z)
+	mul(&PZQX, &test_P.Z, &test_Q.X)
+	sub(&PXQZ_PZQX, &PXQZ, &PZQX)
+	FromMontgomery(&PXQZ_PZQX_fromMont, &PXQZ_PZQX)
+
+	// [3^(e_3-1)]P == [+-3^(e_3-1)]Q
+	if isZero(&PXQZ_PZQX_fromMont) == 1 {
+		return errors.New("curve: ciphertext/public key are not linearly independent")
+	}
+
+	// Check that Ord(P) = Ord(Q) = 3^(e_3)
+	Pow3k(&test_P, &cparam, 1)
+	Pow3k(&test_Q, &cparam, 1)
+
+	FromMontgomery(&PZ, &test_P.Z)
+	FromMontgomery(&QZ, &test_Q.Z)
+
+	// P, Q are not of correct order 3^e_3
+	if (isZero(&PZ) == 0) || (isZero(&QZ) == 0) {
+		return errors.New("curve: ciphertext/public key are not of correct order 3^e3")
+	}
+	return nil
 }

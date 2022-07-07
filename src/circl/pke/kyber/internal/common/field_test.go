@@ -1,8 +1,9 @@
 package common
 
 import (
+	"crypto/rand"
+	"encoding/binary"
 	"flag"
-	mathRand "math/rand"
 	"testing"
 )
 
@@ -35,9 +36,29 @@ func TestBarrettReduceFull(t *testing.T) {
 	}
 }
 
+func randSliceUint32WithMax(length uint, max uint32) []uint32 {
+	bytes := make([]uint8, 4*length)
+	n, err := rand.Read(bytes)
+	if err != nil {
+		panic(err)
+	} else if n < len(bytes) {
+		panic("short read from RNG")
+	}
+	x := make([]uint32, length)
+	for i := range x {
+		x[i] = binary.LittleEndian.Uint32(bytes[4*i:]) % max
+	}
+	return x
+}
+
 func TestMontReduce(t *testing.T) {
-	for i := 0; i < 1000; i++ {
-		x := mathRand.Int31n(int32(Q)*(1<<16)) - int32(Q)*(1<<15)
+	size := 1000
+	max := uint32(Q) * (1 << 16)
+	mid := int32(Q) * (1 << 15)
+	r := randSliceUint32WithMax(uint(size), max)
+
+	for i := 0; i < size; i++ {
+		x := int32(r[i]) - mid
 		y := montReduce(x)
 		if modQ32(x) != modQ32(int32(y)*(1<<16)) {
 			t.Fatalf("%d", x)
