@@ -1,9 +1,6 @@
 package common
 
-import (
-	mathRand "math/rand"
-	"testing"
-)
+import "testing"
 
 func BenchmarkNTT(b *testing.B) {
 	var a Poly
@@ -34,14 +31,18 @@ func BenchmarkInvNTTGeneric(b *testing.B) {
 }
 
 func (p *Poly) Rand() {
+	max := uint32(Q)
+	r := randSliceUint32WithMax(uint(N), max)
 	for i := 0; i < N; i++ {
-		p[i] = int16(mathRand.Intn(int(Q)))
+		p[i] = int16(r[i])
 	}
 }
 
 func (p *Poly) RandAbsLeQ() {
+	max := 2 * uint32(Q)
+	r := randSliceUint32WithMax(uint(N), max)
 	for i := 0; i < N; i++ {
-		p[i] = int16(mathRand.Intn(int(2*Q))) - Q
+		p[i] = int16(int32(r[i]) - int32(Q))
 	}
 }
 

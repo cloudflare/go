@@ -1,3 +1,4 @@
+//go:build ignore
 // +build ignore
 
 // Autogenerates wrappers from templates to prevent too much duplicated code
@@ -7,6 +8,7 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"go/format"
 	"io/ioutil"
 	"strings"
 	"text/template"
@@ -55,12 +57,18 @@ func generatePackageFiles() {
 			panic(err)
 		}
 
-		res := string(buf.Bytes())
+		// Formating output code
+		code, err := format.Source(buf.Bytes())
+		if err != nil {
+			panic("error formating code")
+		}
+
+		res := string(code)
 		offset := strings.Index(res, TemplateWarning)
 		if offset == -1 {
 			panic("Missing template warning in pkg.templ.go")
 		}
-		err = ioutil.WriteFile(mode.Pkg()+"/sike.go", []byte(res[offset:]), 0644)
+		err = ioutil.WriteFile(mode.Pkg()+"/sike.go", []byte(res[offset:]), 0o644)
 		if err != nil {
 			panic(err)
 		}
