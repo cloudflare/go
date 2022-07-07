@@ -1,9 +1,6 @@
 package common
 
-import (
-	"math/rand"
-	"testing"
-)
+import "testing"
 
 func TestExceeds(t *testing.T) {
 	for i := 0; i < N; i++ {
@@ -27,49 +24,6 @@ func TestExceeds(t *testing.T) {
 			if !p.Exceeds(uint32(10)) {
 				t.Fatal()
 			}
-		}
-	}
-}
-
-func TestMakeHintAgainstGeneric(t *testing.T) {
-	var p0, p1, h1, h2 Poly
-	for i := 0; i < 255; i++ {
-		if i&3 == 1 {
-			p0[i] = Gamma2 / 2
-		} else if i&3 == 2 {
-			p0[i] = Q - Gamma2/2
-		} else if i&3 == 0 {
-			p0[i] = Q - Gamma2
-		} else {
-			p0[i] = 2 * Gamma2
-		}
-
-		if (i>>2)&1 == 1 {
-			p1[i] = 1234
-		} else {
-			p1[i] = 0
-		}
-	}
-
-	pop1 := h1.makeHintGeneric(&p0, &p1)
-	pop2 := h2.MakeHint(&p0, &p1)
-	if h1 != h2 {
-		t.Fatal()
-	}
-	if pop1 != pop2 {
-		t.Fatal()
-	}
-}
-
-func TestComposeAgainstGeneric(t *testing.T) {
-	for k := 0; k < 1000; k++ {
-		var p, a0, b0, a1, b1 Poly
-		p.RandLe2Q()
-		p.Normalize()
-		p.Decompose(&a0, &a1)
-		p.decomposeGeneric(&b0, &b1)
-		if a0 != b0 && a1 != b1 {
-			t.Fatal()
 		}
 	}
 }
@@ -116,9 +70,8 @@ func TestMulHatAgainstGeneric(t *testing.T) {
 func TestReduceLe2QAgainstGeneric(t *testing.T) {
 	for k := 0; k < 1000; k++ {
 		var a Poly
-		for j := 0; j < N; j++ {
-			a[j] = rand.Uint32()
-		}
+		r := randSliceUint32(N)
+		copy(a[:], r)
 		p1 := a
 		p2 := a
 		p1.reduceLe2QGeneric()
@@ -132,9 +85,8 @@ func TestReduceLe2QAgainstGeneric(t *testing.T) {
 func TestNormalizeAgainstGeneric(t *testing.T) {
 	for k := 0; k < 1000; k++ {
 		var a Poly
-		for j := 0; j < N; j++ {
-			a[j] = rand.Uint32()
-		}
+		r := randSliceUint32(N)
+		copy(a[:], r)
 		p1 := a
 		p2 := a
 		p1.normalizeGeneric()
@@ -206,20 +158,6 @@ func BenchmarkExceedsGeneric(b *testing.B) {
 	}
 }
 
-func BenchmarkDecomposeGeneric(b *testing.B) {
-	var p, p0, p1 Poly
-	for i := 0; i < b.N; i++ {
-		p.decomposeGeneric(&p0, &p1)
-	}
-}
-
-func BenchmarkMakeHintGeneric(b *testing.B) {
-	var p, p0, p1 Poly
-	for i := 0; i < b.N; i++ {
-		p.makeHintGeneric(&p0, &p1)
-	}
-}
-
 func BenchmarkMulBy2toDGeneric(b *testing.B) {
 	var p, q Poly
 	for i := 0; i < b.N; i++ {
@@ -273,20 +211,6 @@ func BenchmarkExceeds(b *testing.B) {
 	var p Poly
 	for i := 0; i < b.N; i++ {
 		p.Exceeds(uint32(10))
-	}
-}
-
-func BenchmarkDecompose(b *testing.B) {
-	var p, p0, p1 Poly
-	for i := 0; i < b.N; i++ {
-		p.Decompose(&p0, &p1)
-	}
-}
-
-func BenchmarkMakeHint(b *testing.B) {
-	var p, p0, p1 Poly
-	for i := 0; i < b.N; i++ {
-		p.MakeHint(&p0, &p1)
 	}
 }
 

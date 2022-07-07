@@ -3,8 +3,6 @@ package hpke
 import (
 	"bytes"
 	"crypto/rand"
-	_ "crypto/sha256" // linking sha256 packages.
-	_ "crypto/sha512" // linking sha512 packages.
 	"crypto/subtle"
 	"fmt"
 	"io"
@@ -35,7 +33,7 @@ func (x xKEM) calcDH(dh []byte, sk kem.PrivateKey, pk kem.PublicKey) error {
 		copy(sKey[:], SK.priv)
 		copy(pKey[:], PK.pub)
 		if !x25519.Shared(&ss, &sKey, &pKey) {
-			return errInvalidKEMSharedSecret
+			return ErrInvalidKEMSharedSecret
 		}
 		copy(dh, ss[:])
 	case x448.Size:
@@ -43,7 +41,7 @@ func (x xKEM) calcDH(dh []byte, sk kem.PrivateKey, pk kem.PublicKey) error {
 		copy(sKey[:], SK.priv)
 		copy(pKey[:], PK.pub)
 		if !x448.Shared(&ss, &sKey, &pKey) {
-			return errInvalidKEMSharedSecret
+			return ErrInvalidKEMSharedSecret
 		}
 		copy(dh, ss[:])
 	}
@@ -71,6 +69,7 @@ func (x xKEM) DeriveKeyPair(seed []byte) (kem.PublicKey, kem.PrivateKey) {
 	copy(sk.priv, bytes)
 	return sk.Public(), sk
 }
+
 func (x xKEM) GenerateKeyPair() (kem.PublicKey, kem.PrivateKey, error) {
 	sk := &xKEMPrivKey{scheme: x, priv: make([]byte, x.PrivateKeySize())}
 	_, err := io.ReadFull(rand.Reader, sk.priv)
@@ -79,19 +78,21 @@ func (x xKEM) GenerateKeyPair() (kem.PublicKey, kem.PrivateKey, error) {
 	}
 	return sk.Public(), sk, nil
 }
+
 func (x xKEM) UnmarshalBinaryPrivateKey(data []byte) (kem.PrivateKey, error) {
 	l := x.PrivateKeySize()
 	if len(data) < l {
-		return nil, errInvalidKEMPrivateKey
+		return nil, ErrInvalidKEMPrivateKey
 	}
 	sk := &xKEMPrivKey{x, make([]byte, l), nil}
 	copy(sk.priv, data[:l])
 	return sk, nil
 }
+
 func (x xKEM) UnmarshalBinaryPublicKey(data []byte) (kem.PublicKey, error) {
 	l := x.PublicKeySize()
 	if len(data) < l {
-		return nil, errInvalidKEMPublicKey
+		return nil, ErrInvalidKEMPublicKey
 	}
 	pk := &xKEMPubKey{x, make([]byte, l)}
 	copy(pk.pub, data[:l])
@@ -108,6 +109,7 @@ func (k *xKEMPubKey) Scheme() kem.Scheme { return k.scheme }
 func (k *xKEMPubKey) MarshalBinary() ([]byte, error) {
 	return append(make([]byte, 0, k.scheme.PublicKeySize()), k.pub...), nil
 }
+
 func (k *xKEMPubKey) Equal(pk kem.PublicKey) bool {
 	k1, ok := pk.(*xKEMPubKey)
 	return ok &&
@@ -127,12 +129,14 @@ func (k *xKEMPrivKey) Scheme() kem.Scheme { return k.scheme }
 func (k *xKEMPrivKey) MarshalBinary() ([]byte, error) {
 	return append(make([]byte, 0, k.scheme.PrivateKeySize()), k.priv...), nil
 }
+
 func (k *xKEMPrivKey) Equal(pk kem.PrivateKey) bool {
 	k1, ok := pk.(*xKEMPrivKey)
 	return ok &&
 		k.scheme.id == k1.scheme.id &&
 		subtle.ConstantTimeCompare(k.priv, k1.priv) == 1
 }
+
 func (k *xKEMPrivKey) Public() kem.PublicKey {
 	if k.pub == nil {
 		k.pub = &xKEMPubKey{scheme: k.scheme, pub: make([]byte, k.scheme.size)}
