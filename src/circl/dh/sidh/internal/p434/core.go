@@ -5,6 +5,7 @@ package p434
 
 import (
 	. "circl/dh/sidh/internal/common"
+	crand "crypto/rand"
 )
 
 // -----------------------------------------------------------------------------
@@ -14,8 +15,8 @@ import (
 // Traverses isogeny tree in order to compute xR, xP, xQ and xQmP needed
 // for public key generation.
 func traverseTreePublicKeyA(curve *ProjectiveCurveParameters, xR, phiP, phiQ, phiR *ProjectivePoint) {
-	var points = make([]ProjectivePoint, 0, 8)
-	var indices = make([]int, 0, 8)
+	points := make([]ProjectivePoint, 0, 8)
+	indices := make([]int, 0, 8)
 	var i, sIdx int
 	var phi isogeny4
 
@@ -36,11 +37,11 @@ func traverseTreePublicKeyA(curve *ProjectiveCurveParameters, xR, phiP, phiQ, ph
 		cparam = phi.GenerateCurve(xR)
 
 		for k := 0; k < len(points); k++ {
-			points[k] = phi.EvaluatePoint(&points[k])
+			phi.EvaluatePoint(&points[k])
 		}
-		*phiP = phi.EvaluatePoint(phiP)
-		*phiQ = phi.EvaluatePoint(phiQ)
-		*phiR = phi.EvaluatePoint(phiR)
+		phi.EvaluatePoint(phiP)
+		phi.EvaluatePoint(phiQ)
+		phi.EvaluatePoint(phiR)
 
 		// pop xR from points
 		*xR, points = points[len(points)-1], points[:len(points)-1]
@@ -51,8 +52,8 @@ func traverseTreePublicKeyA(curve *ProjectiveCurveParameters, xR, phiP, phiQ, ph
 // Traverses isogeny tree in order to compute xR needed
 // for public key generation.
 func traverseTreeSharedKeyA(curve *ProjectiveCurveParameters, xR *ProjectivePoint) {
-	var points = make([]ProjectivePoint, 0, 8)
-	var indices = make([]int, 0, 8)
+	points := make([]ProjectivePoint, 0, 8)
+	indices := make([]int, 0, 8)
 	var i, sIdx int
 	var phi isogeny4
 
@@ -73,7 +74,7 @@ func traverseTreeSharedKeyA(curve *ProjectiveCurveParameters, xR *ProjectivePoin
 		cparam = phi.GenerateCurve(xR)
 
 		for k := 0; k < len(points); k++ {
-			points[k] = phi.EvaluatePoint(&points[k])
+			phi.EvaluatePoint(&points[k])
 		}
 
 		// pop xR from points
@@ -85,8 +86,8 @@ func traverseTreeSharedKeyA(curve *ProjectiveCurveParameters, xR *ProjectivePoin
 // Traverses isogeny tree in order to compute xR, xP, xQ and xQmP needed
 // for public key generation.
 func traverseTreePublicKeyB(curve *ProjectiveCurveParameters, xR, phiP, phiQ, phiR *ProjectivePoint) {
-	var points = make([]ProjectivePoint, 0, 8)
-	var indices = make([]int, 0, 8)
+	points := make([]ProjectivePoint, 0, 8)
+	indices := make([]int, 0, 8)
 	var i, sIdx int
 	var phi isogeny3
 
@@ -107,12 +108,12 @@ func traverseTreePublicKeyB(curve *ProjectiveCurveParameters, xR, phiP, phiQ, ph
 
 		cparam = phi.GenerateCurve(xR)
 		for k := 0; k < len(points); k++ {
-			points[k] = phi.EvaluatePoint(&points[k])
+			phi.EvaluatePoint(&points[k])
 		}
 
-		*phiP = phi.EvaluatePoint(phiP)
-		*phiQ = phi.EvaluatePoint(phiQ)
-		*phiR = phi.EvaluatePoint(phiR)
+		phi.EvaluatePoint(phiP)
+		phi.EvaluatePoint(phiQ)
+		phi.EvaluatePoint(phiR)
 
 		// pop xR from points
 		*xR, points = points[len(points)-1], points[:len(points)-1]
@@ -123,8 +124,8 @@ func traverseTreePublicKeyB(curve *ProjectiveCurveParameters, xR, phiP, phiQ, ph
 // Traverses isogeny tree in order to compute xR, xP, xQ and xQmP needed
 // for public key generation.
 func traverseTreeSharedKeyB(curve *ProjectiveCurveParameters, xR *ProjectivePoint) {
-	var points = make([]ProjectivePoint, 0, 8)
-	var indices = make([]int, 0, 8)
+	points := make([]ProjectivePoint, 0, 8)
+	indices := make([]int, 0, 8)
 	var i, sIdx int
 	var phi isogeny3
 
@@ -145,7 +146,7 @@ func traverseTreeSharedKeyB(curve *ProjectiveCurveParameters, xR *ProjectivePoin
 
 		cparam = phi.GenerateCurve(xR)
 		for k := 0; k < len(points); k++ {
-			points[k] = phi.EvaluatePoint(&points[k])
+			phi.EvaluatePoint(&points[k])
 		}
 
 		// pop xR from points
@@ -178,9 +179,12 @@ func PublicKeyGenA(pub3Pt *[3]Fp2, prvBytes []byte) {
 
 	// Secret isogeny
 	phi.GenerateCurve(&xR)
-	xPA = phi.EvaluatePoint(&xPB)
-	xQA = phi.EvaluatePoint(&xQB)
-	xRA = phi.EvaluatePoint(&xRB)
+	xPA = xPB
+	xQA = xQB
+	xRA = xRB
+	phi.EvaluatePoint(&xPA)
+	phi.EvaluatePoint(&xQA)
+	phi.EvaluatePoint(&xRA)
 	Fp2Batch3Inv(&xPA.Z, &xQA.Z, &xRA.Z, &invZP, &invZQ, &invZR)
 
 	mul(&pub3Pt[0], &xPA.X, &invZP)
@@ -211,9 +215,12 @@ func PublicKeyGenB(pub3Pt *[3]Fp2, prvBytes []byte) {
 	traverseTreePublicKeyB(&params.InitCurve, &xR, &xPA, &xQA, &xRA)
 
 	phi.GenerateCurve(&xR)
-	xPB = phi.EvaluatePoint(&xPA)
-	xQB = phi.EvaluatePoint(&xQA)
-	xRB = phi.EvaluatePoint(&xRA)
+	xPB = xPA
+	xQB = xQA
+	xRB = xRA
+	phi.EvaluatePoint(&xPB)
+	phi.EvaluatePoint(&xQB)
+	phi.EvaluatePoint(&xRB)
 	Fp2Batch3Inv(&xPB.Z, &xQB.Z, &xRB.Z, &invZP, &invZQ, &invZR)
 
 	mul(&pub3Pt[0], &xPB.X, &invZP)
@@ -268,6 +275,16 @@ func DeriveSecretB(ss, prv []byte, pub3Pt *[3]Fp2) {
 	xP = ProjectivePoint{X: pub3Pt[0], Z: params.OneFp2}
 	xQ = ProjectivePoint{X: pub3Pt[1], Z: params.OneFp2}
 	xQmP = ProjectivePoint{X: pub3Pt[2], Z: params.OneFp2}
+
+	//PUBLIC KEY VALIDATION
+	if err := PublicKeyValidation(&cparam, &xP, &xQ, &xQmP, params.B.SecretBitLen); err != nil {
+		_, err_read := crand.Read(ss)
+		if err_read != nil {
+			panic("core: failed to generate random ss when public key verification fails")
+		}
+		return
+	}
+
 	xR = ScalarMul3Pt(&cparam, &xP, &xQ, &xQmP, params.B.SecretBitLen, prv)
 
 	// Traverse isogeny tree
@@ -279,4 +296,5 @@ func DeriveSecretB(ss, prv []byte, pub3Pt *[3]Fp2) {
 	Jinvariant(&cparam, &jInv)
 	FromMontgomery(&jInv, &jInv)
 	Fp2ToBytes(ss, &jInv, params.Bytelen)
+
 }

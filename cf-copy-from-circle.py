@@ -8,7 +8,7 @@ import subprocess
 base = os.path.dirname(os.path.abspath(sys.argv[0]))
 
 REPO = 'https://github.com/cloudflare/circl'
-BRANCH = 'master'
+BRANCH = 'main'
 
 circl = os.path.join(base, 'src/circl')
 
@@ -52,6 +52,8 @@ subprocess.check_call(['rm', '-r',
 print("Removing misc cruft ...")
 subprocess.check_call(['rm', '-r', '-f',
     os.path.join(circl, '.git'),
+    os.path.join(circl, '.github'),
+    os.path.join(circl, 'CITATION.cff'),
     os.path.join(circl, 'go.mod'),
     os.path.join(circl, 'go.sum'),
     os.path.join(circl, '.etc'),
