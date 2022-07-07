@@ -11,8 +11,10 @@ import (
 	"circl/sign/schemes"
 )
 
-var allSchemesByOID map[string]sign.Scheme
-var allSchemesByTLS map[uint]sign.Scheme
+var (
+	allSchemesByOID map[string]sign.Scheme
+	allSchemesByTLS map[uint]sign.Scheme
+)
 
 type pkixPrivKey struct {
 	Version    int
