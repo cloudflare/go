@@ -28,6 +28,7 @@ type clientKeySharePrivate interface{}
 
 var (
 	kyber512X25519CurveID = CurveID(0xFF01)
+	kyber768X25519CurveID = CurveID(0xFF02)
 	invalidCurveID        = CurveID(0xFFFF)
 )
 
@@ -35,6 +36,8 @@ func kemSchemeKeyToCurveID(s kem.Scheme) CurveID {
 	switch s.Name() {
 	case "Kyber512-X25519":
 		return kyber512X25519CurveID
+	case "Kyber768-X25519":
+		return kyber768X25519CurveID
 	default:
 		return invalidCurveID
 	}
@@ -54,8 +57,11 @@ func clientKeySharePrivateCurveID(ks clientKeySharePrivate) CurveID {
 
 // Returns scheme by CurveID if supported by Circl
 func curveIdToCirclScheme(id CurveID) kem.Scheme {
-	if id == kyber512X25519CurveID {
+    switch id {
+    case kyber512X25519CurveID:
 		return hybrid.Kyber512X25519()
+    case kyber768X25519CurveID:
+		return hybrid.Kyber768X25519()
 	}
 	return nil
 }
