@@ -95,9 +95,6 @@ type Conn struct {
 	// clientProtocol is the negotiated ALPN protocol.
 	clientProtocol string
 
-	// selectedGroup is the negotiated group
-	selectedGroup CurveID
-
 	// input/output
 	in, out   halfConn
 	rawInput  bytes.Buffer // raw input, starting with a record header

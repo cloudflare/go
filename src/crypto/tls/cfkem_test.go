@@ -16,6 +16,7 @@ func TestHybridKEX(t *testing.T) {
 		hybrid.Kyber768X25519(),
 	} {
 		t.Run(scheme.Name(), func(t *testing.T) {
+			var clientSelectedKEX *CurveID
 			rsaCert := Certificate{
 				Certificate: [][]byte{testRSACertificate},
 				PrivateKey:  testRSAPrivateKey,
@@ -26,6 +27,12 @@ func TestHybridKEX(t *testing.T) {
 			clientConfig.CurvePreferences = []CurveID{
 				kemSchemeKeyToCurveID(scheme),
 				X25519,
+			}
+			clientConfig.CFEventHandler = func(ev CFEvent) {
+				switch e := ev.(type) {
+				case CFEventTLS13NegotiatedKEX:
+					clientSelectedKEX = &e.KEX
+				}
 			}
 
 			serverConfig := testConfig.Clone()
@@ -53,9 +60,12 @@ func TestHybridKEX(t *testing.T) {
 			if serverErr != nil {
 				t.Errorf("server error: %s", serverErr)
 			}
-			if cli.selectedGroup != kemSchemeKeyToCurveID(scheme) {
+			if clientSelectedKEX == nil {
+				t.Error("No TLS 1.3 KEX happened?")
+			}
+			if *clientSelectedKEX != kemSchemeKeyToCurveID(scheme) {
 				t.Errorf("failed to negotiate hybrid group: expected %d, got %d",
-					kemSchemeKeyToCurveID(scheme), cli.selectedGroup)
+					kemSchemeKeyToCurveID(scheme), *clientSelectedKEX)
 			}
 		})
 	}

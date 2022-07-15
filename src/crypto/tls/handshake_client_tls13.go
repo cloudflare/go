@@ -512,7 +512,9 @@ func (hs *clientHandshakeStateTLS13) processServerHello() error {
 		return errors.New("tls: server selected unsupported group")
 	}
 
-	c.selectedGroup = hs.serverHello.serverShare.group
+	c.handleCFEvent(CFEventTLS13NegotiatedKEX{
+		KEX: hs.serverHello.serverShare.group,
+	})
 
 	if !hs.serverHello.selectedIdentityPresent {
 		return nil

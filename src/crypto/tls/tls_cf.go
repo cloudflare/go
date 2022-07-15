@@ -218,3 +218,13 @@ type CFEventECHPublicNameMismatch struct{}
 func (e CFEventECHPublicNameMismatch) Name() string {
 	return "ech public name does not match outer sni"
 }
+
+// CFEventTLS13NegotiatedKEX is emitted when a key agreement mechanism has been
+// established.
+type CFEventTLS13NegotiatedKEX struct {
+	KEX CurveID
+}
+
+func (e CFEventTLS13NegotiatedKEX) Name() string {
+	return "CFEventTLS13NegotiatedKEX"
+}

@@ -307,7 +307,9 @@ GroupSelection:
 	}
 
 	c.serverName = hs.clientHello.serverName
-	c.selectedGroup = selectedGroup
+	c.handleCFEvent(CFEventTLS13NegotiatedKEX{
+		KEX: selectedGroup,
+	})
 
 	hs.hsTimings.ProcessClientHello = hs.hsTimings.elapsedTime()
 
