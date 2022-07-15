@@ -228,3 +228,10 @@ type CFEventTLS13NegotiatedKEX struct {
 func (e CFEventTLS13NegotiatedKEX) Name() string {
 	return "CFEventTLS13NegotiatedKEX"
 }
+
+// CFEventTLS13HRR is emitted when a HRR is processed
+type CFEventTLS13HRR struct{}
+
+func (e CFEventTLS13HRR) Name() string {
+	return "CFEventTLS13HRR"
+}

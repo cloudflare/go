@@ -269,6 +269,8 @@ func (hs *clientHandshakeStateTLS13) sendDummyChangeCipherSpec() error {
 func (hs *clientHandshakeStateTLS13) processHelloRetryRequest() error {
 	c := hs.c
 
+	c.handleCFEvent(CFEventTLS13HRR{})
+
 	// The first ClientHello gets double-hashed into the transcript upon a
 	// HelloRetryRequest. (The idea is that the server might offload transcript
 	// storage to the client in the cookie.) See RFC 8446, Section 4.4.1.
