@@ -31,9 +31,9 @@ import (
 type clientKeySharePrivate interface{}
 
 var (
-	kyber512X25519CurveID = CurveID(0xFF01)
-	kyber768X25519CurveID = CurveID(0xFF02)
-	invalidCurveID        = CurveID(0xFFFF)
+	kyber512X25519CurveID = CurveID(0xfe30)
+	kyber768X25519CurveID = CurveID(0xfe31)
+	invalidCurveID        = CurveID(0)
 )
 
 func kemSchemeKeyToCurveID(s kem.Scheme) CurveID {
@@ -51,7 +51,11 @@ func kemSchemeKeyToCurveID(s kem.Scheme) CurveID {
 func clientKeySharePrivateCurveID(ks clientKeySharePrivate) CurveID {
 	switch v := ks.(type) {
 	case kem.PrivateKey:
-		return kemSchemeKeyToCurveID(v.Scheme())
+		ret := kemSchemeKeyToCurveID(v.Scheme())
+		if ret == invalidCurveID {
+			panic("cfkem: internal error: don't know CurveID for this KEM")
+		}
+        return ret
 	case ecdheParameters:
 		return v.CurveID()
 	default:
