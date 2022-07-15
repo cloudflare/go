@@ -17,6 +17,7 @@
 package tls
 
 import (
+	"fmt"
 	"io"
 
 	"circl/kem"
@@ -57,10 +58,10 @@ func clientKeySharePrivateCurveID(ks clientKeySharePrivate) CurveID {
 
 // Returns scheme by CurveID if supported by Circl
 func curveIdToCirclScheme(id CurveID) kem.Scheme {
-    switch id {
-    case kyber512X25519CurveID:
+	switch id {
+	case kyber512X25519CurveID:
 		return hybrid.Kyber512X25519()
-    case kyber768X25519CurveID:
+	case kyber768X25519CurveID:
 		return hybrid.Kyber768X25519()
 	}
 	return nil
@@ -72,11 +73,11 @@ func encapsulateForKem(scheme kem.Scheme, rnd io.Reader, ppk []byte) (
 	ct, ss []byte, internalErr bool, err error) {
 	pk, err := scheme.UnmarshalBinaryPublicKey(ppk)
 	if err != nil {
-		return nil, nil, false, err
+		return nil, nil, false, fmt.Errorf("unpack pk: %w", err)
 	}
 	seed := make([]byte, scheme.EncapsulationSeedSize())
 	if _, err := io.ReadFull(rnd, seed); err != nil {
-		return nil, nil, true, err
+		return nil, nil, true, fmt.Errorf("random: %w", err)
 	}
 	ct, ss, err = scheme.EncapsulateDeterministically(pk, seed)
 	return ct, ss, false, err

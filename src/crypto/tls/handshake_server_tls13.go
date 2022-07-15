@@ -292,7 +292,7 @@ GroupSelection:
 			} else {
 				c.sendAlert(alertIllegalParameter)
 			}
-			return err
+			return fmt.Errorf("%s encap: %w", kem.Name(), err)
 		}
 		hs.hello.serverShare = keyShare{group: selectedGroup, data: ct}
 		hs.sharedKey = ss
@@ -629,7 +629,6 @@ func (hs *serverHandshakeStateTLS13) doHelloRetryRequest(selectedGroup CurveID) 
 
 	if len(clientHello.keyShares) != 1 || clientHello.keyShares[0].group != selectedGroup {
 		c.sendAlert(alertIllegalParameter)
-		fmt.Println("got", clientHello.keyShares[0].group, "want", selectedGroup)
 		return errors.New("tls: client sent invalid key share in second ClientHello")
 	}
 

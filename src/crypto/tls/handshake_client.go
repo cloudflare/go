@@ -134,11 +134,13 @@ func (c *Conn) makeClientHello(minVersion uint16) (*clientHelloMsg, clientKeySha
 		if scheme := curveIdToCirclScheme(curveID); scheme != nil {
 			pk, sk, err := generateKemKeyPair(scheme, config.rand())
 			if err != nil {
-				return nil, nil, err
+				return nil, nil, fmt.Errorf("generateKemKeyPair %s: %w",
+					scheme.Name(), err)
 			}
 			packedPk, err := pk.MarshalBinary()
 			if err != nil {
-				return nil, nil, err
+				return nil, nil, fmt.Errorf("pack circl public key %s: %w",
+					scheme.Name(), err)
 			}
 			hello.keyShares = []keyShare{{group: curveID, data: packedPk}}
 			secret = sk

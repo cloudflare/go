@@ -354,20 +354,18 @@ func (hs *clientHandshakeStateTLS13) processHelloRetryRequest() error {
 			c.sendAlert(alertIllegalParameter)
 			return errors.New("tls: server sent an unnecessary HelloRetryRequest key_share")
 		}
-		// if _, ok := curveForCurveID(curveID); curveID != X25519 && !ok {
-		// 	c.sendAlert(alertInternalError)
-		// 	return errors.New("tls: CurvePreferences includes unsupported curve")
-		// }
 		if scheme := curveIdToCirclScheme(curveID); scheme != nil {
 			pk, sk, err := generateKemKeyPair(scheme, c.config.rand())
 			if err != nil {
 				c.sendAlert(alertInternalError)
-				return err
+				return fmt.Errorf("HRR generateKemKeyPair %s: %w",
+					scheme.Name(), err)
 			}
 			packedPk, err := pk.MarshalBinary()
 			if err != nil {
 				c.sendAlert(alertInternalError)
-				return err
+				return fmt.Errorf("HRR pack circl public key %s: %w",
+					scheme.Name(), err)
 			}
 			hs.keySharePrivate = sk
 			hello.keyShares = []keyShare{{group: curveID, data: packedPk}}
@@ -567,7 +565,7 @@ func (hs *clientHandshakeStateTLS13) establishHandshakeKeys() error {
 		sharedKey, err = sk.Scheme().Decapsulate(sk, hs.serverHello.serverShare.data)
 		if err != nil {
 			c.sendAlert(alertInternalError)
-			return err
+			return fmt.Errorf("%s decaps: %w", sk.Scheme().Name(), err)
 		}
 	} else {
 		c.sendAlert(alertInternalError)
