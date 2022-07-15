@@ -11,7 +11,8 @@ import (
 	"circl/kem/hybrid"
 )
 
-func testHybridKEX(t *testing.T, scheme kem.Scheme, clientPQ bool, serverPQ bool) {
+func testHybridKEX(t *testing.T, scheme kem.Scheme, clientPQ, serverPQ,
+	clientTLS12, serverTLS12 bool) {
 	var clientSelectedKEX *CurveID
 	var retry bool
 
@@ -36,6 +37,9 @@ func testHybridKEX(t *testing.T, scheme kem.Scheme, clientPQ bool, serverPQ bool
 			retry = true
 		}
 	}
+	if clientTLS12 {
+		clientConfig.MaxVersion = VersionTLS12
+	}
 
 	serverConfig := testConfig.Clone()
 	if serverPQ {
@@ -43,6 +47,9 @@ func testHybridKEX(t *testing.T, scheme kem.Scheme, clientPQ bool, serverPQ bool
 			kemSchemeKeyToCurveID(scheme),
 			X25519,
 		}
+	}
+	if serverTLS12 {
+		serverConfig.MaxVersion = VersionTLS12
 	}
 	serverConfig.Certificates = serverCerts
 
@@ -64,11 +71,10 @@ func testHybridKEX(t *testing.T, scheme kem.Scheme, clientPQ bool, serverPQ bool
 	if serverErr != nil {
 		t.Errorf("server error: %s", serverErr)
 	}
-	if clientSelectedKEX == nil {
-		t.Error("No TLS 1.3 KEX happened?")
-	}
+
 	var expectedKEX CurveID
 	var expectedRetry bool
+
 	if clientPQ && serverPQ {
 		expectedKEX = kemSchemeKeyToCurveID(scheme)
 	} else {
@@ -77,28 +83,42 @@ func testHybridKEX(t *testing.T, scheme kem.Scheme, clientPQ bool, serverPQ bool
 	if clientPQ && !serverPQ {
 		expectedRetry = true
 	}
-	if *clientSelectedKEX != expectedKEX {
-		t.Errorf("failed to negotiate: expected %d, got %d",
-			expectedKEX, *clientSelectedKEX)
-	}
-	if expectedRetry != retry {
-		t.Errorf("Expected retry=%v, got retry=%v", expectedRetry, retry)
+
+	if !serverTLS12 && !clientTLS12 {
+		if clientSelectedKEX == nil {
+			t.Error("No TLS 1.3 KEX happened?")
+		}
+
+		if *clientSelectedKEX != expectedKEX {
+			t.Errorf("failed to negotiate: expected %d, got %d",
+				expectedKEX, *clientSelectedKEX)
+		}
+		if expectedRetry != retry {
+			t.Errorf("Expected retry=%v, got retry=%v", expectedRetry, retry)
+		}
+	} else {
+		if clientSelectedKEX != nil {
+			t.Error("TLS 1.3 KEX happened?")
+		}
 	}
 }
 
 func TestHybridKEX(t *testing.T) {
-	run := func(scheme kem.Scheme, clientPQ, serverPQ bool) {
-		t.Run(fmt.Sprintf("%s serverPQ:%v clientPQ:%v", scheme.Name(),
-			serverPQ, clientPQ), func(t *testing.T) {
-			testHybridKEX(t, scheme, clientPQ, serverPQ)
+	run := func(scheme kem.Scheme, clientPQ, serverPQ, clientTLS12, serverTLS12 bool) {
+		t.Run(fmt.Sprintf("%s serverPQ:%v clientPQ:%v serverTLS12:%v clientTLS12:%v", scheme.Name(),
+			serverPQ, clientPQ, serverTLS12, clientTLS12), func(t *testing.T) {
+			testHybridKEX(t, scheme, clientPQ, serverPQ, clientTLS12, serverTLS12)
 		})
 	}
 	for _, scheme := range []kem.Scheme{
 		hybrid.Kyber512X25519(),
 		hybrid.Kyber768X25519(),
 	} {
-		run(scheme, true, true)
-		run(scheme, true, false)
-		run(scheme, false, true)
+		run(scheme, true, true, false, false)
+		run(scheme, true, false, false, false)
+		run(scheme, false, true, false, false)
+		run(scheme, true, true, true, false)
+		run(scheme, true, true, false, true)
+		run(scheme, true, true, true, true)
 	}
 }
