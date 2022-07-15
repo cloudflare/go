@@ -55,7 +55,7 @@ func clientKeySharePrivateCurveID(ks clientKeySharePrivate) CurveID {
 		if ret == invalidCurveID {
 			panic("cfkem: internal error: don't know CurveID for this KEM")
 		}
-        return ret
+		return ret
 	case ecdheParameters:
 		return v.CurveID()
 	default:
