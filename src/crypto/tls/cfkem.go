@@ -1,3 +1,6 @@
+// Copyright 2022 Cloudflare, Inc. All rights reserved. Use of this source code
+// is governed by a BSD-style license that can be found in the LICENSE file.
+//
 // Glue to add Circl's (post-quantum) hybrid KEMs to quic-go.
 //
 // To enable set CurvePreferences with the desired scheme as the first element:
