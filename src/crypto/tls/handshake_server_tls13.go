@@ -285,13 +285,9 @@ GroupSelection:
 		return errors.New("tls: CurvePreferences includes unsupported curve")
 	}
 	if kem := curveIdToCirclScheme(selectedGroup); kem != nil {
-		ct, ss, internalErr, err := encapsulateForKem(kem, c.config.rand(), clientKeyShare.data)
+		ct, ss, alert, err := encapsulateForKem(kem, c.config.rand(), clientKeyShare.data)
 		if err != nil {
-			if internalErr {
-				c.sendAlert(alertInternalError)
-			} else {
-				c.sendAlert(alertIllegalParameter)
-			}
+			c.sendAlert(alert)
 			return fmt.Errorf("%s encap: %w", kem.Name(), err)
 		}
 		hs.hello.serverShare = keyShare{group: selectedGroup, data: ct}

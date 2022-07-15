@@ -564,12 +564,12 @@ func (hs *clientHandshakeStateTLS13) establishHandshakeKeys() error {
 		var err error
 		sharedKey, err = sk.Scheme().Decapsulate(sk, hs.serverHello.serverShare.data)
 		if err != nil {
-			c.sendAlert(alertInternalError)
+			c.sendAlert(alertIllegalParameter)
 			return fmt.Errorf("%s decaps: %w", sk.Scheme().Name(), err)
 		}
 	} else {
-		c.sendAlert(alertInternalError)
-		return fmt.Errorf("tls: failed to establish handshake keys")
+		c.sendAlert(alertIllegalParameter)
+		return fmt.Errorf("tls: invalid server key share")
 	}
 
 	earlySecret := hs.earlySecret
