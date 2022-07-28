@@ -12,7 +12,7 @@
 //          [...]
 //
 //   config.CurvePreferences = []tls.CurveID{
-//      hybrid.Kyber512X25519().(tls.TLSScheme).TLSCurveID(),
+//      hybrid.X25519Kyber512Draft00().(tls.TLSScheme).TLSCurveID(),
 //      tls.X25519,
 //      tls.P256,
 //   }
@@ -31,17 +31,17 @@ import (
 type clientKeySharePrivate interface{}
 
 var (
-	Kyber512X25519 = CurveID(0xfe30)
-	Kyber768X25519 = CurveID(0xfe31)
-	invalidCurveID = CurveID(0)
+	X25519Kyber512Draft00 = CurveID(0xfe30)
+	X25519Kyber768Draft00 = CurveID(0xfe31)
+	invalidCurveID        = CurveID(0)
 )
 
 func kemSchemeKeyToCurveID(s kem.Scheme) CurveID {
 	switch s.Name() {
 	case "Kyber512-X25519":
-		return Kyber512X25519
+		return X25519Kyber512Draft00
 	case "Kyber768-X25519":
-		return Kyber768X25519
+		return X25519Kyber768Draft00
 	default:
 		return invalidCurveID
 	}
@@ -66,9 +66,9 @@ func clientKeySharePrivateCurveID(ks clientKeySharePrivate) CurveID {
 // Returns scheme by CurveID if supported by Circl
 func curveIdToCirclScheme(id CurveID) kem.Scheme {
 	switch id {
-	case Kyber512X25519:
+	case X25519Kyber512Draft00:
 		return hybrid.Kyber512X25519()
-	case Kyber768X25519:
+	case X25519Kyber768Draft00:
 		return hybrid.Kyber768X25519()
 	}
 	return nil
