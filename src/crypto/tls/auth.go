@@ -259,72 +259,26 @@ func signatureSchemesForCertificate(version uint16, cert *Certificate) []Signatu
 	return sigAlgs
 }
 
-// signatureSchemeForDelegatedCredential returns the list of supported
-// SignatureSchemes for a given delegated credential, based on the public
-// key, and optionally filtered by its explicit
-// SupportedSignatureAlgorithmsDC.
-//
-// This function must be kept in sync with supportedSignatureAlgorithmsDC.
-func signatureSchemeForDelegatedCredential(version uint16, dc *DelegatedCredential) []SignatureScheme {
-	pub := dc.cred.publicKey
-
-	var sigAlgs []SignatureScheme
-	switch pub.(type) {
-	case *ecdsa.PublicKey:
-		pk, ok := pub.(*ecdsa.PublicKey)
-		if !ok {
-			return nil
-		}
-		switch pk.Curve {
-		case elliptic.P256():
-			sigAlgs = []SignatureScheme{ECDSAWithP256AndSHA256}
-		case elliptic.P384():
-			sigAlgs = []SignatureScheme{ECDSAWithP384AndSHA384}
-		case elliptic.P521():
-			sigAlgs = []SignatureScheme{ECDSAWithP521AndSHA512}
-		default:
-			return nil
-		}
-	case ed25519.PublicKey:
-		sigAlgs = []SignatureScheme{Ed25519}
-	case circlSign.PublicKey:
-		pk, ok := pub.(circlSign.PublicKey)
-		if !ok {
-			return nil
-		}
-		scheme := pk.Scheme()
-		tlsScheme, ok := scheme.(circlPki.TLSScheme)
-		if !ok {
-			return nil
-		}
-		sigAlgs = []SignatureScheme{SignatureScheme(tlsScheme.TLSIdentifier())}
-	default:
-		return nil
-	}
-
-	return sigAlgs
-}
-
 // selectSignatureSchemeDC picks a SignatureScheme from the peer's preference list
 // that works with the selected delegated credential. It's only called for protocol
 // versions that support delegated credential, so TLS 1.3.
-func selectSignatureSchemeDC(vers uint16, dc *DelegatedCredential, peerAlgs []SignatureScheme) (SignatureScheme, error) {
+func selectSignatureSchemeDC(vers uint16, dc *DelegatedCredential, peerAlgs []SignatureScheme, peerAlgsDC []SignatureScheme) (SignatureScheme, error) {
 	if vers != VersionTLS13 {
 		return 0, errors.New("unsupported TLS version for dc")
 	}
 
-	supportedAlgs := signatureSchemeForDelegatedCredential(vers, dc)
-	if len(supportedAlgs) == 0 {
-		return 0, errors.New("unsupported scheme for dc")
+	if !isSupportedSignatureAlgorithm(dc.algorithm, peerAlgs) {
+		return undefinedSignatureScheme, errors.New("tls: peer doesn't support the delegated credential's signature")
 	}
+
 	// Pick signature scheme in the peer's preference order, as our
 	// preference order is not configurable.
-	for _, preferredAlg := range peerAlgs {
-		if isSupportedSignatureAlgorithm(preferredAlg, supportedAlgs) {
+	for _, preferredAlg := range peerAlgsDC {
+		if preferredAlg == dc.cred.expCertVerfAlgo {
 			return preferredAlg, nil
 		}
 	}
-	return 0, errors.New("tls: peer doesn't support any of the delegated credential's signature algorithms")
+	return 0, errors.New("tls: peer doesn't support the delegated credential's signature algorithm")
 }
 
 // selectSignatureScheme picks a SignatureScheme from the peer's preference list
