@@ -60,7 +60,7 @@ func (hs *clientHandshakeStateTLS13) processDelegatedCredentialFromServer(rawDC 
 			return errors.New("tls: got Delegated Credential extension without indication")
 		}
 
-		dc, err = unmarshalDelegatedCredential(rawDC)
+		dc, err = UnmarshalDelegatedCredential(rawDC)
 		if err != nil {
 			c.sendAlert(alertDecodeError)
 			return fmt.Errorf("tls: Delegated Credential: %s", err)
@@ -69,6 +69,10 @@ func (hs *clientHandshakeStateTLS13) processDelegatedCredentialFromServer(rawDC 
 		if !isSupportedSignatureAlgorithm(dc.cred.expCertVerfAlgo, supportedSignatureAlgorithmsDC) {
 			c.sendAlert(alertIllegalParameter)
 			return errors.New("tls: Delegated Credential used with invalid signature algorithm")
+		}
+		if !isSupportedSignatureAlgorithm(dc.algorithm, c.config.supportedSignatureAlgorithms()) {
+			c.sendAlert(alertIllegalParameter)
+			return errors.New("tls: Delegated Credential signed with unsupported signature algorithm")
 		}
 	}
 
@@ -826,26 +830,21 @@ func certificateRequestInfo(certReq *certificateRequestMsgTLS13, vers uint16, ct
 // cannot be used for the current connection.
 func getClientDelegatedCredential(cri *CertificateRequestInfo, cert *Certificate) (*DelegatedCredentialPair, error) {
 	if len(cert.DelegatedCredentials) == 0 {
-		return nil, errors.New("No Delegated Credential found.")
-	}
-
-	if len(cert.DelegatedCredentials) == 1 {
-		// There's only one choice, so no point doing any work.
-		return &cert.DelegatedCredentials[0], nil
+		return nil, errors.New("no Delegated Credential found")
 	}
 
 	for _, dcPair := range cert.DelegatedCredentials {
 		// If the client sent the signature_algorithms in the DC extension, ensure it supports
 		// schemes we can use with this delegated credential.
 		if len(cri.SignatureSchemesDC) > 0 {
-			if _, err := selectSignatureSchemeDC(VersionTLS13, dcPair.DC, cri.SignatureSchemesDC); err == nil {
+			if _, err := selectSignatureSchemeDC(VersionTLS13, dcPair.DC, cri.SignatureSchemes, cri.SignatureSchemesDC); err == nil {
 				return &dcPair, nil
 			}
 		}
 	}
 
 	// No delegated credential can be returned.
-	return nil, errors.New("No valid Delegated Credential found.")
+	return nil, errors.New("no valid Delegated Credential found")
 }
 
 func (hs *clientHandshakeStateTLS13) sendClientCertificate() error {
@@ -864,11 +863,12 @@ func (hs *clientHandshakeStateTLS13) sendClientCertificate() error {
 
 	var dcPair *DelegatedCredentialPair
 	if hs.certReq.supportDelegatedCredential && len(hs.certReq.supportedSignatureAlgorithmsDC) > 0 {
+		// getClientDelegatedCredential selects a delegated credential that the server has advertised support for, if possible.
 		if delegatedCredentialPair, err := getClientDelegatedCredential(cri, cert); err == nil {
 			if delegatedCredentialPair.DC != nil && delegatedCredentialPair.PrivateKey != nil {
 				var err error
 				// Even if the Delegated Credential has already been marshalled, be sure it is the correct one.
-				if delegatedCredentialPair.DC.raw, err = delegatedCredentialPair.DC.marshal(); err == nil {
+				if delegatedCredentialPair.DC.raw, err = delegatedCredentialPair.DC.Marshal(); err == nil {
 					dcPair = delegatedCredentialPair
 					cert.DelegatedCredential = dcPair.DC.raw
 				}
@@ -910,12 +910,10 @@ func (hs *clientHandshakeStateTLS13) sendClientCertificate() error {
 
 	if certMsg.delegatedCredential {
 		suppSigAlgo = hs.certReq.supportedSignatureAlgorithmsDC
-		sigAlgorithm, err = selectSignatureSchemeDC(c.vers, dcPair.DC, suppSigAlgo)
-		if err != nil {
-			// getDelegatedCredential returned a delegated credential incompatible with the
-			// CertificateRequestInfo supported signature algorithms.
+		if dcPair == nil || dcPair.DC == nil {
 			cert.DelegatedCredential = nil
 		} else {
+			sigAlgorithm = dcPair.DC.cred.expCertVerfAlgo
 			cert.PrivateKey = dcPair.PrivateKey
 		}
 	}

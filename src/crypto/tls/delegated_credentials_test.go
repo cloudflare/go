@@ -385,12 +385,12 @@ func TestDelegatedCredentialMarshal(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		ser, err := delegatedCred.marshal()
+		ser, err := delegatedCred.Marshal()
 		if err != nil {
 			t.Error(err)
 		}
 
-		delegatedCred2, err := unmarshalDelegatedCredential(ser)
+		delegatedCred2, err := UnmarshalDelegatedCredential(ser)
 		if err != nil {
 			t.Error(err)
 		}
@@ -466,6 +466,12 @@ func testServerGetCertificate(ch *ClientHelloInfo) (*Certificate, error) {
 
 }
 
+// Used when the server doesn't support DCs.
+// This function always returns a non-DC cert.
+func testServerGetCertificateNoDC(ch *ClientHelloInfo) (*Certificate, error) {
+	return dcTestCerts["no dc"], nil
+}
+
 // Checks that the client suppports a version >= 1.3 and accepts Delegated
 // Credentials. If so, it returns the delegation certificate; otherwise it
 // returns a non-Delegated certificate.
@@ -507,8 +513,8 @@ func testConnWithDC(t *testing.T, clientMsg, serverMsg string, clientConfig, ser
 		}
 		serverCh <- server
 	}()
-
 	client, err := Dial("tcp", ln.Addr().String(), clientConfig)
+
 	if err != nil {
 		return false, err
 	}
@@ -552,20 +558,22 @@ func testConnWithDC(t *testing.T, clientMsg, serverMsg string, clientConfig, ser
 func TestDCHandshakeServerAuth(t *testing.T) {
 	serverMsg := "hello, client"
 	clientMsg := "hello, server"
-
+	initDCTest()
 	clientConfig := dcTestConfig.Clone()
 	serverConfig := dcTestConfig.Clone()
-	clientConfig.InsecureSkipVerify = true
 
 	for i, test := range dcServerTests {
 		clientConfig.SupportDelegatedCredential = test.clientDCSupport
-
-		initDCTest()
 		for dcCount = 0; dcCount < len(dcTestDCSignatureScheme); dcCount++ {
-			serverConfig.GetCertificate = testServerGetCertificate
+			if test.serverMaxVers < VersionTLS13 {
+				t.Logf("Server doesn't support DCs, not offering. test %d", i)
+				serverConfig.GetCertificate = testServerGetCertificateNoDC
+			} else {
+				serverConfig.GetCertificate = testServerGetCertificate
+			}
+
 			clientConfig.MaxVersion = test.clientMaxVers
 			serverConfig.MaxVersion = test.serverMaxVers
-
 			usedDC, err := testConnWithDC(t, clientMsg, serverMsg, clientConfig, serverConfig, "client")
 
 			if err != nil && test.expectSuccess {
@@ -586,6 +594,7 @@ func TestDCHandshakeClientAuth(t *testing.T) {
 	clientMsg := "hello, server"
 	serverMsg := "hello, client"
 
+	initDCTest()
 	serverConfig := dcTestConfig.Clone()
 	serverConfig.ClientAuth = RequestClientCert
 	serverConfig.GetCertificate = testServerGetCertificate
@@ -595,7 +604,6 @@ func TestDCHandshakeClientAuth(t *testing.T) {
 	for j, test := range dcClientTests {
 		serverConfig.SupportDelegatedCredential = test.serverDCSupport
 
-		initDCTest()
 		for dcCount = 0; dcCount < len(dcTestDCSignatureScheme); dcCount++ {
 			serverConfig.MaxVersion = test.serverMaxVers
 			clientConfig.MaxVersion = test.clientMaxVers
@@ -620,6 +628,7 @@ func TestDCHandshakeClientAndServerAuth(t *testing.T) {
 	clientMsg := "hello, server"
 	serverMsg := "hello, client"
 
+	initDCTest()
 	serverConfig := dcTestConfig.Clone()
 	serverConfig.ClientAuth = RequestClientCert
 	serverConfig.GetCertificate = testServerGetCertificate
@@ -631,8 +640,6 @@ func TestDCHandshakeClientAndServerAuth(t *testing.T) {
 
 	serverConfig.MaxVersion = VersionTLS13
 	clientConfig.MaxVersion = VersionTLS13
-
-	initDCTest()
 
 	usedDC, err := testConnWithDC(t, clientMsg, serverMsg, clientConfig, serverConfig, "both")
 
