@@ -571,7 +571,9 @@ func (hs *clientHandshakeStateTLS13) establishHandshakeKeys() error {
 			c.sendAlert(alertIllegalParameter)
 			return fmt.Errorf("%s decaps: %w", sk.Scheme().Name(), err)
 		}
-	} else {
+	}
+
+	if sharedKey == nil {
 		c.sendAlert(alertIllegalParameter)
 		return fmt.Errorf("tls: invalid server key share")
 	}
