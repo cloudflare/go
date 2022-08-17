@@ -21,6 +21,7 @@ import (
 	"crypto/ed25519"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/rsa"
 	"crypto/x509"
 	"encoding/binary"
 	"errors"
@@ -38,6 +39,10 @@ const (
 	dcMaxTTL          = time.Duration(dcMaxTTLSeconds * time.Second)
 	dcMaxPubLen       = (1 << 24) - 1 // Bytes
 	dcMaxSignatureLen = (1 << 16) - 1 // Bytes
+)
+
+const (
+	undefinedSignatureScheme SignatureScheme = 0x0000
 )
 
 var extensionDelegatedCredential = []int{1, 3, 6, 1, 4, 1, 44363, 44}
@@ -61,7 +66,6 @@ func isValidForDelegation(cert *x509.Certificate) bool {
 			return true
 		}
 	}
-
 	return false
 }
 
@@ -133,6 +137,7 @@ func (cred *credential) marshalPublicKeyInfo() ([]byte, error) {
 		}
 
 		return rawPub, nil
+
 	default:
 		return nil, fmt.Errorf("tls: unsupported signature scheme: 0x%04x", cred.expCertVerfAlgo)
 	}
@@ -228,6 +233,12 @@ func getHash(scheme SignatureScheme) crypto.Hash {
 		return crypto.SHA512
 	case Ed25519:
 		return directSigning
+	case PKCS1WithSHA256, PSSWithSHA256:
+		return crypto.SHA256
+	case PSSWithSHA384:
+		return crypto.SHA384
+	case PSSWithSHA512:
+		return crypto.SHA512
 	default:
 		return 0 //Unknown hash function
 	}
@@ -291,28 +302,29 @@ func prepareDelegationSignatureInput(hash crypto.Hash, cred *credential, dCert [
 // Extract the algorithm used to sign the Delegated Credential from the
 // end-entity (leaf) certificate.
 func getSignatureAlgorithm(cert *Certificate) (SignatureScheme, error) {
-	var sigAlgo SignatureScheme
 	switch sk := cert.PrivateKey.(type) {
 	case *ecdsa.PrivateKey:
 		pk := sk.Public().(*ecdsa.PublicKey)
 		curveName := pk.Curve.Params().Name
-		certAlg := cert.Leaf.SignatureAlgorithm
-		if certAlg == x509.ECDSAWithSHA256 && curveName == "P-256" {
-			sigAlgo = ECDSAWithP256AndSHA256
-		} else if certAlg == x509.ECDSAWithSHA384 && curveName == "P-384" {
-			sigAlgo = ECDSAWithP384AndSHA384
-		} else if certAlg == x509.ECDSAWithSHA512 && curveName == "P-521" {
-			sigAlgo = ECDSAWithP521AndSHA512
+		certAlg := cert.Leaf.PublicKeyAlgorithm
+		if certAlg == x509.ECDSA && curveName == "P-256" {
+			return ECDSAWithP256AndSHA256, nil
+		} else if certAlg == x509.ECDSA && curveName == "P-384" {
+			return ECDSAWithP384AndSHA384, nil
+		} else if certAlg == x509.ECDSA && curveName == "P-521" {
+			return ECDSAWithP521AndSHA512, nil
 		} else {
-			return SignatureScheme(0x00), fmt.Errorf("using curve %s for %s is not supported", curveName, cert.Leaf.SignatureAlgorithm)
+			return undefinedSignatureScheme, fmt.Errorf("using curve %s for %s is not supported", curveName, cert.Leaf.SignatureAlgorithm)
 		}
 	case ed25519.PrivateKey:
-		sigAlgo = Ed25519
+		return Ed25519, nil
+	case *rsa.PrivateKey:
+		// If the certificate has the RSAEncryption OID there are a number of valid signature schemes that may sign the DC.
+		// In the absence of better information, we make a reasonable choice.
+		return PSSWithSHA256, nil
 	default:
-		return SignatureScheme(0x00), fmt.Errorf("tls: unsupported algorithm for Delegated Credential")
+		return undefinedSignatureScheme, fmt.Errorf("tls: unsupported algorithm for signing Delegated Credential")
 	}
-
-	return sigAlgo, nil
 }
 
 // NewDelegatedCredential creates a new Delegated Credential using 'cert' for
@@ -365,7 +377,7 @@ func NewDelegatedCredential(cert *Certificate, pubAlgo SignatureScheme, validTim
 			return nil, nil, err
 		}
 	default:
-		return nil, nil, fmt.Errorf("tls: unsupported algorithm for Delegated Credential: %T", pubAlgo)
+		return nil, nil, fmt.Errorf("tls: unsupported algorithm for Delegated Credential: %s", pubAlgo)
 	}
 
 	// Prepare the credential for signing
@@ -387,6 +399,13 @@ func NewDelegatedCredential(cert *Certificate, pubAlgo SignatureScheme, validTim
 	case ed25519.PrivateKey:
 		opts := crypto.SignerOpts(hash)
 		sig, err = sk.Sign(rand.Reader, values, opts)
+		if err != nil {
+			return nil, nil, err
+		}
+	case *rsa.PrivateKey:
+		opts := &rsa.PSSOptions{SaltLength: rsa.PSSSaltLengthEqualsHash,
+			Hash: hash}
+		sig, err = rsa.SignPSS(rand.Reader, sk, hash, values, opts)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -448,16 +467,28 @@ func (dc *DelegatedCredential) Validate(cert *x509.Certificate, isClient bool, n
 		}
 
 		return ed25519.Verify(pk, in, dc.signature)
+	case PSSWithSHA256,
+		PSSWithSHA384,
+		PSSWithSHA512:
+		pk, ok := cert.PublicKey.(*rsa.PublicKey)
+		if !ok {
+			return false
+		}
+		hash := getHash(dc.algorithm)
+		return rsa.VerifyPSS(pk, hash, in, dc.signature, nil) == nil
 	default:
 		return false
 	}
 }
 
-// marshal encodes a DelegatedCredential structure. It also sets dc.Raw to that
+// Marshal encodes a DelegatedCredential structure. It also sets dc.Raw to that
 // encoding.
-func (dc *DelegatedCredential) marshal() ([]byte, error) {
+func (dc *DelegatedCredential) Marshal() ([]byte, error) {
 	if len(dc.signature) > dcMaxSignatureLen {
 		return nil, errors.New("tls: delegated credential is not valid")
+	}
+	if len(dc.signature) == 0 {
+		return nil, errors.New("tls: delegated credential has no signature")
 	}
 
 	raw, err := dc.cred.marshal()
@@ -475,8 +506,8 @@ func (dc *DelegatedCredential) marshal() ([]byte, error) {
 	return dc.raw, nil
 }
 
-// unmarshalDelegatedCredential decodes a DelegatedCredential structure.
-func unmarshalDelegatedCredential(raw []byte) (*DelegatedCredential, error) {
+// UnmarshalDelegatedCredential decodes a DelegatedCredential structure.
+func UnmarshalDelegatedCredential(raw []byte) (*DelegatedCredential, error) {
 	rawCredentialLen, err := getCredentialLen(raw)
 	if err != nil {
 		return nil, err
