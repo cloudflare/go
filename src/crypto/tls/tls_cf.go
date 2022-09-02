@@ -219,14 +219,18 @@ func (e CFEventECHPublicNameMismatch) Name() string {
 	return "ech public name does not match outer sni"
 }
 
-// CFEventTLS13NegotiatedKEX is emitted when a key agreement mechanism has been
-// established.
-type CFEventTLS13NegotiatedKEX struct {
+// For backwards compatibility.
+type CFEventTLS13NegotiatedKEX = CFEventTLSNegotiatedNamedKEX
+
+// CFEventTLSNegotiatedNamedKEX is emitted when a key agreement mechanism has been
+// established that uses a named group. This includes all key agreements
+// in TLSv1.3, but excludes RSA and DH in TLS 1.2 and earlier.
+type CFEventTLSNegotiatedNamedKEX struct {
 	KEX CurveID
 }
 
-func (e CFEventTLS13NegotiatedKEX) Name() string {
-	return "CFEventTLS13NegotiatedKEX"
+func (e CFEventTLSNegotiatedNamedKEX) Name() string {
+	return "CFEventTLSNegotiatedNamedKEX"
 }
 
 // CFEventTLS13HRR is emitted when a HRR is sent or received
