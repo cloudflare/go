@@ -582,6 +582,12 @@ func (hs *clientHandshakeState) doFullHandshake() error {
 			return err
 		}
 
+		if eccKex, ok := keyAgreement.(*ecdheKeyAgreement); ok {
+			c.handleCFEvent(CFEventTLSNegotiatedNamedKEX{
+				KEX: eccKex.params.CurveID(),
+			})
+		}
+
 		msg, err = c.readHandshake()
 		if err != nil {
 			return err

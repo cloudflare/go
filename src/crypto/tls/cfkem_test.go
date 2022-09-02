@@ -31,7 +31,7 @@ func testHybridKEX(t *testing.T, scheme kem.Scheme, clientPQ, serverPQ,
 	}
 	clientConfig.CFEventHandler = func(ev CFEvent) {
 		switch e := ev.(type) {
-		case CFEventTLS13NegotiatedKEX:
+		case CFEventTLSNegotiatedNamedKEX:
 			clientSelectedKEX = &e.KEX
 		case CFEventTLS13HRR:
 			retry = true
@@ -75,31 +75,25 @@ func testHybridKEX(t *testing.T, scheme kem.Scheme, clientPQ, serverPQ,
 	var expectedKEX CurveID
 	var expectedRetry bool
 
-	if clientPQ && serverPQ {
+	if clientPQ && serverPQ && !clientTLS12 && !serverTLS12 {
 		expectedKEX = kemSchemeKeyToCurveID(scheme)
 	} else {
 		expectedKEX = X25519
 	}
-	if clientPQ && !serverPQ {
+	if !clientTLS12 && clientPQ && !serverPQ {
 		expectedRetry = true
 	}
 
-	if !serverTLS12 && !clientTLS12 {
-		if clientSelectedKEX == nil {
-			t.Error("No TLS 1.3 KEX happened?")
-		}
+	if clientSelectedKEX == nil {
+		t.Error("No KEX happened?")
+	}
 
-		if *clientSelectedKEX != expectedKEX {
-			t.Errorf("failed to negotiate: expected %d, got %d",
-				expectedKEX, *clientSelectedKEX)
-		}
-		if expectedRetry != retry {
-			t.Errorf("Expected retry=%v, got retry=%v", expectedRetry, retry)
-		}
-	} else {
-		if clientSelectedKEX != nil {
-			t.Error("TLS 1.3 KEX happened?")
-		}
+	if *clientSelectedKEX != expectedKEX {
+		t.Errorf("failed to negotiate: expected %d, got %d",
+			expectedKEX, *clientSelectedKEX)
+	}
+	if expectedRetry != retry {
+		t.Errorf("Expected retry=%v, got retry=%v", expectedRetry, retry)
 	}
 }
 

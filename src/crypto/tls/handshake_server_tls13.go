@@ -308,7 +308,7 @@ GroupSelection:
 	}
 
 	c.serverName = hs.clientHello.serverName
-	c.handleCFEvent(CFEventTLS13NegotiatedKEX{
+	c.handleCFEvent(CFEventTLSNegotiatedNamedKEX{
 		KEX: selectedGroup,
 	})
 
