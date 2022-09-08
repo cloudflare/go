@@ -33,6 +33,7 @@ type serverHandshakeStateTLS13 struct {
 	suite           *cipherSuiteTLS13
 	cert            *Certificate
 	sigAlg          SignatureScheme
+	selectedGroup   CurveID
 	earlySecret     []byte
 	sharedKey       []byte
 	handshakeSecret []byte
@@ -283,28 +284,39 @@ GroupSelection:
 		clientKeyShare = &hs.clientHello.keyShares[0]
 	}
 
-	if _, ok := curveForCurveID(selectedGroup); !ok {
+	if _, ok := curveForCurveID(selectedGroup); selectedGroup != X25519 && curveIdToCirclScheme(selectedGroup) == nil && !ok {
 		c.sendAlert(alertInternalError)
 		return errors.New("tls: CurvePreferences includes unsupported curve")
 	}
-	key, err := generateECDHEKey(c.config.rand(), selectedGroup)
-	if err != nil {
-		c.sendAlert(alertInternalError)
-		return err
+	if kem := curveIdToCirclScheme(selectedGroup); kem != nil {
+		ct, ss, alert, err := encapsulateForKem(kem, c.config.rand(), clientKeyShare.data)
+		if err != nil {
+			c.sendAlert(alert)
+			return fmt.Errorf("%s encap: %w", kem.Name(), err)
+		}
+		hs.hello.serverShare = keyShare{group: selectedGroup, data: ct}
+		hs.sharedKey = ss
+	} else {
+		key, err := generateECDHEKey(c.config.rand(), selectedGroup)
+		if err != nil {
+			c.sendAlert(alertInternalError)
+			return err
+		}
+		hs.hello.serverShare = keyShare{group: selectedGroup, data: key.PublicKey().Bytes()}
+		peerKey, err := key.Curve().NewPublicKey(clientKeyShare.data)
+		if err == nil {
+			hs.sharedKey, _ = key.ECDH(peerKey)
+		}
 	}
-	hs.hello.serverShare = keyShare{group: selectedGroup, data: key.PublicKey().Bytes()}
-	peerKey, err := key.Curve().NewPublicKey(clientKeyShare.data)
-	if err != nil {
-		c.sendAlert(alertIllegalParameter)
-		return errors.New("tls: invalid client key share")
-	}
-	hs.sharedKey, err = key.ECDH(peerKey)
-	if err != nil {
+	if hs.sharedKey == nil {
 		c.sendAlert(alertIllegalParameter)
 		return errors.New("tls: invalid client key share")
 	}
 
 	c.serverName = hs.clientHello.serverName
+	c.handleCFEvent(CFEventTLSNegotiatedNamedKEX{
+		KEX: selectedGroup,
+	})
 
 	hs.hsTimings.ProcessClientHello = hs.hsTimings.elapsedTime()
 
@@ -535,6 +547,8 @@ func (hs *serverHandshakeStateTLS13) sendDummyChangeCipherSpec() error {
 
 func (hs *serverHandshakeStateTLS13) doHelloRetryRequest(selectedGroup CurveID) error {
 	c := hs.c
+
+	c.handleCFEvent(CFEventTLS13HRR{})
 
 	// The first ClientHello gets double-hashed into the transcript upon a
 	// HelloRetryRequest. See RFC 8446, Section 4.4.1.
