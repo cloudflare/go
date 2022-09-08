@@ -634,6 +634,12 @@ func (hs *serverHandshakeState) doFullHandshake() error {
 		c.sendAlert(alertHandshakeFailure)
 		return err
 	}
+	if eccKex, ok := keyAgreement.(*ecdheKeyAgreement); ok {
+		curveId, _ := curveIDForCurve(eccKex.key.Curve())
+		c.handleCFEvent(CFEventTLSNegotiatedNamedKEX{
+			KEX: curveId,
+		})
+	}
 	hs.masterSecret = masterFromPreMasterSecret(c.vers, hs.suite, preMasterSecret, hs.clientHello.random, hs.hello.random)
 	if err := c.config.writeKeyLog(keyLogLabelTLS12, hs.clientHello.random, hs.masterSecret); err != nil {
 		c.sendAlert(alertInternalError)
