@@ -675,6 +675,15 @@ func (hs *serverHandshakeState) doFullHandshake() error {
 		c.sendAlert(alertHandshakeFailure)
 		return err
 	}
+	if eccKex, ok := keyAgreement.(*ecdheKeyAgreement); ok {
+		curveId, ok := curveIDForCurve(eccKex.key.Curve())
+		if !ok {
+			panic("internal error: unknown curve")
+		}
+		c.handleCFEvent(CFEventTLSNegotiatedNamedKEX{
+			KEX: curveId,
+		})
+	}
 	if hs.hello.extendedMasterSecret {
 		c.extMasterSecret = true
 		hs.masterSecret = extMasterFromPreMasterSecret(c.vers, hs.suite, preMasterSecret,

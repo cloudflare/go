@@ -96,3 +96,24 @@ func createTLS13ServerHandshakeTimingInfo(timerFunc func() time.Time) CFEventTLS
 		start: timer(),
 	}
 }
+
+// For backwards compatibility.
+type CFEventTLS13NegotiatedKEX = CFEventTLSNegotiatedNamedKEX
+
+// CFEventTLSNegotiatedNamedKEX is emitted when a key agreement mechanism has been
+// established that uses a named group. This includes all key agreements
+// in TLSv1.3, but excludes RSA and DH in TLS 1.2 and earlier.
+type CFEventTLSNegotiatedNamedKEX struct {
+	KEX CurveID
+}
+
+func (e CFEventTLSNegotiatedNamedKEX) Name() string {
+	return "CFEventTLSNegotiatedNamedKEX"
+}
+
+// CFEventTLS13HRR is emitted when a HRR is sent or received
+type CFEventTLS13HRR struct{}
+
+func (e CFEventTLS13HRR) Name() string {
+	return "CFEventTLS13HRR"
+}
