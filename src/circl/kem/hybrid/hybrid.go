@@ -33,7 +33,6 @@ package hybrid
 import (
 	"errors"
 
-	"circl/hpke"
 	"circl/internal/sha3"
 	"circl/kem"
 	"circl/kem/kyber/kyber1024"
@@ -46,28 +45,37 @@ var ErrUninitialized = errors.New("public or private key not initialized")
 // Returns the hybrid KEM of Kyber512 and X25519.
 func Kyber512X25519() kem.Scheme { return kyber512X }
 
+// Returns the hybrid KEM of Kyber768 and X25519.
+func Kyber768X25519() kem.Scheme { return kyber768X }
+
 // Returns the hybrid KEM of Kyber768 and X448.
-func Kyber768X448() kem.Scheme { return kyber768X }
+func Kyber768X448() kem.Scheme { return kyber768X4 }
 
 // Returns the hybrid KEM of Kyber1024 and X448.
 func Kyber1024X448() kem.Scheme { return kyber1024X }
 
 var kyber512X kem.Scheme = &scheme{
 	"Kyber512-X25519",
+	x25519Kem,
 	kyber512.Scheme(),
-	hpke.KEM_X25519_HKDF_SHA256.Scheme(),
 }
 
 var kyber768X kem.Scheme = &scheme{
-	"Kyber768-X448",
+	"Kyber768-X25519",
+	x25519Kem,
 	kyber768.Scheme(),
-	hpke.KEM_X448_HKDF_SHA512.Scheme(),
+}
+
+var kyber768X4 kem.Scheme = &scheme{
+	"Kyber768-X448",
+	x448Kem,
+	kyber768.Scheme(),
 }
 
 var kyber1024X kem.Scheme = &scheme{
 	"Kyber1024-X448",
+	x448Kem,
 	kyber1024.Scheme(),
-	hpke.KEM_X448_HKDF_SHA512.Scheme(),
 }
 
 // Public key of a hybrid KEM.
