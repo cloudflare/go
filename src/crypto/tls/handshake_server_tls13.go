@@ -731,16 +731,16 @@ func (hs *serverHandshakeStateTLS13) sendServerParameters() error {
 			c.sendAlert(alertInternalError)
 			return errors.New("tls: internal error: failed to clone hash")
 		}
-		chMarshalled, err := hs.clientHello.marshal()
+		clientHelloInnerMarshalled, err := hs.clientHello.marshal()
 		if err != nil {
-			return fmt.Errorf("tls: ech: clientHello.marshal(): %w", err)
+			return fmt.Errorf("tls: ech: hs.clientHello.marshal(): %w", err)
 		}
-		echAcceptConfTranscript.Write(chMarshalled)
-		hMarshalled, err := hs.hello.marshal()
+		echAcceptConfTranscript.Write(clientHelloInnerMarshalled)
+		serverHelloMarshalled, err := hs.hello.marshal()
 		if err != nil {
-			return fmt.Errorf("tls: ech: hello.marshal(): %w", err)
+			return fmt.Errorf("tls: ech: hs.hello.marshal(): %w", err)
 		}
-		echAcceptConfTranscript.Write(hMarshalled)
+		echAcceptConfTranscript.Write(serverHelloMarshalled)
 
 		echAcceptConf := hs.suite.expandLabel(
 			hs.suite.extract(hs.clientHello.random, nil),
