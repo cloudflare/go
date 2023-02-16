@@ -598,7 +598,11 @@ func (hs *clientHandshakeState) doFullHandshake() error {
 		}
 
 		if eccKex, ok := keyAgreement.(*ecdheKeyAgreement); ok {
-			curveId, _ := curveIDForCurve(eccKex.key.Curve())
+			curveId, ok := curveIDForCurve(eccKex.key.Curve())
+			if !ok {
+				panic("internal error: unknown curve")
+			}
+
 			c.handleCFEvent(CFEventTLSNegotiatedNamedKEX{
 				KEX: curveId,
 			})
