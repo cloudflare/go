@@ -144,7 +144,7 @@ func (c *Conn) readClientHello(ctx context.Context) (*clientHelloMsg, error) {
 	}
 
 	// NOTE(cjpatton): ECH usage is resolved before calling GetConfigForClient()
-	// or GetCertifciate(). Hence, it is not currently possible to reject ECH if
+	// or GetCertificate(). Hence, it is not currently possible to reject ECH if
 	// we don't recognize the inner SNI. This may or may not be desirable in the
 	// future.
 	clientHello, err = c.echAcceptOrReject(clientHello, false) // afterHRR == false

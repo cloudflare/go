@@ -579,7 +579,7 @@ func (hs *serverHandshakeStateTLS13) doHelloRetryRequest(selectedGroup CurveID) 
 
 		helloRetryRequest.ech = echAcceptConfHRRSignal
 		helloRetryRequest.raw = nil
-	} else if c.ech.greased {
+	} else if c.ech.status == echStatusFailure {
 		// draft-ietf-tls-esni-13, Section 7.1:
 		//
 		// If sending a HelloRetryRequest, the server MAY include an
@@ -786,7 +786,7 @@ func (hs *serverHandshakeStateTLS13) sendServerParameters() error {
 	encryptedExtensions.alpnProtocol = selectedProto
 	c.clientProtocol = selectedProto
 
-	if !c.ech.accepted && len(c.ech.retryConfigs) > 0 {
+	if c.ech.status == echStatusFailure && len(c.ech.retryConfigs) > 0 {
 		encryptedExtensions.ech = c.ech.retryConfigs
 	}
 

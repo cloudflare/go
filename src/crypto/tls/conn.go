@@ -8,7 +8,6 @@ package tls
 
 import (
 	"bytes"
-	"github.com/cloudflare/circl/hpke"
 	"context"
 	"crypto/cipher"
 	"crypto/subtle"
@@ -21,6 +20,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/cloudflare/circl/hpke"
 )
 
 // A Conn represents a secured connection.
@@ -128,12 +129,10 @@ type Conn struct {
 		opener hpke.Opener // The server's HPKE context
 
 		// The state shared by the client and server.
-		offered      bool   // Client offered ECH
-		greased      bool   // Client greased ECH
-		accepted     bool   // Server accepted ECH
-		retryConfigs []byte // The retry configurations
-		configId     uint8  // The ECH config id
-		maxNameLen   int    // maximum_name_len indicated by the ECH config
+		status       echStatus // Tracks validity of ECH extension.
+		retryConfigs []byte    // The retry configurations
+		configId     uint8     // The ECH config id
+		maxNameLen   int       // maximum_name_len indicated by the ECH config
 	}
 }
 
@@ -721,12 +720,6 @@ func (c *Conn) readRecordOrCCS(expectChangeCipherSpec bool) error {
 			return c.in.setErrorLocked(io.EOF)
 		}
 		if c.vers == VersionTLS13 {
-			if !c.isClient && c.ech.greased && alert(data[1]) == alertECHRequired {
-				// This condition indicates that the client intended to offer
-				// ECH, but did not use a known ECH config.
-				c.ech.offered = true
-				c.ech.greased = false
-			}
 			return c.in.setErrorLocked(&net.OpError{Op: "remote error", Err: alert(data[1])})
 		}
 		switch data[0] {
@@ -1401,26 +1394,78 @@ func (c *Conn) Close() error {
 	}
 
 	// Resolve ECH status.
-	if !c.isClient && c.config.MaxVersion < VersionTLS13 {
-		c.handleCFEvent(CFEventECHServerStatus(echStatusBypassed))
-	} else if !c.ech.offered {
-		if !c.ech.greased {
-			c.handleCFEvent(CFEventECHClientStatus(echStatusBypassed))
+	switch c.ech.status {
+	case echStatusAdvertised:
+		// TODO in case of TLS errors, we stick in this state.
+		fmt.Println("still stuck in echStatusAdvertised - was there a TLS error?")
+		//panic("unexpected state, handshake should have completed")
+	case echStatusAccepted:
+		if c.isClient {
+			c.handleCFEvent(CFEventECHClientStatus(echStatusInner))
+			c.handleCFEvent(CFEventECHServerStatus(echStatusInner))
 		} else {
-			c.handleCFEvent(CFEventECHClientStatus(echStatusOuter))
+			c.handleCFEvent(CFEventECHClientStatus(echStatusInner)) // why...?
+			c.handleCFEvent(CFEventECHServerStatus(echStatusInner))
 		}
-	} else {
-		c.handleCFEvent(CFEventECHClientStatus(echStatusInner))
-		if !c.ech.accepted {
+	case echStatusFailure:
+		if c.isClient {
+			// The client always uses the inner CH, but the
+			// handshake is expected to fail.
+			c.handleCFEvent(CFEventECHClientStatus(echStatusInner))
+			// TODO this surely needs to be done better...
 			if len(c.ech.retryConfigs) > 0 {
 				c.handleCFEvent(CFEventECHServerStatus(echStatusOuter))
 			} else {
 				c.handleCFEvent(CFEventECHServerStatus(echStatusBypassed))
 			}
 		} else {
-			c.handleCFEvent(CFEventECHServerStatus(echStatusInner))
+			c.handleCFEvent(CFEventECHClientStatus(echStatusInner)) // why...?
+			if len(c.ech.retryConfigs) > 0 {
+				c.handleCFEvent(CFEventECHServerStatus(echStatusOuter))
+			} else {
+				c.handleCFEvent(CFEventECHServerStatus(echStatusBypassed))
+			}
+		}
+	case echStatusGrease:
+		if c.isClient {
+			c.handleCFEvent(CFEventECHClientStatus(echStatusOuter))
+			//c.handleCFEvent(CFEventECHServerStatus(echStatusFailure))
+		} else {
+			panic("inconsistent state - status only valid for client")
+		}
+	case echStatusNone:
+		if c.isClient {
+			c.handleCFEvent(CFEventECHClientStatus(echStatusBypassed))
+			//c.handleCFEvent(CFEventECHServerStatus(echStatusBypassed))
+		} else {
+			c.handleCFEvent(CFEventECHClientStatus(echStatusBypassed)) // TODO why is this here?
+			//c.handleCFEvent(CFEventECHServerStatus(echStatusBypassed))
 		}
 	}
+	/*
+		if !c.isClient && c.config.MaxVersion < VersionTLS13 {
+			c.handleCFEvent(CFEventECHServerStatus(echStatusBypassed))
+		} else if !c.ech.offered {
+			// TODO move this inside the handshake. Maybe expose the outer
+			// SNI as well in case of rejection?
+			if !c.ech.greased {
+				c.handleCFEvent(CFEventECHClientStatus(echStatusBypassed))
+			} else {
+				c.handleCFEvent(CFEventECHClientStatus(echStatusOuter))
+			}
+		} else {
+			c.handleCFEvent(CFEventECHClientStatus(echStatusInner))
+			if !c.ech.accepted {
+				if len(c.ech.retryConfigs) > 0 {
+					c.handleCFEvent(CFEventECHServerStatus(echStatusOuter))
+				} else {
+					c.handleCFEvent(CFEventECHServerStatus(echStatusBypassed))
+				}
+			} else {
+				c.handleCFEvent(CFEventECHServerStatus(echStatusInner))
+			}
+		}
+	*/
 
 	return alertErr
 }
@@ -1577,8 +1622,8 @@ func (c *Conn) connectionStateLocked() ConnectionState {
 	}
 	state.SignedCertificateTimestamps = c.scts
 	state.OCSPResponse = c.ocspResponse
-	state.ECHAccepted = c.ech.accepted
-	state.ECHOffered = c.ech.offered || c.ech.greased
+	state.ECHAccepted = c.ech.status == echStatusAccepted
+	state.ECHOffered = c.ech.status != echStatusNone && c.ech.status != echStatusGrease
 	state.CFControl = c.config.CFControl
 	if !c.didResume && c.vers != VersionTLS13 {
 		if c.clientFinishedIsFirst {

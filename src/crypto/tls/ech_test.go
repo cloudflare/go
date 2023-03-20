@@ -245,8 +245,10 @@ var echTestCases = []echTestCase{
 		// The client sends dummy (i.e., "GREASEd") ECH. The server sends retry
 		// configs in case the client meant to offer ECH. The client does not
 		// signal rejection, so the server concludes ECH was not offered.
-		name:                    "success / bypassed: grease",
-		expectGrease:            true,
+		name:           "success / bypassed: grease",
+		expectOffered:  true, // TODO GREASE implies "offered" (extension present), not "offered" (valid ECH)
+		expectRejected: true, // TODO we expect GREASE to be rejected.
+		//expectGrease:            true, // TODO server won't try to differentiate ECH and failure
 		expectBackendServerName: true,
 		clientEnabled:           true,
 		clientNoConfigs:         true,

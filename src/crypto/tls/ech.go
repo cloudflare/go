@@ -4,10 +4,11 @@
 package tls
 
 import (
-	"github.com/cloudflare/circl/hpke"
 	"errors"
 	"fmt"
 	"io"
+
+	"github.com/cloudflare/circl/hpke"
 
 	"golang.org/x/crypto/cryptobyte"
 )
@@ -25,6 +26,16 @@ const (
 	// ClientHelloInner.
 	echClientHelloOuterVariant uint8 = 0
 	echClientHelloInnerVariant uint8 = 1
+)
+
+type echStatus int
+
+const (
+	echStatusNone       echStatus = iota // ECH extension was not sent by client.
+	echStatusAdvertised                  // ECH extension was sent by the client, real or GREASE.
+	echStatusAccepted                    // ECH extension from client could be decrypted.
+	echStatusFailure                     // ECH extension from client could not be decrypted, perhaps GREASE?
+	echStatusGrease                      // Client only: ECH GREASE extension was sent.
 )
 
 var (
@@ -60,8 +71,7 @@ func (c *Conn) echOfferOrGrease(helloBase *clientHelloMsg) (hello, helloInner *c
 		}
 
 		// GREASE ECH.
-		c.ech.offered = false
-		c.ech.greased = true
+		c.ech.status = echStatusGrease
 		helloBase.raw = nil
 		return helloBase, nil, nil
 	}
@@ -105,7 +115,7 @@ func (c *Conn) echOfferOrGrease(helloBase *clientHelloMsg) (hello, helloInner *c
 	}
 
 	// Offer ECH.
-	c.ech.offered = true
+	c.ech.status = echStatusAdvertised
 	helloInner.raw = nil
 	hello.raw = nil
 	return hello, helloInner, nil
@@ -204,12 +214,13 @@ func (c *Conn) echAcceptOrReject(hello *clientHelloMsg, afterHRR bool) (*clientH
 			// Continue as the backend server.
 			return hello, nil
 		case echClientHelloOuterVariant: // outer handshake
+			// Proceed with processing the ECH extension below.
 		default:
 			c.sendAlert(alertIllegalParameter)
 			return nil, errors.New("ech: inner handshake has non-empty payload")
 		}
 	} else {
-		if c.ech.offered {
+		if c.ech.status == echStatusAdvertised {
 			// This occurs if the server accepted prior to HRR, but the client
 			// failed to send the ECH extension in the second ClientHelloOuter. This
 			// would cause ClientHelloOuter to be used after ClientHelloInner, which
@@ -222,12 +233,16 @@ func (c *Conn) echAcceptOrReject(hello *clientHelloMsg, afterHRR bool) (*clientH
 		return hello, nil
 	}
 
-	if afterHRR && !c.ech.offered && !c.ech.greased {
+	// TODO how can we end up in this state after HRR?
+	if afterHRR && c.ech.status == echStatusNone {
 		// The client bypassed ECH prior to HRR, but not after. This could
 		// cause ClientHelloInner to be used after ClientHelloOuter, which is
 		// illegal.
 		c.sendAlert(alertIllegalParameter)
 		return nil, errors.New("ech: hrr: offer or grease after bypass")
+	} else if c.ech.status == echStatusNone {
+		// First time seeing this extension, remember it.
+		c.ech.status = echStatusAdvertised
 	}
 
 	// Parse ClientECH.
@@ -239,7 +254,7 @@ func (c *Conn) echAcceptOrReject(hello *clientHelloMsg, afterHRR bool) (*clientH
 
 	// Make sure that the HPKE suite and config id don't change across HRR and
 	// that the encapsulated key is not present after HRR.
-	if afterHRR && c.ech.offered {
+	if afterHRR && c.ech.status == echStatusAdvertised {
 		_, kdf, aead := c.ech.opener.Suite().Params()
 		if ech.handle.suite.kdfId != uint16(kdf) ||
 			ech.handle.suite.aeadId != uint16(aead) ||
@@ -299,10 +314,9 @@ func (c *Conn) echAcceptOrReject(hello *clientHelloMsg, afterHRR bool) (*clientH
 				return nil, fmt.Errorf("ech: %s", err)
 			}
 		case ECHProviderReject:
-			// Reject ECH. We do not know at this point whether the client
-			// intended to offer or grease ECH, so we presume grease until the
-			// client indicates rejection by sending an "ech_required" alert.
-			c.ech.greased = true
+			// Reject ECH. Either the client obtained an invalid ECH
+			// config, or it sent a GREASE ECH extension.
+			c.ech.status = echStatusFailure
 			return hello, nil
 		case ECHProviderAbort:
 			c.sendAlert(alert(res.Alert))
@@ -329,17 +343,16 @@ func (c *Conn) echAcceptOrReject(hello *clientHelloMsg, afterHRR bool) (*clientH
 	// EncodedClientHelloInner
 	rawEncodedHelloInner, err := c.ech.opener.Open(ech.payload, rawHelloOuterAad)
 	if err != nil {
-		if afterHRR && c.ech.accepted {
+		if afterHRR && c.ech.status == echStatusAccepted {
 			// Don't reject after accept, as this would result in processing the
 			// ClientHelloOuter after processing the ClientHelloInner.
 			c.sendAlert(alertDecryptError)
 			return nil, fmt.Errorf("ech: hrr: reject after accept: %s", err)
 		}
 
-		// Reject ECH. We do not know at this point whether the client
-		// intended to offer or grease ECH, so we presume grease until the
-		// client indicates rejection by sending an "ech_required" alert.
-		c.ech.greased = true
+		// Reject ECH. Either the client used an invalid ECH config, or
+		// it sent a GREASE ECH extension.
+		c.ech.status = echStatusFailure
 		return hello, nil
 	}
 
@@ -376,8 +389,7 @@ func (c *Conn) echAcceptOrReject(hello *clientHelloMsg, afterHRR bool) (*clientH
 	}
 
 	// Accept ECH.
-	c.ech.offered = true
-	c.ech.accepted = true
+	c.ech.status = echStatusAccepted
 	return helloInner, nil
 }
 

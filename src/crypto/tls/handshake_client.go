@@ -181,7 +181,8 @@ func (c *Conn) clientHandshake(ctx context.Context) (err error) {
 	}
 
 	helloResumed := hello
-	if c.ech.offered {
+	if helloInner != nil {
+		// This is real ECH as opposed to disabled/GREASE ECH.
 		helloResumed = helloInner
 	}
 
@@ -255,6 +256,8 @@ func (c *Conn) clientHandshake(ctx context.Context) (err error) {
 		return hs.handshake()
 	}
 
+	// Save SNI from outer Client Hello in case of ECH.
+	// In case of GREASE ECH, this will be the usual SNI.
 	c.serverName = hello.serverName
 	hs := &clientHandshakeState{
 		c:           c,
@@ -902,7 +905,8 @@ func (c *Conn) verifyServerCertificate(certificates [][]byte) error {
 
 	if !c.config.InsecureSkipVerify {
 		dnsName := c.config.ServerName
-		if c.ech.offered && !c.ech.accepted {
+		if c.ech.status == echStatusAdvertised {
+			// Validate against SNI from outer Client Hello (ECH).
 			dnsName = c.serverName
 		}
 		opts := x509.VerifyOptions{

@@ -119,7 +119,7 @@ func (hs *clientHandshakeStateTLS13) handshake() error {
 	// When offering ECH, we don't know whether ECH was accepted or rejected
 	// until we get the server's response. Compute the transcript of both the
 	// inner and outer handshake until we know.
-	if c.ech.offered {
+	if c.ech.status == echStatusAdvertised {
 		hs.transcriptInner = hs.suite.hash.New()
 		helloInnerMarshalled, err := hs.helloInner.marshal()
 		if err != nil {
@@ -138,7 +138,7 @@ func (hs *clientHandshakeStateTLS13) handshake() error {
 	}
 
 	// Check for ECH acceptance confirmation.
-	if c.ech.offered {
+	if c.ech.status == echStatusAdvertised {
 		echAcceptConfTranscript := cloneHash(hs.transcriptInner, hs.suite.hash)
 		if echAcceptConfTranscript == nil {
 			c.sendAlert(alertInternalError)
@@ -159,9 +159,11 @@ func (hs *clientHandshakeStateTLS13) handshake() error {
 			8)
 
 		if subtle.ConstantTimeCompare(hs.serverHello.random[24:], echAcceptConf) == 1 {
-			c.ech.accepted = true
+			c.ech.status = echStatusAccepted
 			hs.hello = hs.helloInner
 			hs.transcript = hs.transcriptInner
+		} else {
+			c.ech.status = echStatusFailure
 		}
 	}
 
@@ -300,7 +302,7 @@ func (hs *clientHandshakeStateTLS13) processHelloRetryRequest() error {
 	// was offered, this may be the ClientHelloInner or ClientHelloOuter.
 	hello := hs.hello
 	isInner := false
-	if c.ech.offered {
+	if c.ech.status == echStatusAdvertised {
 		chHash = hs.transcriptInner.Sum(nil)
 		hs.transcriptInner.Reset()
 		hs.transcriptInner.Write([]byte{typeMessageHash, 0, 0, uint8(len(chHash))})
@@ -436,7 +438,7 @@ func (hs *clientHandshakeStateTLS13) processHelloRetryRequest() error {
 		hs.hello = hello
 	}
 
-	if c.ech.offered && testingECHIllegalHandleAfterHRR {
+	if c.ech.status == echStatusAdvertised && testingECHIllegalHandleAfterHRR {
 		hs.hello.raw = nil
 
 		// Change the cipher suite and config id and set an encapsulated key in
@@ -543,7 +545,7 @@ func (hs *clientHandshakeStateTLS13) processServerHello() error {
 	// ECH is rejected and the client-facing server replies with a
 	// "pre_shared_key" extension in its ServerHello, then the client MUST abort
 	// the handshake with an "illegal_parameter" alert.
-	if c.ech.offered && !c.ech.accepted {
+	if c.ech.status == echStatusFailure {
 		c.sendAlert(alertIllegalParameter)
 		return errors.New("tls: ech: client-facing server offered PSK after ECH rejection")
 	}
@@ -640,8 +642,8 @@ func (hs *clientHandshakeStateTLS13) readServerParameters() error {
 	}
 	c.clientProtocol = encryptedExtensions.alpnProtocol
 
-	if c.ech.offered && len(encryptedExtensions.ech) > 0 {
-		if !c.ech.accepted {
+	if len(encryptedExtensions.ech) > 0 {
+		if c.ech.status == echStatusFailure {
 			// If the server rejects ECH, then it may send retry configurations.
 			// If present, we must check them for syntactic correctness and
 			// abort if they are not correct.
@@ -650,7 +652,7 @@ func (hs *clientHandshakeStateTLS13) readServerParameters() error {
 				c.sendAlert(alertDecodeError)
 				return fmt.Errorf("tls: ech: failed to parse retry configs: %s", err)
 			}
-		} else {
+		} else if c.ech.status == echStatusAccepted {
 			// Retry configs must not be sent in the inner handshake.
 			c.sendAlert(alertUnsupportedExtension)
 			return errors.New("tls: ech: got retry configs after ECH acceptance")
@@ -1033,8 +1035,8 @@ func (c *Conn) handleNewSessionTicket(msg *newSessionTicketMsgTLS13) error {
 
 func (hs *clientHandshakeStateTLS13) abortIfRequired() error {
 	c := hs.c
-	if c.ech.offered && !c.ech.accepted {
-		// If ECH was rejected, then abort the handshake.
+	if c.ech.status == echStatusFailure {
+		// If ECH was rejected by the server, then abort the handshake.
 		c.sendAlert(alertECHRequired)
 		return errors.New("tls: ech: rejected")
 	}
