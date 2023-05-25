@@ -136,7 +136,7 @@ func (c *Conn) makeClientHello(minVersion uint16) (*clientHelloMsg, clientKeySha
 
 		curveID := config.curvePreferences()[0]
 		if scheme := curveIdToCirclScheme(curveID); scheme != nil {
-			pk, sk, err := generateKemKeyPair(scheme, config.rand())
+			pk, sk, err := generateKemKeyPair(scheme, curveID, config.rand())
 			if err != nil {
 				return nil, nil, fmt.Errorf("generateKemKeyPair %s: %w",
 					scheme.Name(), err)
