@@ -16,8 +16,6 @@ import (
 	"fmt"
 	"hash"
 	"time"
-
-	circlKem "github.com/cloudflare/circl/kem"
 )
 
 type clientHandshakeStateTLS13 struct {
@@ -386,7 +384,7 @@ func (hs *clientHandshakeStateTLS13) processHelloRetryRequest() error {
 			return errors.New("tls: server sent an unnecessary HelloRetryRequest key_share")
 		}
 		if scheme := curveIdToCirclScheme(curveID); scheme != nil {
-			pk, sk, err := generateKemKeyPair(scheme, c.config.rand())
+			pk, sk, err := generateKemKeyPair(scheme, curveID, c.config.rand())
 			if err != nil {
 				c.sendAlert(alertInternalError)
 				return fmt.Errorf("HRR generateKemKeyPair %s: %w",
@@ -620,7 +618,8 @@ func (hs *clientHandshakeStateTLS13) establishHandshakeKeys() error {
 		if err == nil {
 			sharedKey, _ = key.ECDH(peerKey)
 		}
-	} else if sk, ok := hs.keySharePrivate.(circlKem.PrivateKey); ok {
+	} else if key, ok := hs.keySharePrivate.(*kemPrivateKey); ok {
+		sk := key.secretKey
 		sharedKey, err = sk.Scheme().Decapsulate(sk, hs.serverHello.serverShare.data)
 		if err != nil {
 			c.sendAlert(alertIllegalParameter)
