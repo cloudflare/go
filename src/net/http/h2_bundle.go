@@ -7475,6 +7475,10 @@ func (t *http2Transport) RoundTrip(req *Request) (*Response, error) {
 	return t.RoundTripOpt(req, http2RoundTripOpt{})
 }
 
+func (t *http2Transport) RoundTripWithCallback(req *Request, callback ConnectionCallback) (*Response, error) {
+	return t.RoundTripOpt(req, http2RoundTripOpt{})
+}
+
 // authorityAddr returns a given authority (a host/IP, or host:port / ip:port)
 // and returns a host:port. The port 443 is added if needed.
 func http2authorityAddr(scheme string, authority string) (addr string) {

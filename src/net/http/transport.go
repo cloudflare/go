@@ -40,7 +40,7 @@ import (
 // and caches them for reuse by subsequent calls. It uses HTTP proxies
 // as directed by the environment variables HTTP_PROXY, HTTPS_PROXY
 // and NO_PROXY (or the lowercase versions thereof).
-var DefaultTransport RoundTripper = &Transport{
+var DefaultTransport ExtendedRoundTripper = &Transport{
 	Proxy: ProxyFromEnvironment,
 	DialContext: defaultTransportDialContext(&net.Dialer{
 		Timeout:   30 * time.Second,
@@ -509,7 +509,7 @@ func (t *Transport) alternateRoundTripper(req *Request) RoundTripper {
 }
 
 // roundTrip implements a RoundTripper over HTTP.
-func (t *Transport) roundTrip(req *Request) (*Response, error) {
+func (t *Transport) roundTrip(req *Request, callback ConnectionCallback) (*Response, error) {
 	t.nextProtoOnce.Do(t.onceSetNextProtoDefaults)
 	ctx := req.Context()
 	trace := httptrace.ContextClientTrace(ctx)
@@ -592,6 +592,10 @@ func (t *Transport) roundTrip(req *Request) (*Response, error) {
 			t.setReqCanceler(cancelKey, nil)
 			req.closeBody()
 			return nil, err
+		}
+
+		if callback != nil && pconn.tlsState != nil {
+			callback(req, pconn.tlsState)
 		}
 
 		var resp *Response

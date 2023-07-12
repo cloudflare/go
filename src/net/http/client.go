@@ -59,7 +59,7 @@ type Client struct {
 	// Transport specifies the mechanism by which individual
 	// HTTP requests are made.
 	// If nil, DefaultTransport is used.
-	Transport RoundTripper
+	Transport ExtendedRoundTripper
 
 	// CheckRedirect specifies the policy for handling redirects.
 	// If CheckRedirect is not nil, the client calls it before
@@ -142,6 +142,11 @@ type RoundTripper interface {
 	RoundTrip(*Request) (*Response, error)
 }
 
+type ExtendedRoundTripper interface {
+	RoundTripper
+	RoundTripWithCallback(*Request, ConnectionCallback) (*Response, error)
+}
+
 // refererForURL returns a referer without any authentication info or
 // an empty string if lastReq scheme is https and newReq scheme is http.
 func refererForURL(lastReq, newReq *url.URL) string {
@@ -167,13 +172,13 @@ func refererForURL(lastReq, newReq *url.URL) string {
 }
 
 // didTimeout is non-nil only if err != nil.
-func (c *Client) send(req *Request, deadline time.Time) (resp *Response, didTimeout func() bool, err error) {
+func (c *Client) send(req *Request, deadline time.Time, callback ConnectionCallback) (resp *Response, didTimeout func() bool, err error) {
 	if c.Jar != nil {
 		for _, cookie := range c.Jar.Cookies(req.URL) {
 			req.AddCookie(cookie)
 		}
 	}
-	resp, didTimeout, err = send(req, c.transport(), deadline)
+	resp, didTimeout, err = send(req, c.transport(), deadline, callback)
 	if err != nil {
 		return nil, didTimeout, err
 	}
@@ -192,7 +197,7 @@ func (c *Client) deadline() time.Time {
 	return time.Time{}
 }
 
-func (c *Client) transport() RoundTripper {
+func (c *Client) transport() ExtendedRoundTripper {
 	if c.Transport != nil {
 		return c.Transport
 	}
@@ -201,7 +206,7 @@ func (c *Client) transport() RoundTripper {
 
 // send issues an HTTP request.
 // Caller should close resp.Body when done reading from it.
-func send(ireq *Request, rt RoundTripper, deadline time.Time) (resp *Response, didTimeout func() bool, err error) {
+func send(ireq *Request, rt ExtendedRoundTripper, deadline time.Time, callback ConnectionCallback) (resp *Response, didTimeout func() bool, err error) {
 	req := ireq // req is either the original request, or a modified fork
 
 	if rt == nil {
@@ -249,7 +254,8 @@ func send(ireq *Request, rt RoundTripper, deadline time.Time) (resp *Response, d
 	}
 	stopTimer, didTimeout := setRequestCancel(req, rt, deadline)
 
-	resp, err = rt.RoundTrip(req)
+	// resp, err = rt.RoundTrip(req)
+	resp, err = rt.RoundTripWithCallback(req, callback)
 	if err != nil {
 		stopTimer()
 		if resp != nil {
@@ -579,12 +585,18 @@ func urlErrorOp(method string) string {
 // Any returned error will be of type *url.Error. The url.Error
 // value's Timeout method will report true if the request timed out.
 func (c *Client) Do(req *Request) (*Response, error) {
-	return c.do(req)
+	return c.do(req, nil)
+}
+
+type ConnectionCallback = func(req *Request, tlsState *tls.ConnectionState) error
+
+func (c *Client) DoWithCallback(req *Request, callback ConnectionCallback) (*Response, error) {
+	return c.do(req, callback)
 }
 
 var testHookClientDoResult func(retres *Response, reterr error)
 
-func (c *Client) do(req *Request) (retres *Response, reterr error) {
+func (c *Client) do(req *Request, callback ConnectionCallback) (retres *Response, reterr error) {
 	if testHookClientDoResult != nil {
 		defer func() { testHookClientDoResult(retres, reterr) }()
 	}
@@ -713,7 +725,7 @@ func (c *Client) do(req *Request) (retres *Response, reterr error) {
 		reqs = append(reqs, req)
 		var err error
 		var didTimeout func() bool
-		if resp, didTimeout, err = c.send(req, deadline); err != nil {
+		if resp, didTimeout, err = c.send(req, deadline, callback); err != nil {
 			// c.send() always closes req.Body
 			reqBodyClosed = true
 			if !deadline.IsZero() && didTimeout() {

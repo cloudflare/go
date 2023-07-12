@@ -30,7 +30,10 @@ type http2Transport struct {
 }
 
 func (*http2Transport) RoundTrip(*Request) (*Response, error) { panic(noHTTP2) }
-func (*http2Transport) CloseIdleConnections()                 {}
+func (*http2Transport) RoundTripWithCallback(*Request, ConnectionCallback) (*Response, error) {
+	panic(noHTTP2)
+}
+func (*http2Transport) CloseIdleConnections() {}
 
 type http2noDialH2RoundTripper struct{}
 
