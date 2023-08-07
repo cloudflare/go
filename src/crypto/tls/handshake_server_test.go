@@ -16,6 +16,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	math_rand "math/rand"
 	"net"
 	"os"
 	"os/exec"
@@ -536,6 +537,90 @@ func testCrossVersionResume(t *testing.T, version uint16) {
 	}
 	if state.DidResume {
 		t.Fatalf("handshake resumed at a higher version")
+	}
+}
+
+func TestTLSFlags(t *testing.T) {
+	serverConfig := &Config{
+		Certificates: []Certificate{{
+			Certificate: [][]byte{testRSACertificate},
+			PrivateKey:  testRSAPrivateKey,
+		}},
+		TLSFlagsSupported: []TLSFlag{0x50},
+	}
+	clientCert, err := X509KeyPair([]byte(clientECDSACertificatePEM), []byte(clientECDSAKeyPEM))
+	if err != nil {
+		t.Fatalf("couldn't load client certs")
+	}
+	var flags = make([]TLSFlag, 10, 100)
+	for i := 0; i < math_rand.Intn(100)+1; i++ {
+		flags = append(flags, TLSFlag(math_rand.Intn(2040)))
+	}
+	clientConfig := &Config{
+		TLSFlagsSupported:  flags,
+		InsecureSkipVerify: true,
+		Certificates:       []Certificate{clientCert},
+	}
+	state, _, err := testHandshake(t, clientConfig, serverConfig)
+	if err != nil {
+		t.Fatalf("handshake failed: %s", err)
+	}
+	found := false
+	for _, flag := range state.PeerTLSFlags {
+		found = found || (flag == 0x50)
+	}
+	if found && (state.AgreedTLSFlags[0] != TLSFlag(0x50)) {
+		t.Fatalf("Failed to agree correct flags")
+	}
+	if !state.RequestClientCert == found {
+		t.Fatalf("Failed to request client cert")
+	}
+	if (len(state.PeerCertificates) == 0) == found {
+		t.Fatalf("Didn't receive correct client certs")
+	}
+}
+
+func TestTLSFlagsReqmTLS(t *testing.T) {
+	serverConfig := &Config{
+		Certificates: []Certificate{{
+			Certificate: [][]byte{testRSACertificate},
+			PrivateKey:  testRSAPrivateKey,
+		}},
+		TLSFlagsSupported: []TLSFlag{0x50},
+	}
+	clientCert, err := X509KeyPair([]byte(clientECDSACertificatePEM), []byte(clientECDSAKeyPEM))
+	if err != nil {
+		t.Fatalf("couldn't load client certs")
+	}
+	var flags = make([]TLSFlag, 10, 100)
+	for i := 0; i < math_rand.Intn(100); i++ {
+		flags = append(flags, TLSFlag(math_rand.Intn(2040)))
+	}
+	flags = append(flags, TLSFlag(0x50))
+	clientConfig := &Config{
+		TLSFlagsSupported:  flags,
+		InsecureSkipVerify: true,
+		Certificates:       []Certificate{clientCert},
+	}
+	state, _, err := testHandshake(t, clientConfig, serverConfig)
+	if err != nil {
+		t.Fatalf("handshake failed: %s", err)
+	}
+	found := false
+	for _, flag := range state.PeerTLSFlags {
+		found = found || (flag == 0x50)
+	}
+	if !found {
+		t.Fatalf("req mTLS Flag not found")
+	}
+	if state.AgreedTLSFlags[0] != TLSFlag(0x50) {
+		t.Fatalf("Failed to agree correct flags")
+	}
+	if !state.RequestClientCert {
+		t.Fatalf("Failed to request client cert")
+	}
+	if len(state.PeerCertificates) == 0 {
+		t.Fatalf("Didn't receive correct client certs")
 	}
 }
 
