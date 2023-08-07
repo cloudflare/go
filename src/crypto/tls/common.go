@@ -126,6 +126,7 @@ const (
 	extensionRenegotiationInfo       uint16 = 0xff01
 	extensionECH                     uint16 = 0xfe0d // draft-ietf-tls-esni-13
 	extensionECHOuterExtensions      uint16 = 0xfd00 // draft-ietf-tls-esni-13
+	extensionTLSFlags                uint16 = 0xfe01 // draft-ietf-tls-tlsflags-12
 )
 
 // TLS signaling cipher suite values
@@ -363,6 +364,15 @@ type ConnectionState struct {
 	// This means the client has offered ECH or sent GREASE ECH.
 	ECHOffered bool
 
+	// PeerTLSFlags is the set of TLS Flags sent by the Peer.
+	PeerTLSFlags []TLSFlag
+
+	// AgreedTLSFlags is the set of TLS Flags mutually supported by the Client and Server
+	AgreedTLSFlags []TLSFlag
+
+	// RequestClientCert is true if the server decided to request a client certificate
+	RequestClientCert bool
+
 	// ekm is a closure exposed via ExportKeyingMaterial.
 	ekm func(label string, context []byte, length int) ([]byte, error)
 }
@@ -466,6 +476,12 @@ const (
 	// Legacy signature and hash algorithms for TLS 1.2.
 	PKCS1WithSHA1 SignatureScheme = 0x0201
 	ECDSAWithSHA1 SignatureScheme = 0x0203
+)
+
+type TLSFlag uint16
+
+const (
+	FlagSupportMTLS TLSFlag = 0x50
 )
 
 // ClientHelloInfo contains information from a ClientHello message in order to
@@ -904,6 +920,8 @@ type Config struct {
 	// See https://tools.ietf.org/html/draft-ietf-tls-subcerts.
 	SupportDelegatedCredential bool
 
+	TLSFlagsSupported []TLSFlag
+
 	// mutex protects sessionTicketKeys and autoSessionTicketKeys.
 	mutex sync.RWMutex
 	// sessionTicketKeys contains zero or more ticket keys. If set, it means
@@ -994,6 +1012,7 @@ func (c *Config) Clone() *Config {
 		Renegotiation:               c.Renegotiation,
 		KeyLogWriter:                c.KeyLogWriter,
 		SupportDelegatedCredential:  c.SupportDelegatedCredential,
+		TLSFlagsSupported:           c.TLSFlagsSupported,
 		ECHEnabled:                  c.ECHEnabled,
 		ClientECHConfigs:            c.ClientECHConfigs,
 		ServerECHProvider:           c.ServerECHProvider,

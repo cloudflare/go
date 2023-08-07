@@ -143,6 +143,10 @@ type Conn struct {
 		configId     uint8  // The ECH config id
 		maxNameLen   int    // maximum_name_len indicated by the ECH config
 	}
+
+	agreedTLSFlags    []TLSFlag
+	peerTLSFlags      []TLSFlag
+	requestClientCert bool
 }
 
 // Access to net.Conn methods.
@@ -1696,6 +1700,9 @@ func (c *Conn) connectionStateLocked() ConnectionState {
 	} else {
 		state.ekm = c.ekm
 	}
+	state.PeerTLSFlags = c.peerTLSFlags
+	state.AgreedTLSFlags = c.agreedTLSFlags
+	state.RequestClientCert = c.requestClientCert
 	return state
 }
 

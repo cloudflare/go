@@ -90,6 +90,7 @@ type clientHelloMsg struct {
 	alpnProtocols                    []string
 	scts                             bool
 	supportedVersions                []uint16
+	tlsFlags                         []byte
 	cookie                           []byte
 	keyShares                        []keyShare
 	earlyData                        bool
@@ -236,6 +237,14 @@ func (m *clientHelloMsg) marshal() ([]byte, error) {
 				for _, vers := range m.supportedVersions {
 					exts.AddUint16(vers)
 				}
+			})
+		})
+	}
+	if len(m.tlsFlags) > 0 {
+		exts.AddUint16(extensionTLSFlags)
+		exts.AddUint16LengthPrefixed(func(exts *cryptobyte.Builder) {
+			exts.AddUint8LengthPrefixed(func(exts *cryptobyte.Builder) {
+				exts.AddBytes(m.tlsFlags)
 			})
 		})
 	}
@@ -576,6 +585,18 @@ func (m *clientHelloMsg) unmarshal(data []byte) bool {
 					return false
 				}
 				m.supportedVersions = append(m.supportedVersions, vers)
+			}
+		case extensionTLSFlags:
+			var flagsList cryptobyte.String
+			if !extData.ReadUint8LengthPrefixed(&flagsList) || flagsList.Empty() {
+				return false
+			}
+			for !flagsList.Empty() {
+				var flagByte uint8
+				if !flagsList.ReadUint8(&flagByte) {
+					return false
+				}
+				m.tlsFlags = append(m.tlsFlags, flagByte)
 			}
 		case extensionCookie:
 			// RFC 8446, Section 4.2.2
