@@ -1,42 +1,25 @@
-# The Go Programming Language
+🚨 This fork is offered as-is, and without guarantees. It is expected that
+changes in the code, repository, and API occur in the future. We recommend to take
+caution before using this library in production.
 
-Go is an open source programming language that makes it easy to build simple,
-reliable, and efficient software.
+# cfgo
 
-![Gopher image](https://golang.org/doc/gopher/fiveyears.jpg)
-*Gopher image by [Renee French][rf], licensed under [Creative Commons 4.0 Attributions license][cc4-by].*
+This is an experimental fork of Go, that patches the TLS stack, to support: 
 
-Our canonical Git repository is located at https://go.googlesource.com/go.
-There is a mirror of the repository at https://github.com/golang/go.
+1. [Encrypted ClientHello (ECH)](https://blog.cloudflare.com/encrypted-client-hello/)
+2. [Post-quantum key agreement](https://blog.cloudflare.com/post-quantum-for-all/)
+3. [Delegated Credentials](https://blog.cloudflare.com/keyless-delegation/)
+4. Post-quantum certificates. 
+5. Configuraton of keyshares sent in ClientHello with `tls.Config.ClientCurveGuess`.
 
-Unless otherwise noted, the Go source files are distributed under the
-BSD-style license found in the LICENSE file.
+To use upstream Go and this fork with the same codebase, this fork sets the `cfgo` build tag.
 
-### Download and Install
+## Build
 
-#### Binary Distributions
+```
+$ git clone https://github.com/cloudflare/go`
+$ cd go/src
+$ ./make.bash
+```
 
-Official binary distributions are available at https://go.dev/dl/.
-
-After downloading a binary release, visit https://go.dev/doc/install
-for installation instructions.
-
-#### Install From Source
-
-If a binary distribution is not available for your combination of
-operating system and architecture, visit
-https://go.dev/doc/install/source
-for source installation instructions.
-
-### Contributing
-
-Go is the work of thousands of contributors. We appreciate your help!
-
-To contribute, please read the contribution guidelines at https://go.dev/doc/contribute.
-
-Note that the Go project uses the issue tracker for bug reports and
-proposals only. See https://go.dev/wiki/Questions for a list of
-places to ask questions about the Go language.
-
-[rf]: https://reneefrench.blogspot.com/
-[cc4-by]: https://creativecommons.org/licenses/by/4.0/
+ You can now use `../bin/go` as you would regular `go`.
