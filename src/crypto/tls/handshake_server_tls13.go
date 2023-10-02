@@ -256,32 +256,39 @@ func (hs *serverHandshakeStateTLS13) processClientHello() error {
 		}
 	}
 
-	// Pick the ECDHE group in server preference order, but give priority to
-	// groups with a key share, to avoid a HelloRetryRequest round-trip.
+	// Pick group by server preference. In contrast to upstream Go, we will
+	// send an HelloRetryRequest and accept an extra roundtrip if there is
+	// a more preferred group, than those for which the client has sent
+	// a keyshare in the initial ClientHello.
+	// Cf. https://datatracker.ietf.org/doc/draft-davidben-tls-key-share-prediction/
 	var selectedGroup CurveID
 	var clientKeyShare *keyShare
 GroupSelection:
 	for _, preferredGroup := range supportedCurves {
-		for _, ks := range hs.clientHello.keyShares {
-			if ks.group == preferredGroup {
-				selectedGroup = ks.group
-				clientKeyShare = &ks
-				break GroupSelection
-			}
-		}
-		if selectedGroup != 0 {
-			continue
-		}
 		for _, group := range hs.clientHello.supportedCurves {
 			if group == preferredGroup {
 				selectedGroup = group
-				break
+				break GroupSelection
+			}
+		}
+
+		// supported_groups is not necessarily sent
+		for _, ks := range hs.clientHello.keyShares {
+			if ks.group == preferredGroup {
+				selectedGroup = ks.group
+				break GroupSelection
 			}
 		}
 	}
 	if selectedGroup == 0 {
 		c.sendAlert(alertHandshakeFailure)
 		return errors.New("tls: no ECDHE curve supported by both client and server")
+	}
+	for _, ks := range hs.clientHello.keyShares {
+		if ks.group == selectedGroup {
+			clientKeyShare = &ks
+			break
+		}
 	}
 	if clientKeyShare == nil {
 		if err := hs.doHelloRetryRequest(selectedGroup); err != nil {
