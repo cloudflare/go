@@ -134,7 +134,7 @@ func (c *Conn) makeClientHello(minVersion uint16) (*clientHelloMsg, clientKeySha
 		hello.supportedSignatureAlgorithms = testingOnlyForceClientHelloSignatureAlgorithms
 	}
 
-	var secret clientKeySharePrivate
+	secret := make(clientKeySharePrivate)
 	if hello.supportedVersions[0] == VersionTLS13 {
 		// Reset the list of ciphers when the client only supports TLS 1.3.
 		if len(hello.supportedVersions) == 1 {
@@ -146,30 +146,61 @@ func (c *Conn) makeClientHello(minVersion uint16) (*clientHelloMsg, clientKeySha
 			hello.cipherSuites = append(hello.cipherSuites, defaultCipherSuitesTLS13NoAES...)
 		}
 
-		curveID := config.curvePreferences()[0]
-		if scheme := curveIdToCirclScheme(curveID); scheme != nil {
-			pk, sk, err := generateKemKeyPair(scheme, curveID, config.rand())
-			if err != nil {
-				return nil, nil, fmt.Errorf("generateKemKeyPair %s: %w",
-					scheme.Name(), err)
+		curveIDs := []CurveID{config.curvePreferences()[0]}
+
+		if config.ClientCurveGuess != nil {
+			curveIDs = config.ClientCurveGuess
+		}
+
+		hello.keyShares = make([]keyShare, 0, len(curveIDs))
+
+		for _, curveID := range curveIDs {
+			var (
+				singleSecret interface{}
+				singleShare  []byte
+			)
+
+			if _, ok := secret[curveID]; ok {
+				return nil, nil, errors.New("tls: ClientCurveGuess contains duplicate")
 			}
-			packedPk, err := pk.MarshalBinary()
-			if err != nil {
-				return nil, nil, fmt.Errorf("pack circl public key %s: %w",
-					scheme.Name(), err)
+
+			ok := false
+			for _, curveID2 := range config.curvePreferences() {
+				if curveID2 == curveID {
+					ok = true
+					break
+				}
 			}
-			hello.keyShares = []keyShare{{group: curveID, data: packedPk}}
-			secret = sk
-		} else {
-			if _, ok := curveForCurveID(curveID); !ok {
-				return nil, nil, errors.New("tls: CurvePreferences includes unsupported curve")
+			if !ok {
+				return nil, nil, errors.New("tls: ClientCurveGuess contains curve not in CurvePreferences")
 			}
-			key, err := generateECDHEKey(config.rand(), curveID)
-			if err != nil {
-				return nil, nil, err
+
+			if scheme := curveIdToCirclScheme(curveID); scheme != nil {
+				pk, sk, err := generateKemKeyPair(scheme, curveID, config.rand())
+				if err != nil {
+					return nil, nil, fmt.Errorf("generateKemKeyPair %s: %w",
+						scheme.Name(), err)
+				}
+				packedPk, err := pk.MarshalBinary()
+				if err != nil {
+					return nil, nil, fmt.Errorf("pack circl public key %s: %w",
+						scheme.Name(), err)
+				}
+				singleShare = packedPk
+				singleSecret = sk
+			} else {
+				if _, ok := curveForCurveID(curveID); !ok {
+					return nil, nil, errors.New("tls: CurvePreferences includes unsupported curve")
+				}
+				key, err := generateECDHEKey(config.rand(), curveID)
+				if err != nil {
+					return nil, nil, err
+				}
+				singleShare = key.PublicKey().Bytes()
+				singleSecret = key
 			}
-			hello.keyShares = []keyShare{{group: curveID, data: key.PublicKey().Bytes()}}
-			secret = key
+			hello.keyShares = append(hello.keyShares, keyShare{group: curveID, data: singleShare})
+			secret[curveID] = singleSecret
 		}
 
 		hello.delegatedCredentialSupported = config.SupportDelegatedCredential

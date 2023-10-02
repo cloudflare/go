@@ -103,7 +103,7 @@ func (hs *clientHandshakeStateTLS13) handshake() error {
 	}
 
 	// Consistency check on the presence of a keyShare and its parameters.
-	if hs.keySharePrivate == nil || len(hs.hello.keyShares) != 1 {
+	if hs.keySharePrivate == nil {
 		return c.sendAlert(alertInternalError)
 	}
 
@@ -379,7 +379,7 @@ func (hs *clientHandshakeStateTLS13) processHelloRetryRequest() error {
 			c.sendAlert(alertIllegalParameter)
 			return errors.New("tls: server selected unsupported group")
 		}
-		if clientKeySharePrivateCurveID(hs.keySharePrivate) == curveID {
+		if singleClientKeySharePrivateFor(hs.keySharePrivate, curveID) != nil {
 			c.sendAlert(alertIllegalParameter)
 			return errors.New("tls: server sent an unnecessary HelloRetryRequest key_share")
 		}
@@ -396,7 +396,7 @@ func (hs *clientHandshakeStateTLS13) processHelloRetryRequest() error {
 				return fmt.Errorf("HRR pack circl public key %s: %w",
 					scheme.Name(), err)
 			}
-			hs.keySharePrivate = sk
+			hs.keySharePrivate = clientKeySharePrivate{curveID: sk}
 			hello.keyShares = []keyShare{{group: curveID, data: packedPk}}
 		} else {
 			if _, ok := curveForCurveID(curveID); !ok {
@@ -408,7 +408,7 @@ func (hs *clientHandshakeStateTLS13) processHelloRetryRequest() error {
 				c.sendAlert(alertInternalError)
 				return err
 			}
-			hs.keySharePrivate = key
+			hs.keySharePrivate = clientKeySharePrivate{curveID: key}
 			hello.keyShares = []keyShare{{group: curveID, data: key.PublicKey().Bytes()}}
 		}
 	}
@@ -558,7 +558,7 @@ func (hs *clientHandshakeStateTLS13) processServerHello() error {
 		c.sendAlert(alertIllegalParameter)
 		return errors.New("tls: server did not send a key share")
 	}
-	if hs.serverHello.serverShare.group != clientKeySharePrivateCurveID(hs.keySharePrivate) {
+	if singleClientKeySharePrivateFor(hs.keySharePrivate, hs.serverHello.serverShare.group) == nil {
 		c.sendAlert(alertIllegalParameter)
 		return errors.New("tls: server selected unsupported group")
 	}
@@ -613,12 +613,16 @@ func (hs *clientHandshakeStateTLS13) establishHandshakeKeys() error {
 
 	var sharedKey []byte
 	var err error
-	if key, ok := hs.keySharePrivate.(*ecdh.PrivateKey); ok {
+
+	// We already checked that ks isn't nil in processServerHello()
+	ks := singleClientKeySharePrivateFor(hs.keySharePrivate, hs.serverHello.serverShare.group)
+
+	if key, ok := ks.(*ecdh.PrivateKey); ok {
 		peerKey, err := key.Curve().NewPublicKey(hs.serverHello.serverShare.data)
 		if err == nil {
 			sharedKey, _ = key.ECDH(peerKey)
 		}
-	} else if key, ok := hs.keySharePrivate.(*kemPrivateKey); ok {
+	} else if key, ok := ks.(*kemPrivateKey); ok {
 		sk := key.secretKey
 		sharedKey, err = sk.Scheme().Decapsulate(sk, hs.serverHello.serverShare.data)
 		if err != nil {
