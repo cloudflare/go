@@ -17,7 +17,7 @@ To use upstream Go and this fork with the same codebase, this fork sets the `cfg
 ## Build
 
 ```
-$ git clone https://github.com/cloudflare/go`
+$ git clone https://github.com/cloudflare/go
 $ cd go/src
 $ ./make.bash
 ```
