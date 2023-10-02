@@ -170,6 +170,7 @@ func experimentTags() []string {
 	for _, exp := range Experiment.Enabled() {
 		list = append(list, "goexperiment."+exp)
 	}
+	list = append(list, "cfgo")
 	return list
 }
 

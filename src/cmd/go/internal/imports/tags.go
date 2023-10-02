@@ -42,7 +42,6 @@ func loadTags() map[string]bool {
 	for _, tag := range cfg.BuildContext.ReleaseTags {
 		tags[tag] = true
 	}
-	tags["cfgo"] = true
 	return tags
 }
 
