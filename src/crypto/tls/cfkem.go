@@ -22,14 +22,14 @@ import (
 	"fmt"
 	"io"
 
-	"crypto/ecdh"
-
 	"github.com/cloudflare/circl/kem"
 	"github.com/cloudflare/circl/kem/hybrid"
 )
 
 // Either *ecdh.PrivateKey or *kemPrivateKey
-type clientKeySharePrivate interface{}
+type singleClientKeySharePrivate interface{}
+
+type clientKeySharePrivate map[CurveID]singleClientKeySharePrivate
 
 type kemPrivateKey struct {
 	secretKey kem.PrivateKey
@@ -44,20 +44,9 @@ var (
 	invalidCurveID           = CurveID(0)
 )
 
-// Extract CurveID from clientKeySharePrivate
-func clientKeySharePrivateCurveID(ks clientKeySharePrivate) CurveID {
-	switch v := ks.(type) {
-	case *kemPrivateKey:
-		return v.curveID
-	case *ecdh.PrivateKey:
-		ret, ok := curveIDForCurve(v.Curve())
-		if !ok {
-			panic("cfkem: internal error: unknown curve")
-		}
-		return ret
-	default:
-		panic("cfkem: internal error: unknown clientKeySharePrivate")
-	}
+func singleClientKeySharePrivateFor(ks clientKeySharePrivate, group CurveID) singleClientKeySharePrivate {
+	ret, _ := ks[group]
+	return ret
 }
 
 // Returns scheme by CurveID if supported by Circl

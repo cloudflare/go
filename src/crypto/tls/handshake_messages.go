@@ -248,7 +248,7 @@ func (m *clientHelloMsg) marshal() ([]byte, error) {
 			})
 		})
 	}
-	if len(m.keyShares) > 0 {
+	if m.keyShares != nil {
 		// RFC 8446, Section 4.2.8
 		exts.AddUint16(extensionKeyShare)
 		exts.AddUint16LengthPrefixed(func(exts *cryptobyte.Builder) {
