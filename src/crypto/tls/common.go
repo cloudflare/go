@@ -837,6 +837,18 @@ type Config struct {
 	// which is currently TLS 1.3.
 	MaxVersion uint16
 
+	// ClientCurveGuess contains the "curves" for which the client will create
+	// a keyshare in the initial ClientHello for TLS 1.3. If the client
+	// guesses incorrectly, and the server does not support or does not
+	// prefer those keyshares, then the server will return a HelloRetryRequest
+	// incurring an extra roundtrip.
+	//
+	// If empty, no keyshares will be included in the ClientHello.
+	//
+	// If nil (default), will send the single most preferred keyshare
+	// as configurable via CurvePreferences.
+	ClientCurveGuess []CurveID
+
 	// CurvePreferences contains the elliptic curves that will be used in
 	// an ECDHE handshake, in preference order. If empty, the default will
 	// be used. The client will use the first preference as the type for
@@ -974,6 +986,7 @@ func (c *Config) Clone() *Config {
 		MinVersion:                  c.MinVersion,
 		MaxVersion:                  c.MaxVersion,
 		CurvePreferences:            c.CurvePreferences,
+		ClientCurveGuess:            c.ClientCurveGuess,
 		PQSignatureSchemesEnabled:   c.PQSignatureSchemesEnabled,
 		DynamicRecordSizingDisabled: c.DynamicRecordSizingDisabled,
 		Renegotiation:               c.Renegotiation,
