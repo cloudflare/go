@@ -154,6 +154,30 @@ func (c *Conn) makeClientHello(minVersion uint16) (*clientHelloMsg, clientKeySha
 
 		hello.keyShares = make([]keyShare, 0, len(curveIDs))
 
+		// Check whether ClientCurveGuess is a subsequence of CurvePreferences
+		// as is required by RFC8446 §4.2.8
+		offset := 0
+		curvePreferences := config.curvePreferences()
+		found := 0
+	CurveGuessCheck:
+		for _, curveID := range curveIDs {
+			for {
+				if offset == len(curvePreferences) {
+					break CurveGuessCheck
+				}
+
+				if curvePreferences[offset] == curveID {
+					found++
+					break
+				}
+
+				offset++
+			}
+		}
+		if found != len(curveIDs) {
+			return nil, nil, errors.New("tls: ClientCurveGuess not a subsequence of CurvePreferences")
+		}
+
 		for _, curveID := range curveIDs {
 			var (
 				singleSecret interface{}
@@ -162,17 +186,6 @@ func (c *Conn) makeClientHello(minVersion uint16) (*clientHelloMsg, clientKeySha
 
 			if _, ok := secret[curveID]; ok {
 				return nil, nil, errors.New("tls: ClientCurveGuess contains duplicate")
-			}
-
-			ok := false
-			for _, curveID2 := range config.curvePreferences() {
-				if curveID2 == curveID {
-					ok = true
-					break
-				}
-			}
-			if !ok {
-				return nil, nil, errors.New("tls: ClientCurveGuess contains curve not in CurvePreferences")
 			}
 
 			if scheme := curveIdToCirclScheme(curveID); scheme != nil {
