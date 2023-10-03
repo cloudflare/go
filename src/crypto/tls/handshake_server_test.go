@@ -1934,6 +1934,7 @@ func TestAESCipherReorderingTLS13(t *testing.T) {
 					supportedVersions:  []uint16{VersionTLS13},
 					compressionMethods: []uint8{compressionNone},
 					keyShares:          []keyShare{{group: X25519, data: pk.PublicKey().Bytes()}},
+					supportedCurves:    []CurveID{X25519},
 				},
 			}
 
