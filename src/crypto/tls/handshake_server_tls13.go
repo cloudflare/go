@@ -271,14 +271,6 @@ GroupSelection:
 				break GroupSelection
 			}
 		}
-
-		// supported_groups is not necessarily sent
-		for _, ks := range hs.clientHello.keyShares {
-			if ks.group == preferredGroup {
-				selectedGroup = ks.group
-				break GroupSelection
-			}
-		}
 	}
 	if selectedGroup == 0 {
 		c.sendAlert(alertHandshakeFailure)
