@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/cloudflare/circl/hpke"
 	"github.com/cloudflare/circl/kem"
 	"github.com/cloudflare/circl/kem/hybrid"
 )
@@ -42,6 +43,11 @@ var (
 	X25519Kyber768Draft00Old = CurveID(0xfe31)
 	P256Kyber768Draft00      = CurveID(0xfe32)
 	invalidCurveID           = CurveID(0)
+
+	// A key agreeement similar in size but purposefully incompatible with
+	// X25519. The goal is to have a key agreement that servers will not
+	// support, so we can test HelloRetryRquest.
+	DummyKex = CurveID(0xfe33)
 )
 
 func singleClientKeySharePrivateFor(ks clientKeySharePrivate, group CurveID) singleClientKeySharePrivate {
@@ -58,6 +64,8 @@ func curveIdToCirclScheme(id CurveID) kem.Scheme {
 		return hybrid.Kyber768X25519()
 	case P256Kyber768Draft00:
 		return hybrid.P256Kyber768Draft00()
+	case DummyKex:
+		return hpke.KEM_X25519_HKDF_SHA256.Scheme()
 	}
 	return nil
 }
