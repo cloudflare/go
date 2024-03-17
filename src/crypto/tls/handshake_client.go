@@ -218,6 +218,11 @@ func (c *Conn) makeClientHello(minVersion uint16) (*clientHelloMsg, clientKeySha
 
 		hello.delegatedCredentialSupported = config.SupportDelegatedCredential
 		hello.supportedSignatureAlgorithmsDC = supportedSignatureAlgorithmsDC
+		flagBytes, err := encodeFlags(config.TLSFlagsSupported)
+		if err != nil {
+			return nil, nil, err
+		}
+		hello.tlsFlags = flagBytes
 	}
 
 	if c.quic != nil {
@@ -232,6 +237,23 @@ func (c *Conn) makeClientHello(minVersion uint16) (*clientHelloMsg, clientKeySha
 	}
 
 	return hello, secret, nil
+}
+
+const maxTLSFlag = TLSFlag(2040)
+
+func encodeFlags(flags []TLSFlag) ([]byte, error) {
+	flagBytes := make([]byte, 0, 255)
+	for _, flag := range flags {
+		if flag >= maxTLSFlag {
+			return nil, fmt.Errorf("cannot encode TLS flags greater than %d", maxTLSFlag)
+		}
+		whichByte := int(flag) >> 3
+		if whichByte >= len(flagBytes) {
+			flagBytes = flagBytes[:whichByte+1]
+		}
+		flagBytes[whichByte] |= 1 << (flag % 8)
+	}
+	return flagBytes, nil
 }
 
 func (c *Conn) clientHandshake(ctx context.Context) (err error) {

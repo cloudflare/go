@@ -43,6 +43,8 @@ type serverHandshakeStateTLS13 struct {
 	transcript      hash.Hash
 	clientFinished  []byte
 	certReq         *certificateRequestMsgTLS13
+	peerTLSFlags    []TLSFlag
+	tlsFlags        []TLSFlag
 
 	hsTimings CFEventTLS13ServerHandshakeTimingInfo
 }
@@ -132,7 +134,9 @@ func (hs *serverHandshakeStateTLS13) handshake() error {
 
 	c.handleCFEvent(hs.hsTimings)
 	c.isHandshakeComplete.Store(true)
-
+	c.agreedTLSFlags = hs.tlsFlags
+	c.peerTLSFlags = hs.peerTLSFlags
+	c.requestClientCert = hs.requestClientCert()
 	return nil
 }
 
@@ -317,6 +321,29 @@ GroupSelection:
 		c.sendAlert(alertIllegalParameter)
 		return errors.New("tls: invalid client key share")
 	}
+	if len(hs.clientHello.tlsFlags) != 0 {
+		supportedFlags, err := encodeFlags(hs.c.config.TLSFlagsSupported)
+		if err != nil {
+			return errors.New("tls: invalid server flags")
+		}
+		var mutuallySupportedFlags []byte
+		for i, sFB := range supportedFlags {
+			if i >= len(hs.clientHello.tlsFlags) {
+				break
+			}
+			mutuallySupportedFlags = append(mutuallySupportedFlags, hs.clientHello.tlsFlags[i]&sFB)
+		}
+
+		peerTLSFlags, err := decodeFlags(hs.clientHello.tlsFlags)
+		if err == nil {
+			hs.peerTLSFlags = peerTLSFlags
+		}
+
+		tlsFlags, err := decodeFlags(mutuallySupportedFlags)
+		if err == nil {
+			hs.tlsFlags = tlsFlags
+		}
+	}
 
 	selectedProto, err := negotiateALPN(c.config.NextProtos, hs.clientHello.alpnProtocols, c.quic != nil)
 	if err != nil {
@@ -354,6 +381,23 @@ GroupSelection:
 	hs.hsTimings.ProcessClientHello = hs.hsTimings.elapsedTime()
 
 	return nil
+}
+
+func decodeFlags(flagBytes []byte) ([]TLSFlag, error) {
+	var flags []TLSFlag
+	for byteIndex, b := range flagBytes {
+		for i := 0; !(b == 0); i++ {
+			if (b & 1) == 1 {
+				flagNo := byteIndex*8 + i
+				if flagNo >= int(maxTLSFlag) {
+					return nil, fmt.Errorf("TLS flag is out of range: %d", flagNo)
+				}
+				flags = append(flags, TLSFlag(flagNo))
+			}
+			b >>= 1
+		}
+	}
+	return flags, nil
 }
 
 func (hs *serverHandshakeStateTLS13) checkForResumption() error {
@@ -892,6 +936,11 @@ func (hs *serverHandshakeStateTLS13) sendServerParameters() error {
 }
 
 func (hs *serverHandshakeStateTLS13) requestClientCert() bool {
+	for _, flag := range hs.tlsFlags {
+		if flag == FlagSupportMTLS {
+			return true
+		}
+	}
 	return hs.c.config.ClientAuth >= RequestClientCert && !hs.usingPSK
 }
 
