@@ -42,6 +42,7 @@ var (
 	X25519Kyber768Draft00    = CurveID(0x6399)
 	X25519Kyber768Draft00Old = CurveID(0xfe31)
 	P256Kyber768Draft00      = CurveID(0xfe32)
+	X25519MLKEM768           = CurveID(0x11ec)
 	invalidCurveID           = CurveID(0)
 
 	// A key agreeement similar in size but purposefully incompatible with
@@ -64,6 +65,8 @@ func curveIdToCirclScheme(id CurveID) kem.Scheme {
 		return hybrid.Kyber768X25519()
 	case P256Kyber768Draft00:
 		return hybrid.P256Kyber768Draft00()
+	case X25519MLKEM768:
+		return hybrid.X25519MLKEM768()
 	case DummyKex:
 		return hpke.KEM_X25519_HKDF_SHA256.Scheme()
 	}
