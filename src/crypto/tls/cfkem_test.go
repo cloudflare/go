@@ -95,6 +95,7 @@ func TestHybridKEX(t *testing.T) {
 		X25519Kyber768Draft00,
 		X25519Kyber768Draft00Old,
 		P256Kyber768Draft00,
+		X25519MLKEM768,
 		DummyKex,
 	} {
 		run(curveID, true, true, false, false)
