@@ -143,6 +143,12 @@ type Conn struct {
 		configId     uint8  // The ECH config id
 		maxNameLen   int    // maximum_name_len indicated by the ECH config
 	}
+
+	// firstHandshakeRecordMaxPayloadSize control the first payload size of
+	// function writeRecordLocked to bypass some kinds of SNI blocking.
+	// It only works when the recordType is recordTypeHandshake. If it is
+	// set to 0, the behavior of writeRecordLocked will not be changed.
+	firstHandshakeRecordMaxPayloadSize uint8
 }
 
 // Access to net.Conn methods.
@@ -177,6 +183,13 @@ func (c *Conn) SetReadDeadline(t time.Time) error {
 // After a [Conn.Write] has timed out, the TLS state is corrupt and all future writes will return the same error.
 func (c *Conn) SetWriteDeadline(t time.Time) error {
 	return c.conn.SetWriteDeadline(t)
+}
+
+// SetFirstHandshakeRecordMaxPayloadSize sets what it is named.
+// Passing value 0 will reset the handshake to default behavior.
+// The recommend value is 4.
+func (c *Conn) SetFirstHandshakeRecordMaxPayloadSize(n uint8) {
+	c.firstHandshakeRecordMaxPayloadSize = n
 }
 
 // NetConn returns the underlying connection that is wrapped by c.
@@ -1024,10 +1037,15 @@ func (c *Conn) writeRecordLocked(typ recordType, data []byte) (int, error) {
 	}()
 
 	var n int
+	isSplitLoop := typ == recordTypeHandshake
 	for len(data) > 0 {
 		m := len(data)
-		if maxPayload := c.maxPayloadSizeForWrite(typ); m > maxPayload {
-			m = maxPayload
+		if !isSplitLoop || c.firstHandshakeRecordMaxPayloadSize == 0 {
+			if maxPayload := c.maxPayloadSizeForWrite(typ); m > maxPayload {
+				m = maxPayload
+			}
+		} else {
+			m = int(c.firstHandshakeRecordMaxPayloadSize)
 		}
 
 		_, outBuf = sliceForAppend(outBuf[:0], recordHeaderLen)
@@ -1057,6 +1075,12 @@ func (c *Conn) writeRecordLocked(typ recordType, data []byte) (int, error) {
 		}
 		n += m
 		data = data[m:]
+		if isSplitLoop {
+			isSplitLoop = false
+			if _, err := c.flush(); err != nil {
+				return n, err
+			}
+		}
 	}
 
 	if typ == recordTypeChangeCipherSpec && c.vers != VersionTLS13 {
