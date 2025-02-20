@@ -10,7 +10,6 @@ import (
 	"io"
 	"io/ioutil"
 	"testing"
-	"time"
 )
 
 type testTimingInfo struct {
@@ -106,7 +105,7 @@ func TestTLS13HandshakeTiming(t *testing.T) {
 	const serverName = "example.golang"
 
 	baseConfig := &Config{
-		Time:         time.Now,
+		Time:         testTime,
 		Rand:         zeroSource{},
 		Certificates: make([]Certificate, 1),
 		MaxVersion:   VersionTLS13,
