@@ -13,6 +13,8 @@ import (
 	"fmt"
 	"testing"
 	"time"
+
+	"github.com/cloudflare/circl/hpke"
 )
 
 const (
@@ -898,6 +900,84 @@ func testECHProvider(t *testing.T, p ECHProvider, handle []byte, version uint16,
 
 func TestECHProvider(t *testing.T) {
 	p := echTestLoadKeySet(echTestKeys)
+	block, rest := pem.Decode([]byte(echTestKeys))
+	if block == nil || block.Type != "ECH KEYS" || len(rest) > 0 {
+		t.Fatal("pem decoding fails")
+	}
+	keys, err := EXP_UnmarshalECHKeys(block.Bytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(keys) == 0 {
+		t.Fatal("no ECH keys")
+	}
+	testKey := keys[0]
+	testSuite := testKey.config.suites[0]
+	t.Run("known config id with different KEM", func(t *testing.T) {
+		var kemMismatchKey EXP_ECHKey
+		found := false
+		for _, key := range keys {
+			if key.config.kemId == uint16(hpke.KEM_P256_HKDF_SHA256) {
+				kemMismatchKey = key
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Skip("test keyset has no P-256 ECH config")
+		}
+
+		incorrectKEM := hpke.KEM_X25519_HKDF_SHA256
+		incorrectPK, _, err := incorrectKEM.Scheme().GenerateKeyPair()
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		incorrectSuite := hpke.NewSuite(
+			incorrectKEM,
+			hpke.KDF(kemMismatchKey.config.suites[0].kdfId),
+			hpke.AEAD(kemMismatchKey.config.suites[0].aeadId),
+		)
+		sender, err := incorrectSuite.NewSender(incorrectPK, []byte("ech test info"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		enc, _, err := sender.Setup(rand.Reader)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		handle := (&echContextHandle{
+			suite:    kemMismatchKey.config.suites[0],
+			configId: kemMismatchKey.config.configId,
+			enc:      enc,
+		}).marshal()
+
+		testECHProvider(t, p, handle, extensionECH, ECHProviderResult{
+			Status:       ECHProviderReject,
+			RetryConfigs: p.configs,
+		})
+	})
+	t.Run("known config id with unsupported KDF/AEAD pair", func(t *testing.T) {
+		unsupportedSuite := hpkeSymmetricCipherSuite{testSuite.kdfId, uint16(hpke.AEAD_ChaCha20Poly1305)}
+		if unsupportedSuite.aeadId == testSuite.aeadId {
+			unsupportedSuite = hpkeSymmetricCipherSuite{testSuite.kdfId, uint16(hpke.AEAD_AES256GCM)}
+		}
+		if testKey.config.isPeerCipherSuiteSupported(unsupportedSuite) {
+			t.Fatal("test setup failure: selected suite is supported by config")
+		}
+
+		handle := (&echContextHandle{
+			suite:    unsupportedSuite,
+			configId: testKey.config.configId,
+			enc:      []byte{0x00},
+		}).marshal()
+
+		testECHProvider(t, p, handle, extensionECH, ECHProviderResult{
+			Status:       ECHProviderReject,
+			RetryConfigs: p.configs,
+		})
+	})
 	t.Run("ok", func(t *testing.T) {
 		handle := []byte{
 			0, 1, 0, 1, 195, 0, 32, 49, 215, 32, 55, 8, 132, 98, 118, 166, 113,
